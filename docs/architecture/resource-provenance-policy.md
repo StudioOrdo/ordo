@@ -32,6 +32,11 @@ confirmed capabilities surface as review-required decisions while preserving the
 current governed projection behavior. Exported MCP tool calls also pass through
 durable capability role binding before the export-tier decision is accepted.
 
+Important policy decisions are also persisted to a local SQLite audit trail.
+This audit trail records actor, action, resource, capability, outcome, reason,
+decision metadata, and optional correlation fields. It is separate from
+diagnostic logs.
+
 ## Provenance
 
 Current local issue report artifacts now carry policy/provenance metadata in
@@ -62,9 +67,9 @@ The shipped classification vocabulary includes:
 - approval states.
 
 The current implementation uses this vocabulary for local operational reports,
-durable local resource grants, and capability role decisions. It does not yet
-provide authentication UI, hosted identity, public portals, or access-aware
-retrieval.
+durable local resource grants, capability role decisions, and policy decision
+audit evidence. It does not yet provide authentication UI, hosted identity,
+public portals, or access-aware retrieval.
 
 ## Relationship To RBAC
 

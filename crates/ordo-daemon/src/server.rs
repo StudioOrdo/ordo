@@ -37,8 +37,8 @@ use crate::health::{
 };
 use crate::mcp::{handle_mcp_json, McpResponse};
 use crate::policy::{
-    authorize_protected_daemon_action, ActorContext, PolicyAction, PolicyDecision,
-    ProtectedAccessEvidence, ResourceKind, ResourceRef,
+    authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
+    PolicyDecision, PolicyDecisionCorrelation, ProtectedAccessEvidence, ResourceKind, ResourceRef,
 };
 use crate::reports::{
     list_issue_reports, prepare_issue_report, IssueReportPrepareRequest, IssueReportsResponse,
@@ -531,6 +531,7 @@ async fn generate_system_brief_handler(
 ) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
     let policy_decision = authorize_protected_daemon_route(
         &state.access_policy,
+        &state.db_path,
         &headers,
         remote_addr,
         PolicyAction::Generate,
@@ -577,6 +578,7 @@ async fn create_backup_handler(
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
     let policy_decision = authorize_protected_daemon_route(
         &state.access_policy,
+        &state.db_path,
         &headers,
         remote_addr,
         PolicyAction::Create,
@@ -618,6 +620,7 @@ async fn validate_restore_handler(
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
     let policy_decision = authorize_protected_daemon_route(
         &state.access_policy,
+        &state.db_path,
         &headers,
         remote_addr,
         PolicyAction::Validate,
@@ -676,6 +679,7 @@ async fn prepare_issue_report_handler(
 ) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
     let policy_decision = authorize_protected_daemon_route(
         &state.access_policy,
+        &state.db_path,
         &headers,
         remote_addr,
         PolicyAction::Prepare,
@@ -708,6 +712,7 @@ async fn mcp_handler(
 ) -> Result<Json<McpResponse>, (StatusCode, Json<ErrorResponse>)> {
     authorize_protected_daemon_route(
         &state.access_policy,
+        &state.db_path,
         &headers,
         remote_addr,
         PolicyAction::CallTool,
@@ -719,6 +724,7 @@ async fn mcp_handler(
 
 fn authorize_protected_daemon_route(
     policy: &DaemonAccessPolicy,
+    db_path: &Path,
     headers: &HeaderMap,
     remote_addr: SocketAddr,
     action: PolicyAction,
@@ -733,10 +739,17 @@ fn authorize_protected_daemon_route(
         resource,
         capability_id,
     );
+    record_protected_policy_decision(db_path, &decision);
     if decision.allowed() {
         Ok(decision)
     } else {
         Err(forbidden_error(&decision.reason))
+    }
+}
+
+fn record_protected_policy_decision(db_path: &Path, decision: &PolicyDecision) {
+    if let Ok(connection) = rusqlite::Connection::open(db_path) {
+        let _ = record_policy_decision(&connection, decision, PolicyDecisionCorrelation::default());
     }
 }
 

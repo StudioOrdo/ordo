@@ -109,6 +109,8 @@ The 0.1.0 Rust appliance spine starts in `crates/ordo-daemon`.
 cargo run -p ordo-daemon -- health-json
 cargo run -p ordo-daemon -- init-db --db-path .data/local.db
 cargo run -p ordo-daemon -- ready-json --db-path .data/local.db
+cargo run -p ordo-daemon -- latest-system-brief-json --db-path .data/local.db
+cargo run -p ordo-daemon -- generate-system-brief-json --db-path .data/local.db
 cargo run -p ordo-daemon -- serve --db-path .data/local.db
 ```
 

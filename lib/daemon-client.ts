@@ -19,12 +19,48 @@ export interface DaemonReadinessReport {
   checks: DaemonCheck[];
 }
 
+export interface BriefEvidence {
+  label: string;
+  value: string;
+  source: string;
+}
+
+export interface BriefProcessProvenance {
+  jobId: string;
+  templateId: string;
+  templateVersion: number;
+  origin: string;
+  status: string;
+}
+
+export interface SystemBriefArtifact {
+  id: string;
+  sectionKey: string;
+  jobId: string | null;
+  process: BriefProcessProvenance | null;
+  version: number;
+  title: string;
+  summary: string[];
+  bodyMarkdown: string;
+  evidence: BriefEvidence[];
+  limitations: string[];
+  visibility: string;
+  createdAt: string;
+  validUntil: string | null;
+}
+
+interface LatestSystemBriefResponse {
+  brief: SystemBriefArtifact | null;
+}
+
 export interface SystemSnapshot {
   daemonUrl: string;
   websocketUrl: string;
   createdAt: string;
   health: DaemonHealthReport | null;
   readiness: DaemonReadinessReport | null;
+  brief: SystemBriefArtifact | null;
+  briefError: string | null;
   degradedReason: string | null;
 }
 
@@ -75,9 +111,10 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
   const baseUrl = daemonUrl();
   const createdAt = new Date().toISOString();
 
-  const [healthResult, readinessResult] = await Promise.all([
+  const [healthResult, readinessResult, briefResult] = await Promise.all([
     readEndpoint<DaemonHealthReport>(baseUrl, "/health"),
     readEndpoint<DaemonReadinessReport>(baseUrl, "/ready"),
+    readEndpoint<LatestSystemBriefResponse>(baseUrl, "/briefs/system/latest"),
   ]);
 
   const degradedReasons = [healthResult.error, readinessResult.error].filter(Boolean);
@@ -88,6 +125,8 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
     createdAt,
     health: healthResult.data,
     readiness: readinessResult.data,
+    brief: briefResult.data?.brief ?? null,
+    briefError: briefResult.error,
     degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
   };
 }

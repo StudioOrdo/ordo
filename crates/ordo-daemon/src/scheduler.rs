@@ -4,8 +4,11 @@ use rusqlite::{params, Connection};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::briefs::SYSTEM_BRIEF_TEMPLATE_ID;
 use crate::kernel::create_job_from_template;
 use crate::templates::require_builtin_template_version;
+
+pub const SYSTEM_BRIEF_SCHEDULE_ID: &str = "schedule_system_brief_generate";
 
 #[derive(Debug, Clone)]
 pub struct ScheduleRecord {
@@ -54,6 +57,32 @@ pub fn create_schedule(connection: &Connection, input: CreateScheduleInput) -> R
         ],
     )?;
     Ok(())
+}
+
+pub fn ensure_default_system_brief_schedule(connection: &Connection) -> Result<()> {
+    let existing_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM schedules WHERE id = ?1",
+        [SYSTEM_BRIEF_SCHEDULE_ID],
+        |row| row.get(0),
+    )?;
+    if existing_count > 0 {
+        return Ok(());
+    }
+
+    create_schedule(
+        connection,
+        CreateScheduleInput {
+            id: SYSTEM_BRIEF_SCHEDULE_ID.to_string(),
+            template_id: SYSTEM_BRIEF_TEMPLATE_ID.to_string(),
+            template_version: 1,
+            name: "Generate System Brief".to_string(),
+            schedule_kind: "interval".to_string(),
+            interval_seconds: Some(3600),
+            run_at: None,
+            next_due_at: Utc::now().to_rfc3339(),
+            payload: serde_json::json!({ "sectionKey": "system" }),
+        },
+    )
 }
 
 pub fn list_due_schedules(

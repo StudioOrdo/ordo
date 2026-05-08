@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 const plannedSchedules = [
   ["system.health.check", "interval", "Template registered"],
-  ["brief.system.generate", "interval", "Pending executor"],
+  ["brief.system.generate", "interval", "Scheduled hourly"],
   ["backup.create", "interval", "Pending executor"],
 ] as const;
 

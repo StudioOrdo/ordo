@@ -20,6 +20,8 @@ These docs are product guidance. They are not all shipped features.
 - [Sovereignty Stack](sovereignty-stack.md)
 - [Production Engine](production-engine.md)
 - [Product Shape](product-shape.md)
+- [Ordo Core](ordo-core.md)
+- [Product Roadmap](product-roadmap.md)
 - [Project Philosophy](project-philosophy.md)
 - [Founder Note](founder-note.md)
 

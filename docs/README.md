@@ -35,7 +35,9 @@ For future direction, read:
 1. [Project Philosophy](business/project-philosophy.md)
 2. [Founding Thesis](business/founding-thesis.md)
 3. [Sovereignty Stack](business/sovereignty-stack.md)
-4. [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md)
+4. [Ordo Core](business/ordo-core.md)
+5. [Product Roadmap](business/product-roadmap.md)
+6. [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md)
 
 ## Local Docs Convention
 

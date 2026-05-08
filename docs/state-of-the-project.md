@@ -79,8 +79,8 @@ surfaces land.
 
 ## What Is Not Built Yet
 
-- Full product-depth surfaces such as Studio, People, Offers, Today, and
-  Conversations are not built yet.
+- Full product-depth surfaces such as Studio, Connections, Offers, About,
+  Asks, Feed, Today, and Conversations are not built yet.
 - Authentication UI, hosted identity, OAuth/email login, public portals, and
   multi-user product surfaces are not implemented yet.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
@@ -109,7 +109,13 @@ slices.
 - [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
   implemented retrieval safety foundation for future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,
-  Offers, and Feed surfaces without claiming they are built.
+  Offers, Asks, Feed, Connections, availability, handoff, affiliate, and sales
+  loop direction without claiming they are built.
+- [Ordo Core](business/ordo-core.md) describes the durable product doctrine and
+  how future MCP tools and packs should customize the work without bypassing the
+  trust boundary.
+- [Product Roadmap](business/product-roadmap.md) records the north-star
+  workflows and slice quality bar for future product development.
 - [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md) describes
   future Home Ordo and Worker Ordo scaling.
 - [Diagnostics And Reports Runtime Proof 1.0](process/diagnostics-reports-runtime-proof-1.0.md)

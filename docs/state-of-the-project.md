@@ -29,6 +29,12 @@ surfaces land.
 - Protected daemon actions now pass through a shared pre-RBAC policy decision
   spine that names actor, action, resource, capability, and outcome while
   preserving the current local trust boundary.
+- SQLite stores a durable local access foundation with actors, roles,
+  actor-role memberships, and resource grants. Fresh and upgraded databases seed
+  deterministic system and local owner baselines.
+- Policy decisions can consult durable resource grants for public,
+  owner/system, and per-actor private resources, while the current System shell
+  remains a local owner/operator surface.
 - The capability catalog distinguishes MCP export policy tiers, side effects,
   and approval requirements for read-only, local mutation, operator-confirmed,
   and non-exported dangerous operations.
@@ -65,8 +71,8 @@ surfaces land.
 
 - Full product-depth surfaces such as Studio, People, Offers, Today, and
   Conversations are not built yet.
-- Authentication, RBAC enforcement depth, and multi-user policy surfaces are not
-  implemented yet.
+- Authentication UI, hosted identity, OAuth/email login, public portals, and
+  multi-user product surfaces are not implemented yet.
 - RAG/vector memory and external integrations are not implemented yet.
 - Report submission transports to external systems are not implemented yet;
   Reports 1.0 prepares local evidence packages only.
@@ -86,7 +92,9 @@ slices.
 - [Diagnostics And Reports](architecture/diagnostics-and-reports.md) describes
   the implemented local Logs and Reports surfaces.
 - [Resource, Provenance, And Policy Spine](architecture/resource-provenance-policy.md)
-  describes the implemented pre-RBAC policy/provenance foundation.
+  describes the implemented policy/provenance foundation.
+- [Access And Local RBAC](architecture/access-rbac.md) describes the implemented
+  durable local access foundation.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,
   Offers, and Feed surfaces without claiming they are built.
 - [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md) describes

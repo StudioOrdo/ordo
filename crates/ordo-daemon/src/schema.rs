@@ -18,13 +18,17 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "diagnostic_logs",
     "job_artifacts",
     "issue_report_artifacts",
+    "actors",
+    "roles",
+    "actor_role_memberships",
+    "resource_grants",
     "schedules",
     "scheduled_job_runs",
     "brief_artifacts",
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 5;
+pub const CURRENT_SCHEMA_VERSION: i64 = 6;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -59,6 +63,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 5,
         name: "add_diagnostics_and_reports",
         apply: add_diagnostics_and_reports,
+    },
+    SchemaMigration {
+        version: 6,
+        name: "add_durable_access_model",
+        apply: add_durable_access_model,
     },
 ];
 
@@ -435,6 +444,148 @@ fn add_diagnostics_and_reports(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_durable_access_model(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS actors (
+            id TEXT PRIMARY KEY,
+            actor_kind TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_actors_kind_status ON actors(actor_kind, status);
+
+        CREATE TABLE IF NOT EXISTS roles (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS actor_role_memberships (
+            actor_id TEXT NOT NULL,
+            role_id TEXT NOT NULL,
+            granted_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (actor_id, role_id),
+            FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE,
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+            FOREIGN KEY (granted_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_actor_role_memberships_role ON actor_role_memberships(role_id, actor_id);
+
+        CREATE TABLE IF NOT EXISTS resource_grants (
+            id TEXT PRIMARY KEY,
+            resource_kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            subject_kind TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            effect TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_resource_grants_resource ON resource_grants(resource_kind, resource_id, action);
+        CREATE INDEX IF NOT EXISTS idx_resource_grants_subject ON resource_grants(subject_kind, subject_id);
+        "#,
+    )?;
+
+    seed_access_baseline(connection)
+}
+
+fn seed_access_baseline(connection: &Connection) -> Result<()> {
+    const SEEDED_AT: &str = "1970-01-01T00:00:00Z";
+    connection.execute(
+        "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+         VALUES ('actor_system', 'system', 'System', 'active', '{}', ?1, ?1)
+         ON CONFLICT(id) DO UPDATE SET actor_kind = excluded.actor_kind, display_name = excluded.display_name, status = excluded.status, updated_at = excluded.updated_at",
+        [SEEDED_AT],
+    )?;
+    connection.execute(
+        "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+         VALUES ('actor_local_owner', 'local_owner', 'Local Owner', 'active', '{}', ?1, ?1)
+         ON CONFLICT(id) DO UPDATE SET actor_kind = excluded.actor_kind, display_name = excluded.display_name, status = excluded.status, updated_at = excluded.updated_at",
+        [SEEDED_AT],
+    )?;
+    connection.execute(
+        "INSERT INTO roles (id, name, description, metadata_json, created_at, updated_at)
+         VALUES ('role_system', 'system', 'Internal system authority for local appliance work.', '{}', ?1, ?1)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, updated_at = excluded.updated_at",
+        [SEEDED_AT],
+    )?;
+    connection.execute(
+        "INSERT INTO roles (id, name, description, metadata_json, created_at, updated_at)
+         VALUES ('role_owner', 'owner', 'Local owner authority for this appliance.', '{}', ?1, ?1)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, updated_at = excluded.updated_at",
+        [SEEDED_AT],
+    )?;
+    connection.execute(
+        "INSERT OR IGNORE INTO actor_role_memberships (actor_id, role_id, granted_by_actor_id, created_at)
+         VALUES ('actor_system', 'role_system', 'actor_system', ?1)",
+        [SEEDED_AT],
+    )?;
+    connection.execute(
+        "INSERT OR IGNORE INTO actor_role_memberships (actor_id, role_id, granted_by_actor_id, created_at)
+         VALUES ('actor_local_owner', 'role_owner', 'actor_system', ?1)",
+        [SEEDED_AT],
+    )?;
+    seed_resource_grant(
+        connection,
+        "grant_role_system_all_system",
+        "system",
+        "*",
+        "*",
+        "role",
+        "role_system",
+    )?;
+    seed_resource_grant(
+        connection,
+        "grant_role_owner_all_system",
+        "system",
+        "*",
+        "*",
+        "role",
+        "role_owner",
+    )?;
+    seed_resource_grant(
+        connection,
+        "grant_role_owner_all_owner_system",
+        "owner_system",
+        "*",
+        "*",
+        "role",
+        "role_owner",
+    )?;
+    Ok(())
+}
+
+fn seed_resource_grant(
+    connection: &Connection,
+    id: &str,
+    resource_kind: &str,
+    resource_id: &str,
+    action: &str,
+    subject_kind: &str,
+    subject_id: &str,
+) -> Result<()> {
+    connection.execute(
+        "INSERT OR IGNORE INTO resource_grants (
+            id, resource_kind, resource_id, action, subject_kind, subject_id, effect, created_at, expires_at, metadata_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'allow', '1970-01-01T00:00:00Z', NULL, '{}')",
+        [id, resource_kind, resource_id, action, subject_kind, subject_id],
+    )?;
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -536,8 +687,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 5);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 6);
     }
 
     #[test]
@@ -604,6 +755,10 @@ mod tests {
             "approval_requirement"
         ));
         assert!(table_exists(&connection, "realtime_events"));
+        assert!(table_exists(&connection, "actors"));
+        assert!(table_exists(&connection, "roles"));
+        assert!(table_exists(&connection, "actor_role_memberships"));
+        assert!(table_exists(&connection, "resource_grants"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -650,6 +805,44 @@ mod tests {
             .unwrap();
 
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn durable_access_baseline_is_seeded() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let owner_roles: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM actor_role_memberships
+                 WHERE actor_id = 'actor_local_owner' AND role_id = 'role_owner'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let system_roles: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM actor_role_memberships
+                 WHERE actor_id = 'actor_system' AND role_id = 'role_system'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let owner_grants: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM resource_grants
+                 WHERE subject_kind = 'role' AND subject_id = 'role_owner' AND resource_kind = 'owner_system'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(owner_roles, 1);
+        assert_eq!(system_roles, 1);
+        assert_eq!(owner_grants, 1);
     }
 
     fn create_legacy_unversioned_database(connection: &Connection) {

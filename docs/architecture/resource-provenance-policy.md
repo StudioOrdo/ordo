@@ -1,14 +1,12 @@
 # Resource, Provenance, And Policy Spine
 
-Status: Implemented pre-RBAC foundation slice
+Status: Implemented foundation slice
 
-This spine gives Ordo a small shared vocabulary for accountable local work
-before full authentication and RBAC exist.
+This spine gives Ordo a small shared vocabulary for accountable local work.
 
-It does not implement durable users, roles, memberships, grants, or auth UI.
-Those remain future RBAC work. The current slice prepares the system by making
-protected work describable as actor, action, resource, capability, decision, and
-provenance.
+It is now paired with the local access/RBAC foundation. Auth UI and external
+identity flows remain future work. The current spine makes protected work
+describable as actor, action, resource, capability, decision, and provenance.
 
 ## Current Shape
 
@@ -62,20 +60,20 @@ The shipped classification vocabulary includes:
 - data handling tiers;
 - approval states.
 
-The current implementation uses this vocabulary for local operational reports.
-It does not yet enforce full per-user or per-resource access controls.
+The current implementation uses this vocabulary for local operational reports
+and durable local resource grants. It does not yet provide authentication UI,
+hosted identity, public portals, or access-aware retrieval.
 
 ## Relationship To RBAC
 
-RBAC should build on this spine instead of scattering permission checks across
-routes.
+RBAC builds on this spine instead of scattering permission checks across routes.
 
-Future RBAC work should add durable actors, roles, memberships, resource grants,
-and retrieval access checks behind the shared policy decision point.
+The current local foundation adds durable actors, roles, memberships, and
+resource grants behind the shared policy decision point. Future RBAC work should
+add authentication flows, public/session actors, and retrieval access checks.
 
 ## Non-Goals
 
-- No full RBAC.
 - No authentication UI.
 - No external report submission transport.
 - No legal, medical, finance, or tax product mode.

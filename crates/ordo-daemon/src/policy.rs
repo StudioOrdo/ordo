@@ -1,9 +1,13 @@
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::capabilities::{
     CapabilityDefinition, MCP_EXPORT_POLICY_DANGEROUS_NONE, MCP_EXPORT_POLICY_OPERATOR_CONFIRMED,
 };
+
+pub const SYSTEM_ACTOR_ID: &str = "actor_system";
+pub const LOCAL_OWNER_ACTOR_ID: &str = "actor_local_owner";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -48,8 +52,28 @@ impl ActorContext {
         Self::new(ActorKind::BrowserOperator, "http", None)
     }
 
+    pub fn local_owner(origin: impl Into<String>) -> Self {
+        Self::new(
+            ActorKind::LocalOwner,
+            origin,
+            Some(LOCAL_OWNER_ACTOR_ID.to_string()),
+        )
+    }
+
     pub fn mcp_client() -> Self {
-        Self::new(ActorKind::McpClient, "mcp", None)
+        Self::new(
+            ActorKind::McpClient,
+            "mcp",
+            Some(LOCAL_OWNER_ACTOR_ID.to_string()),
+        )
+    }
+
+    pub fn system() -> Self {
+        Self::new(
+            ActorKind::System,
+            "system",
+            Some(SYSTEM_ACTOR_ID.to_string()),
+        )
     }
 }
 
@@ -57,6 +81,8 @@ impl ActorContext {
 #[serde(rename_all = "snake_case")]
 pub enum ResourceKind {
     System,
+    OwnerSystem,
+    PrivateActor,
     DaemonRoute,
     Capability,
     ProcessTemplate,
@@ -71,6 +97,8 @@ impl ResourceKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::System => "system",
+            Self::OwnerSystem => "owner_system",
+            Self::PrivateActor => "private_actor",
             Self::DaemonRoute => "daemon_route",
             Self::Capability => "capability",
             Self::ProcessTemplate => "process_template",
@@ -303,6 +331,83 @@ pub fn authorize_protected_daemon_action(
     }
 }
 
+pub fn authorize_resource_access(
+    connection: &Connection,
+    actor: ActorContext,
+    action: PolicyAction,
+    resource: ResourceRef,
+    capability_id: Option<&str>,
+) -> PolicyDecision {
+    match resource_access_allowed(connection, &actor, action, &resource) {
+        Ok(true) => PolicyDecision {
+            outcome: PolicyOutcome::Allowed,
+            actor,
+            action,
+            resource,
+            capability_id: capability_id.map(ToString::to_string),
+            reason: "Durable resource grant allows this actor action.".to_string(),
+        },
+        Ok(false) => PolicyDecision {
+            outcome: PolicyOutcome::Denied,
+            actor,
+            action,
+            resource,
+            capability_id: capability_id.map(ToString::to_string),
+            reason: "No durable resource grant allows this actor action.".to_string(),
+        },
+        Err(error) => PolicyDecision {
+            outcome: PolicyOutcome::Denied,
+            actor,
+            action,
+            resource,
+            capability_id: capability_id.map(ToString::to_string),
+            reason: format!("Durable resource grant check failed: {error}"),
+        },
+    }
+}
+
+fn resource_access_allowed(
+    connection: &Connection,
+    actor: &ActorContext,
+    action: PolicyAction,
+    resource: &ResourceRef,
+) -> rusqlite::Result<bool> {
+    if resource.kind == ResourceKind::System && resource.id == "public" {
+        return Ok(matches!(action, PolicyAction::Read | PolicyAction::Inspect));
+    }
+
+    let Some(actor_id) = actor.id.as_deref() else {
+        return Ok(false);
+    };
+
+    let allowed: i64 = connection.query_row(
+        "SELECT COUNT(*)
+         FROM resource_grants grant_row
+         WHERE grant_row.effect = 'allow'
+           AND grant_row.resource_kind = ?1
+           AND grant_row.resource_id IN (?2, '*')
+           AND grant_row.action IN (?3, '*')
+           AND (
+                (grant_row.subject_kind = 'actor' AND grant_row.subject_id = ?4)
+                OR (
+                    grant_row.subject_kind = 'role'
+                    AND grant_row.subject_id IN (
+                        SELECT role_id FROM actor_role_memberships WHERE actor_id = ?4
+                    )
+                )
+           )",
+        params![
+            resource.kind.as_str(),
+            resource.id,
+            action.as_str(),
+            actor_id,
+        ],
+        |row| row.get(0),
+    )?;
+
+    Ok(allowed > 0)
+}
+
 pub fn authorize_mcp_capability(
     actor: ActorContext,
     capability: &CapabilityDefinition,
@@ -364,6 +469,7 @@ pub fn provenance_metadata(
 mod tests {
     use super::*;
     use crate::capabilities::{MCP_EXPORT_POLICY_LOCAL_MUTATION, MCP_EXPORT_POLICY_READ_ONLY};
+    use crate::schema::init_schema;
 
     fn capability(id: &str, policy: &str) -> CapabilityDefinition {
         CapabilityDefinition {
@@ -466,5 +572,89 @@ mod tests {
         assert_eq!(metadata["action"], "prepare");
         assert_eq!(metadata["resource"]["kind"], "issue_report");
         assert_eq!(metadata["classification"]["visibility"], "owner_system");
+    }
+
+    #[test]
+    fn durable_grants_allow_owner_system_and_deny_unknown_actor() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let owner_decision = authorize_resource_access(
+            &connection,
+            ActorContext::local_owner("test"),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::OwnerSystem, "issue_report_artifacts"),
+            None,
+        );
+        assert_eq!(owner_decision.outcome, PolicyOutcome::Allowed);
+
+        let unknown_decision = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_unknown".to_string()),
+            ),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::OwnerSystem, "issue_report_artifacts"),
+            None,
+        );
+        assert_eq!(unknown_decision.outcome, PolicyOutcome::Denied);
+    }
+
+    #[test]
+    fn durable_private_actor_grants_do_not_cross_actors() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+                 VALUES ('actor_student_a', 'external_user', 'Student A', 'active', '{}', 'now', 'now')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+                 VALUES ('actor_student_b', 'external_user', 'Student B', 'active', '{}', 'now', 'now')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO resource_grants (
+                    id, resource_kind, resource_id, action, subject_kind, subject_id, effect, created_at, metadata_json
+                 ) VALUES (
+                    'grant_student_a_report', 'private_actor', 'report_private', 'read', 'actor', 'actor_student_a', 'allow', 'now', '{}'
+                 )",
+                [],
+            )
+            .unwrap();
+
+        let student_a = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_student_a".to_string()),
+            ),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::PrivateActor, "report_private"),
+            None,
+        );
+        let student_b = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_student_b".to_string()),
+            ),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::PrivateActor, "report_private"),
+            None,
+        );
+
+        assert_eq!(student_a.outcome, PolicyOutcome::Allowed);
+        assert_eq!(student_b.outcome, PolicyOutcome::Denied);
     }
 }

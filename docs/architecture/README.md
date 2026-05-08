@@ -13,6 +13,7 @@ These docs turn the product thesis into system shape.
 - [Backup And Restore](backup-restore.md)
 - [Diagnostics And Reports](diagnostics-and-reports.md)
 - [Local Install And Providers](local-install-and-providers.md)
+- [Business Truth, Visibility, And Publication](business-truth-visibility.md)
 - [Resource, Provenance, And Policy Spine](resource-provenance-policy.md)
 - [Access And Local RBAC](access-rbac.md)
 - [Knowledge Corpus Skeleton](knowledge-corpus.md)

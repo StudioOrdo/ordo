@@ -21,6 +21,21 @@ material.
 | [process](process/README.md) | How work moves through issues, pull requests, checks, review, and release evidence. |
 | [decisions](decisions/README.md) | Accepted architecture and operating decisions. |
 
+## Current Reader Path
+
+For the current appliance, read:
+
+1. [State Of The Project](state-of-the-project.md)
+2. [System Architecture](architecture/system-architecture.md)
+3. [Diagnostics And Reports](architecture/diagnostics-and-reports.md)
+4. [Product Shape](business/product-shape.md)
+
+For future direction, read:
+
+1. [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md)
+2. [Founding Thesis](business/founding-thesis.md)
+3. [Sovereignty Stack](business/sovereignty-stack.md)
+
 ## Local Docs Convention
 
 Folders under `docs/` that start with `_` are private or local workspaces and

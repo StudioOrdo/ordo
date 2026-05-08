@@ -74,6 +74,17 @@ posture, MCP policy tier, MCP request strictness, durable event replay, schema
 migration, backup integrity, UI smoke coverage, and local diagnostics/reporting
 slices.
 
+## Useful Current References
+
+- [Diagnostics And Reports](architecture/diagnostics-and-reports.md) describes
+  the implemented local Logs and Reports surfaces.
+- [Product Shape](business/product-shape.md) describes the planned Chat, About,
+  Offers, and Feed surfaces without claiming they are built.
+- [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md) describes
+  future Home Ordo and Worker Ordo scaling.
+- [Diagnostics And Reports Runtime Proof 1.0](process/diagnostics-reports-runtime-proof-1.0.md)
+  records the container proof for the Logs and Reports slice.
+
 ## How To Read Claims
 
 If a doc describes product behavior that is not present in code yet, treat it as

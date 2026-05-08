@@ -17,6 +17,7 @@ These docs are product guidance. They are not all shipped features.
 - [Founding Thesis](founding-thesis.md)
 - [Sovereignty Stack](sovereignty-stack.md)
 - [Production Engine](production-engine.md)
+- [Product Shape](product-shape.md)
 
 ## Core Principle
 

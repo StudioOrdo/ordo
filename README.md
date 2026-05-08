@@ -67,6 +67,51 @@ a small, working proof of the core architecture before product depth.
 Read the [system architecture contract](docs/architecture/system-architecture.md)
 for the 0.1.0 design.
 
+## Current Build
+
+The current repository contains the local appliance foundation, not the full
+business product yet.
+
+Implemented now:
+
+- one Docker appliance image with a Rust daemon supervising a Next.js management
+  UI;
+- SQLite state with ordered schema migrations;
+- a reusable process/job/task kernel with durable events and artifacts;
+- System Brief, Health, Backup And Restore, Schedules, Preferences, Events,
+  Logs, and Reports surfaces in the System shell;
+- structured diagnostic logs and local issue report preparation;
+- backup creation and restore preflight safety;
+- a capability catalog and local MCP JSON-RPC projection with policy tiers;
+- persisted realtime event replay plus WebSocket projection.
+
+Not implemented yet:
+
+- public Chat, About, Offers, and Feed product surfaces;
+- authentication and full RBAC enforcement;
+- RAG/vector memory and content packs;
+- hosted trial orchestration;
+- Worker Ordos, A2A networking, and external report submission.
+
+Reports are local evidence packages today. Ordo can prepare, preview, copy, and
+export a markdown report from appliance diagnostics, but it does not submit
+reports to GitHub, support systems, or other Ordos yet.
+
+## Near-Term Product Direction
+
+The next product layers should connect the working appliance spine to the
+solopreneur operating system:
+
+- Chat becomes the primary interface.
+- About becomes the public business story.
+- Offers describe what can be bought.
+- Feed publishes composite public artifacts for people and machines.
+- RBAC keeps public, signed-in, owner/admin, and per-user private data separate.
+- Knowledge/RAG grounds answers in approved corpus material with provenance.
+- Content packs become portable, human-approved knowledge products.
+- Worker Ordos and A2A remain future architecture for scaling bounded work while
+  one Home Ordo owns canonical truth.
+
 ## Software Manufacturing
 
 This repository builds Ordo in public using the same process Ordo asks the
@@ -89,15 +134,10 @@ working process.
 
 ## Repository Status
 
-This repository is being initialized as the clean Studio Ordo build.
-
-At this stage, the goal is to establish:
-
-- the idea base;
-- the public work process;
-- architecture decisions;
-- contribution rules;
-- the first implementation contract.
+This repository has completed the 0.1.0 Appliance Specimen pass and is in the
+0.1.1 appliance stabilization track. The current work is still not production
+business automation; it is the inspectable local foundation that later product
+surfaces will use.
 
 The product is not ready for production use yet.
 

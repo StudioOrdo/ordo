@@ -30,6 +30,8 @@ slice before deeper product surfaces land.
 - The capability catalog distinguishes MCP export policy tiers, side effects,
   and approval requirements for read-only, local mutation, operator-confirmed,
   and non-exported dangerous operations.
+- The local MCP projection validates JSON-RPC 2.0 request shape and tool
+  arguments against catalog input schemas before dispatch.
 - The 0.1.0 release evidence dossier is recorded in
   [release-0.1.0.md](process/release-0.1.0.md).
 
@@ -42,15 +44,14 @@ slice before deeper product surfaces land.
 - RAG/vector memory and external integrations are not implemented yet.
 - MCP is currently a local JSON-RPC daemon projection with first policy tiers,
   not a third-party plugin surface.
-- Durable event replay, schema migrations, backup integrity, MCP request
-  strictness, and UI smoke coverage remain the next stabilization concerns.
+- Durable event replay, schema migrations, backup integrity, and UI smoke
+  coverage remain the next stabilization concerns.
 
 ## Current Goal
 
-Continue `0.1.1 Appliance Trust Boundary` after the runtime supervision and
-first network posture and MCP policy tier slices, then harden MCP request
-strictness, event replay, schema migrations, backup integrity, and UI smoke
-coverage.
+Continue `0.1.1 Appliance Trust Boundary` after the runtime supervision,
+network posture, MCP policy tier, and MCP request strictness slices, then
+harden event replay, schema migrations, backup integrity, and UI smoke coverage.
 
 ## How To Read Claims
 

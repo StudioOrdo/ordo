@@ -129,6 +129,7 @@ async fn main() -> Result<()> {
                 serde_json::to_string_pretty(&handle_mcp_request(
                     &db_path,
                     McpRequest {
+                        jsonrpc: "2.0".to_string(),
                         id: Some(serde_json::json!("cli")),
                         method,
                         params: Some(params),

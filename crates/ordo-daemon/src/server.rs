@@ -28,7 +28,7 @@ use crate::events::{system_event, RealtimeEvent};
 use crate::health::{
     build_health_report, build_readiness_report, HealthCheck, HealthReport, ReadinessReport,
 };
-use crate::mcp::{handle_mcp_request, McpRequest, McpResponse};
+use crate::mcp::{handle_mcp_json, McpResponse};
 use crate::schema::init_database;
 
 const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
@@ -501,10 +501,10 @@ async fn mcp_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     State(state): State<AppState>,
-    Json(request): Json<McpRequest>,
+    request_body: String,
 ) -> Result<Json<McpResponse>, (StatusCode, Json<ErrorResponse>)> {
     authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
-    Ok(Json(handle_mcp_request(&state.db_path, request)))
+    Ok(Json(handle_mcp_json(&state.db_path, &request_body)))
 }
 
 fn authorize_protected_daemon_route(

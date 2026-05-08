@@ -8,6 +8,8 @@ use crate::capabilities::{
 
 pub const SYSTEM_ACTOR_ID: &str = "actor_system";
 pub const LOCAL_OWNER_ACTOR_ID: &str = "actor_local_owner";
+pub const SYSTEM_ROLE_ID: &str = "role_system";
+pub const OWNER_ROLE_ID: &str = "role_owner";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -370,6 +372,87 @@ pub fn authorize_resource_access(
     }
 }
 
+pub fn authorize_capability_access(
+    connection: &Connection,
+    actor: ActorContext,
+    action: PolicyAction,
+    capability: &CapabilityDefinition,
+) -> PolicyDecision {
+    let resource = ResourceRef::new(ResourceKind::Capability, capability.id.clone());
+    match capability_access_allowed(connection, &actor, capability) {
+        Ok(true) => PolicyDecision {
+            outcome: PolicyOutcome::Allowed,
+            actor,
+            action,
+            resource,
+            capability_id: Some(capability.id.clone()),
+            reason: "Durable role membership allows this capability.".to_string(),
+        },
+        Ok(false) => PolicyDecision {
+            outcome: PolicyOutcome::Denied,
+            actor,
+            action,
+            resource,
+            capability_id: Some(capability.id.clone()),
+            reason: "No durable role membership allows this capability.".to_string(),
+        },
+        Err(error) => PolicyDecision {
+            outcome: PolicyOutcome::Denied,
+            actor,
+            action,
+            resource,
+            capability_id: Some(capability.id.clone()),
+            reason: format!("Durable capability role check failed: {error}"),
+        },
+    }
+}
+
+fn capability_access_allowed(
+    connection: &Connection,
+    actor: &ActorContext,
+    capability: &CapabilityDefinition,
+) -> rusqlite::Result<bool> {
+    let Some(actor_id) = actor.id.as_deref() else {
+        return Ok(false);
+    };
+    let owner_allowed = capability
+        .roles_allowed
+        .iter()
+        .any(|role| durable_role_id_for_catalog_role(role) == Some(OWNER_ROLE_ID));
+    let system_allowed = capability
+        .roles_allowed
+        .iter()
+        .any(|role| durable_role_id_for_catalog_role(role) == Some(SYSTEM_ROLE_ID));
+    if !owner_allowed && !system_allowed {
+        return Ok(false);
+    }
+
+    let allowed: i64 = connection.query_row(
+        "SELECT COUNT(*)
+         FROM actor_role_memberships
+         WHERE actor_id = ?1
+           AND ((?2 AND role_id = ?3) OR (?4 AND role_id = ?5))",
+        params![
+            actor_id,
+            owner_allowed,
+            OWNER_ROLE_ID,
+            system_allowed,
+            SYSTEM_ROLE_ID,
+        ],
+        |row| row.get(0),
+    )?;
+
+    Ok(allowed > 0)
+}
+
+fn durable_role_id_for_catalog_role(role: &str) -> Option<&'static str> {
+    match role {
+        "owner" => Some(OWNER_ROLE_ID),
+        "system" => Some(SYSTEM_ROLE_ID),
+        _ => None,
+    }
+}
+
 fn resource_access_allowed(
     connection: &Connection,
     actor: &ActorContext,
@@ -413,6 +496,7 @@ fn resource_access_allowed(
 }
 
 pub fn authorize_mcp_capability(
+    connection: &Connection,
     actor: ActorContext,
     capability: &CapabilityDefinition,
 ) -> PolicyDecision {
@@ -426,22 +510,24 @@ pub fn authorize_mcp_capability(
             capability_id: Some(capability.id.clone()),
             reason: "Capability is not exported through the governed MCP projection.".to_string(),
         },
-        MCP_EXPORT_POLICY_OPERATOR_CONFIRMED => PolicyDecision {
-            outcome: PolicyOutcome::ReviewRequired,
-            actor,
-            action: PolicyAction::CallTool,
-            resource,
-            capability_id: Some(capability.id.clone()),
-            reason: "Capability requires operator confirmation before execution.".to_string(),
-        },
-        _ => PolicyDecision {
-            outcome: PolicyOutcome::Allowed,
-            actor,
-            action: PolicyAction::CallTool,
-            resource,
-            capability_id: Some(capability.id.clone()),
-            reason: "Capability is exported through the governed MCP projection.".to_string(),
-        },
+        MCP_EXPORT_POLICY_OPERATOR_CONFIRMED => {
+            let role_decision =
+                authorize_capability_access(connection, actor, PolicyAction::CallTool, capability);
+            if role_decision.outcome == PolicyOutcome::Denied {
+                role_decision
+            } else {
+                PolicyDecision {
+                    outcome: PolicyOutcome::ReviewRequired,
+                    actor: role_decision.actor,
+                    action: PolicyAction::CallTool,
+                    resource,
+                    capability_id: Some(capability.id.clone()),
+                    reason: "Capability requires operator confirmation before execution."
+                        .to_string(),
+                }
+            }
+        }
+        _ => authorize_capability_access(connection, actor, PolicyAction::CallTool, capability),
     }
 }
 
@@ -476,6 +562,10 @@ mod tests {
     use crate::schema::init_schema;
 
     fn capability(id: &str, policy: &str) -> CapabilityDefinition {
+        capability_with_roles(id, policy, &["owner"])
+    }
+
+    fn capability_with_roles(id: &str, policy: &str, roles: &[&str]) -> CapabilityDefinition {
         CapabilityDefinition {
             id: id.to_string(),
             label: id.to_string(),
@@ -483,7 +573,7 @@ mod tests {
             family: "system".to_string(),
             input_schema: json!({}),
             output_contract: json!({}),
-            roles_allowed: vec!["owner".to_string()],
+            roles_allowed: roles.iter().map(|role| role.to_string()).collect(),
             execution_target: "rust".to_string(),
             timeout_seconds: 30,
             retry_policy: json!({}),
@@ -525,8 +615,12 @@ mod tests {
 
     #[test]
     fn mcp_policy_distinguishes_export_review_and_denial() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
         assert_eq!(
             authorize_mcp_capability(
+                &connection,
                 ActorContext::mcp_client(),
                 &capability("system.status.read", MCP_EXPORT_POLICY_READ_ONLY),
             )
@@ -535,6 +629,7 @@ mod tests {
         );
         assert_eq!(
             authorize_mcp_capability(
+                &connection,
                 ActorContext::mcp_client(),
                 &capability("backup.create", MCP_EXPORT_POLICY_LOCAL_MUTATION),
             )
@@ -543,6 +638,7 @@ mod tests {
         );
         assert_eq!(
             authorize_mcp_capability(
+                &connection,
                 ActorContext::mcp_client(),
                 &capability(
                     "restore.preflight.validate",
@@ -554,6 +650,7 @@ mod tests {
         );
         assert_eq!(
             authorize_mcp_capability(
+                &connection,
                 ActorContext::mcp_client(),
                 &capability("restore.execute", MCP_EXPORT_POLICY_DANGEROUS_NONE),
             )
@@ -736,5 +833,71 @@ mod tests {
         assert_eq!(owner_system.outcome, PolicyOutcome::Allowed);
         assert_eq!(private_reader.outcome, PolicyOutcome::Allowed);
         assert_eq!(other_reader.outcome, PolicyOutcome::Denied);
+    }
+
+    #[test]
+    fn capability_roles_bind_to_durable_role_memberships() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let owner_capability = capability_with_roles(
+            "brief.system.generate",
+            MCP_EXPORT_POLICY_LOCAL_MUTATION,
+            &["owner", "system"],
+        );
+        let owner_decision = authorize_capability_access(
+            &connection,
+            ActorContext::local_owner("test"),
+            PolicyAction::Execute,
+            &owner_capability,
+        );
+        let system_decision = authorize_capability_access(
+            &connection,
+            ActorContext::system(),
+            PolicyAction::Execute,
+            &owner_capability,
+        );
+        let unknown_decision = authorize_capability_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_unknown".to_string()),
+            ),
+            PolicyAction::Execute,
+            &owner_capability,
+        );
+
+        assert_eq!(owner_decision.outcome, PolicyOutcome::Allowed);
+        assert_eq!(system_decision.outcome, PolicyOutcome::Allowed);
+        assert_eq!(unknown_decision.outcome, PolicyOutcome::Denied);
+    }
+
+    #[test]
+    fn capability_roles_do_not_bypass_resource_grants() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let capability = capability_with_roles(
+            "issue.report.prepare",
+            MCP_EXPORT_POLICY_LOCAL_MUTATION,
+            &["owner"],
+        );
+
+        let capability_decision = authorize_capability_access(
+            &connection,
+            ActorContext::local_owner("test"),
+            PolicyAction::Execute,
+            &capability,
+        );
+        let resource_decision = authorize_resource_access(
+            &connection,
+            ActorContext::local_owner("test"),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::PrivateActor, "other_actor_private_resource"),
+            Some("issue.report.prepare"),
+        );
+
+        assert_eq!(capability_decision.outcome, PolicyOutcome::Allowed);
+        assert_eq!(resource_decision.outcome, PolicyOutcome::Denied);
     }
 }

@@ -29,6 +29,10 @@ work durable tables to build on.
 The policy layer can now evaluate durable resource grants for actor, action, and
 resource decisions.
 
+Capability authorization also uses durable role membership. Existing capability
+catalog role labels such as `owner` and `system` map to the seeded local roles
+`role_owner` and `role_system` before a local actor can use a capability.
+
 The current implementation distinguishes:
 
 - public resources;
@@ -39,8 +43,9 @@ Protected daemon mutations still require the existing loopback or daemon access
 token boundary. Once that local boundary is satisfied, current System shell
 protected actions are represented as the local owner actor.
 
-MCP export policy behavior remains governed by the capability catalog. This RBAC
-foundation does not expand MCP exposure.
+MCP export policy behavior remains governed by the capability catalog. Capability
+role binding does not expand MCP exposure, and `dangerous_none` capabilities
+remain unavailable through MCP.
 
 ## What This Enables
 

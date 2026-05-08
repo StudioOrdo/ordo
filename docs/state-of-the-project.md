@@ -41,6 +41,9 @@ surfaces land.
 - The capability catalog distinguishes MCP export policy tiers, side effects,
   and approval requirements for read-only, local mutation, operator-confirmed,
   and non-exported dangerous operations.
+- Capability role metadata is bound to durable local role membership, so seeded
+  owner/system actors can use owner/system capabilities while unknown actors
+  without role membership are denied.
 - The local MCP projection validates JSON-RPC 2.0 request shape and tool
   arguments against catalog input schemas before dispatch, and tool-call results
   include Ordo policy decision metadata.

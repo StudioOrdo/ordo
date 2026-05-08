@@ -29,7 +29,8 @@ access token.
 The MCP projection also records a policy decision for tool calls. Capabilities
 with the `dangerous_none` MCP export policy remain denied from MCP. Operator
 confirmed capabilities surface as review-required decisions while preserving the
-current governed projection behavior.
+current governed projection behavior. Exported MCP tool calls also pass through
+durable capability role binding before the export-tier decision is accepted.
 
 ## Provenance
 
@@ -60,9 +61,10 @@ The shipped classification vocabulary includes:
 - data handling tiers;
 - approval states.
 
-The current implementation uses this vocabulary for local operational reports
-and durable local resource grants. It does not yet provide authentication UI,
-hosted identity, public portals, or access-aware retrieval.
+The current implementation uses this vocabulary for local operational reports,
+durable local resource grants, and capability role decisions. It does not yet
+provide authentication UI, hosted identity, public portals, or access-aware
+retrieval.
 
 ## Relationship To RBAC
 

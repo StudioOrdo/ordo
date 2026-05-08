@@ -21,8 +21,10 @@ use crate::backups::{
 use crate::briefs::{
     generate_system_brief, latest_system_brief, run_due_system_brief_schedules, LatestBriefResponse,
 };
+use crate::capabilities::{list_capabilities, CapabilityCatalogResponse};
 use crate::events::{system_event, RealtimeEvent};
 use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
+use crate::mcp::{handle_mcp_request, McpRequest, McpResponse};
 use crate::schema::init_database;
 
 #[derive(Clone)]
@@ -54,6 +56,7 @@ pub async fn serve(
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
+        .route("/capabilities", get(capabilities_handler))
         .route("/briefs/system/latest", get(latest_system_brief_handler))
         .route(
             "/briefs/system/generate",
@@ -62,6 +65,7 @@ pub async fn serve(
         .route("/backups", get(list_backup_restore_handler))
         .route("/backups/create", post(create_backup_handler))
         .route("/restore/validate", post(validate_restore_handler))
+        .route("/mcp", post(mcp_handler))
         .route("/ws", get(ws_handler))
         .with_state(state.clone());
 
@@ -162,6 +166,14 @@ async fn ready_handler(State(state): State<AppState>) -> (StatusCode, Json<Readi
     (status, Json(report))
 }
 
+async fn capabilities_handler(
+    State(state): State<AppState>,
+) -> Result<Json<CapabilityCatalogResponse>, (StatusCode, Json<ErrorResponse>)> {
+    list_capabilities(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ErrorResponse {
@@ -221,6 +233,13 @@ async fn validate_restore_handler(
     list_backup_restore_jobs(&state.db_path)
         .map(Json)
         .map_err(internal_error)
+}
+
+async fn mcp_handler(
+    State(state): State<AppState>,
+    Json(request): Json<McpRequest>,
+) -> Json<McpResponse> {
+    Json(handle_mcp_request(&state.db_path, request))
 }
 
 fn internal_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {

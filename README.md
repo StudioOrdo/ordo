@@ -55,7 +55,7 @@ Ordo is being designed as a sovereign appliance:
 - SQLite for durable local-first state;
 - Next.js for product routes, UI, auth, policy, and read models;
 - Rust for realtime fanout, native execution, backup/restore, media, and local
-	search work;
+  search work;
 - local files for generated artifacts, backups, and media;
 - no required external infrastructure for the core product.
 
@@ -109,6 +109,9 @@ The 0.1.0 Rust appliance spine starts in `crates/ordo-daemon`.
 cargo run -p ordo-daemon -- health-json
 cargo run -p ordo-daemon -- init-db --db-path .data/local.db
 cargo run -p ordo-daemon -- ready-json --db-path .data/local.db
+cargo run -p ordo-daemon -- list-capabilities-json --db-path .data/local.db
+cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/list
+cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/call --params-json '{"name":"system.status.read","arguments":{}}'
 cargo run -p ordo-daemon -- latest-system-brief-json --db-path .data/local.db
 cargo run -p ordo-daemon -- generate-system-brief-json --db-path .data/local.db
 cargo run -p ordo-daemon -- create-backup-json --db-path .data/local.db
@@ -146,6 +149,18 @@ docker compose up
 Then open `http://localhost:3000` for the UI. The daemon is exposed at
 `http://localhost:17760` for health, readiness, API routes, and WebSocket
 projection.
+
+The daemon also exposes the Phase 6 capability catalog and MCP projection:
+
+```bash
+curl http://localhost:17760/capabilities
+curl -s http://localhost:17760/mcp \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+curl -s http://localhost:17760/mcp \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"system.status.read","arguments":{}}}'
+```
 
 Useful runtime commands:
 

@@ -1,6 +1,6 @@
 # Capability Catalog
 
-Status: Draft contract for Ordo 0.1.0
+Status: Implemented seed for Ordo 0.1.0
 
 The capability catalog is the source of truth for what Ordo can do.
 
@@ -24,6 +24,22 @@ Each capability should define:
 - prompt exposure policy;
 - MCP export policy.
 
+## Implemented Shape
+
+The Rust daemon owns the first durable catalog in SQLite:
+
+- `capabilities` stores stable capability definitions, schemas, execution
+  targets, artifact hints, scheduler eligibility, prompt exposure, and MCP
+  export policy;
+- `process_templates.capability_id`, `jobs.capability_id`, and
+  `job_tasks.capability_id` copy the governed capability binding into each run;
+- built-in templates are validated against the catalog during seed;
+- job creation validates the template and task capability IDs before inserting
+  the job DAG.
+
+The daemon exposes the catalog at `/capabilities` and through the CLI command
+`list-capabilities-json`.
+
 ## Registry Rule
 
 Process templates may only reference registered task kinds. Ordo must not run
@@ -36,16 +52,26 @@ governed by catalog schema, permissions, and executor binding.
 
 The first catalog should be small:
 
-- `system.health.check`;
-- `brief.evidence.collect`;
-- `brief.system.generate`;
-- `brief.claims.validate`;
-- `backup.boundary.check`;
-- `backup.archive.write`;
-- `backup.integrity.verify`;
-- `restore.archive.verify`;
-- `restore.execute`;
-- `system.next.restart`.
+- system status and appliance runtime status read tools;
+- System Brief read and generation capabilities;
+- backup listing and creation capabilities;
+- restore preflight validation capability;
+- all task kinds currently used by `system.health.check`,
+  `brief.system.generate`, `backup.create`, and `restore.execute` process
+  templates.
 
-The exact implementation may collapse or split these task kinds, but the
-architecture must keep the catalog as the authority.
+The exact implementation may continue to collapse or split task kinds, but the
+architecture keeps the catalog as the authority.
+
+## MCP Projection
+
+The daemon exposes a small JSON-RPC MCP projection at `/mcp`. It supports:
+
+- `initialize`;
+- `ping`;
+- `tools/list` for capabilities with `mcp_export_policy = safe_system_tool`;
+- `tools/call` for safe system tools backed by existing daemon functions.
+
+MCP tool calls do not run arbitrary code. Mutating tools such as
+`brief.system.generate` and `backup.create` call the same governed Rust kernel
+paths used by HTTP and CLI entrypoints, with origin set to `mcp`.

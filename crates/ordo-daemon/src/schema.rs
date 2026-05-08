@@ -3,10 +3,12 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::Path;
 
+use crate::capabilities::seed_builtin_capabilities;
 use crate::scheduler::ensure_default_system_brief_schedule;
 use crate::templates::seed_builtin_templates;
 
 pub const REQUIRED_TABLES: &[&str] = &[
+    "capabilities",
     "process_templates",
     "jobs",
     "job_tasks",
@@ -28,6 +30,7 @@ pub fn init_database(db_path: &Path) -> Result<()> {
 
     let connection = Connection::open(db_path)?;
     init_schema(&connection)?;
+    seed_builtin_capabilities(&connection)?;
     seed_builtin_templates(&connection)?;
     ensure_default_system_brief_schedule(&connection)?;
     Ok(())
@@ -40,6 +43,7 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
 
         CREATE TABLE IF NOT EXISTS process_templates (
             id TEXT NOT NULL,
+            capability_id TEXT NOT NULL DEFAULT '',
             kind TEXT NOT NULL,
             name TEXT NOT NULL,
             version INTEGER NOT NULL,
@@ -54,6 +58,7 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
             id TEXT PRIMARY KEY,
             template_id TEXT NOT NULL,
             template_version INTEGER NOT NULL,
+            capability_id TEXT NOT NULL DEFAULT '',
             kind TEXT NOT NULL,
             status TEXT NOT NULL,
             origin TEXT NOT NULL,
@@ -76,6 +81,7 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
             id TEXT PRIMARY KEY,
             job_id TEXT NOT NULL,
             task_key TEXT NOT NULL,
+            capability_id TEXT NOT NULL DEFAULT '',
             task_kind TEXT NOT NULL,
             label TEXT NOT NULL,
             required INTEGER NOT NULL DEFAULT 1,
@@ -185,9 +191,83 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
             value_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS capabilities (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            description TEXT NOT NULL,
+            family TEXT NOT NULL,
+            input_schema_json TEXT NOT NULL DEFAULT '{}',
+            output_contract_json TEXT NOT NULL DEFAULT '{}',
+            roles_allowed_json TEXT NOT NULL DEFAULT '[]',
+            execution_target TEXT NOT NULL,
+            timeout_seconds INTEGER NOT NULL DEFAULT 30,
+            retry_policy_json TEXT NOT NULL DEFAULT '{}',
+            artifact_kinds_json TEXT NOT NULL DEFAULT '[]',
+            scheduler_eligible INTEGER NOT NULL DEFAULT 0,
+            prompt_exposure TEXT NOT NULL DEFAULT 'internal',
+            mcp_export_policy TEXT NOT NULL DEFAULT 'none',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_capabilities_family ON capabilities(family, id);
+        CREATE INDEX IF NOT EXISTS idx_capabilities_mcp_export ON capabilities(mcp_export_policy, id);
         "#,
     )?;
 
+    ensure_column(
+        connection,
+        "process_templates",
+        "capability_id",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        connection,
+        "jobs",
+        "capability_id",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        connection,
+        "job_tasks",
+        "capability_id",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    connection.execute(
+        "UPDATE process_templates SET capability_id = kind WHERE capability_id = ''",
+        [],
+    )?;
+    connection.execute(
+        "UPDATE jobs SET capability_id = kind WHERE capability_id = ''",
+        [],
+    )?;
+    connection.execute(
+        "UPDATE job_tasks SET capability_id = task_kind WHERE capability_id = ''",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn ensure_column(
+    connection: &Connection,
+    table_name: &str,
+    column_name: &str,
+    definition: &str,
+) -> Result<()> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table_name})"))?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    for column in columns {
+        if column? == column_name {
+            return Ok(());
+        }
+    }
+
+    connection.execute(
+        &format!("ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"),
+        [],
+    )?;
     Ok(())
 }
 
@@ -219,14 +299,14 @@ mod tests {
 
         connection.execute(
             "INSERT INTO process_templates (
-                id, kind, name, version, description, tasks_json, created_at, updated_at
-             ) VALUES ('brief.system.generate', 'brief.system.generate', 'System Brief', 1, 'v1', '[]', 'now', 'now')",
+                id, capability_id, kind, name, version, description, tasks_json, created_at, updated_at
+             ) VALUES ('brief.system.generate', 'brief.system.generate', 'brief.system.generate', 'System Brief', 1, 'v1', '[]', 'now', 'now')",
             [],
         ).unwrap();
         connection.execute(
             "INSERT INTO process_templates (
-                id, kind, name, version, description, tasks_json, created_at, updated_at
-             ) VALUES ('brief.system.generate', 'brief.system.generate', 'System Brief', 2, 'v2', '[]', 'now', 'now')",
+                id, capability_id, kind, name, version, description, tasks_json, created_at, updated_at
+             ) VALUES ('brief.system.generate', 'brief.system.generate', 'brief.system.generate', 'System Brief', 2, 'v2', '[]', 'now', 'now')",
             [],
         ).unwrap();
 

@@ -6,7 +6,9 @@ use ordo_daemon::backups::{
     create_backup, list_backup_restore_jobs, run_restore_preflight, RestorePreflightRequest,
 };
 use ordo_daemon::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
+use ordo_daemon::capabilities::list_capabilities;
 use ordo_daemon::health::{build_health_report, build_readiness_report};
+use ordo_daemon::mcp::{handle_mcp_request, McpRequest};
 use ordo_daemon::schema::init_database;
 use ordo_daemon::server::{serve, NextSupervisorConfig};
 
@@ -30,6 +32,20 @@ enum Commands {
     InitDb {
         #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
         db_path: PathBuf,
+    },
+    #[command(name = "list-capabilities-json")]
+    ListCapabilitiesJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+    },
+    #[command(name = "mcp-json")]
+    McpJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+        #[arg(long)]
+        method: String,
+        #[arg(long, default_value = "{}")]
+        params_json: String,
     },
     #[command(name = "latest-system-brief-json")]
     LatestSystemBriefJson {
@@ -91,6 +107,32 @@ async fn main() -> Result<()> {
         Commands::InitDb { db_path } => {
             init_database(&db_path)?;
             println!("{}", serde_json::json!({ "ok": true, "dbPath": db_path }));
+        }
+        Commands::ListCapabilitiesJson { db_path } => {
+            init_database(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&list_capabilities(&db_path)?)?
+            );
+        }
+        Commands::McpJson {
+            db_path,
+            method,
+            params_json,
+        } => {
+            init_database(&db_path)?;
+            let params = serde_json::from_str(&params_json)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&handle_mcp_request(
+                    &db_path,
+                    McpRequest {
+                        id: Some(serde_json::json!("cli")),
+                        method,
+                        params: Some(params),
+                    },
+                ))?
+            );
         }
         Commands::LatestSystemBriefJson { db_path } => {
             init_database(&db_path)?;

@@ -63,3 +63,7 @@ adding deeper surfaces such as:
 - No external integrations.
 - No domain-specific legal, medical, finance, or tax mode.
 - No broad Job Kernel V2 implementation.
+
+The knowledge corpus skeleton now gives future retrieval work resource identity
+and metadata fields to connect to this access path. It does not implement
+retrieval, embeddings, or RAG.

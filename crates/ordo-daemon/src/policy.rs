@@ -91,6 +91,8 @@ pub enum ResourceKind {
     BriefArtifact,
     IssueReport,
     DiagnosticLog,
+    CorpusSource,
+    CorpusItem,
 }
 
 impl ResourceKind {
@@ -107,6 +109,8 @@ impl ResourceKind {
             Self::BriefArtifact => "brief_artifact",
             Self::IssueReport => "issue_report",
             Self::DiagnosticLog => "diagnostic_log",
+            Self::CorpusSource => "corpus_source",
+            Self::CorpusItem => "corpus_item",
         }
     }
 }
@@ -656,5 +660,81 @@ mod tests {
 
         assert_eq!(student_a.outcome, PolicyOutcome::Allowed);
         assert_eq!(student_b.outcome, PolicyOutcome::Denied);
+    }
+
+    #[test]
+    fn durable_grants_protect_corpus_resources_before_retrieval_exists() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+                 VALUES ('actor_private_reader', 'external_user', 'Private Reader', 'active', '{}', 'now', 'now')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+                 VALUES ('actor_other_reader', 'external_user', 'Other Reader', 'active', '{}', 'now', 'now')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO corpus_sources (
+                    id, source_kind, label, uri, resource_kind, resource_id, status,
+                    classification_json, provenance_json, metadata_json, created_at, updated_at
+                 ) VALUES (
+                    'corpus_source_private', 'markdown', 'Private Notes', NULL,
+                    'private_actor', 'knowledge_private_reader', 'approved', '{}', '{}', '{}', 'now', 'now'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO resource_grants (
+                    id, resource_kind, resource_id, action, subject_kind, subject_id, effect, created_at, metadata_json
+                 ) VALUES (
+                    'grant_private_reader_corpus', 'corpus_source', 'corpus_source_private', 'read', 'actor', 'actor_private_reader', 'allow', 'now', '{}'
+                 )",
+                [],
+            )
+            .unwrap();
+
+        let owner_system = authorize_resource_access(
+            &connection,
+            ActorContext::local_owner("test"),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::OwnerSystem, "knowledge_owner_manual"),
+            None,
+        );
+        let private_reader = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_private_reader".to_string()),
+            ),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::CorpusSource, "corpus_source_private"),
+            None,
+        );
+        let other_reader = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_other_reader".to_string()),
+            ),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::CorpusSource, "corpus_source_private"),
+            None,
+        );
+
+        assert_eq!(owner_system.outcome, PolicyOutcome::Allowed);
+        assert_eq!(private_reader.outcome, PolicyOutcome::Allowed);
+        assert_eq!(other_reader.outcome, PolicyOutcome::Denied);
     }
 }

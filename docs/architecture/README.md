@@ -13,6 +13,7 @@ These docs turn the product thesis into system shape.
 - [Backup And Restore](backup-restore.md)
 - [Diagnostics And Reports](diagnostics-and-reports.md)
 - [Resource, Provenance, And Policy Spine](resource-provenance-policy.md)
+- [Access And Local RBAC](access-rbac.md)
 - [Scaling With Worker Ordos](scaling-worker-ordos.md)
 - [Sovereign Appliance](sovereign-appliance.md)
 

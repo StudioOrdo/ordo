@@ -749,7 +749,7 @@ fn protected_daemon_route_decision(
     capability_id: Option<&str>,
 ) -> PolicyDecision {
     authorize_protected_daemon_action(
-        ActorContext::browser_operator(),
+        ActorContext::local_owner("http"),
         action,
         resource,
         capability_id,

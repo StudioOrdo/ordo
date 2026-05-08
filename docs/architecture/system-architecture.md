@@ -22,12 +22,16 @@ evidence into plain-language staff reports.
 | --- | --- |
 | Rust daemon | Appliance supervision, scheduler, WebSocket pubsub, native/system jobs, health, backup/restore execution. |
 | Next.js | Product UI, routes, read models, policy checks, brief rendering, shell navigation. |
-| SQLite | Durable local state for capabilities, templates, jobs, tasks, events, artifacts, schedules, briefs, preferences, backups. |
+| SQLite | Durable local state for capabilities, templates, jobs, tasks, events, artifacts, schedules, briefs, preferences, backups, and ordered schema versioning. |
 | Docker | One-image appliance packaging with `.data` as the durable boundary. |
 
 Rust owns long-running appliance behavior. Next owns product meaning and user
 experience. SQLite is the source of truth. WebSocket is a live projection, not
 the record.
+
+SQLite schema changes are applied through ordered daemon migrations tracked by
+`PRAGMA user_version`. Fresh databases and existing 0.1.0 databases use the
+same initialization path before catalog/template seeding runs.
 
 ## 0.1.0 Product Surface
 

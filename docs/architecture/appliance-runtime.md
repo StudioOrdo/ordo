@@ -19,7 +19,28 @@ It owns:
 - writing job, task, schedule, and system events to SQLite.
 
 The daemon may restart Next when health checks fail or when a restore requires
-it. Restart attempts must emit durable events.
+it. Restart attempts must emit operator-visible lifecycle events.
+
+## Next Child Supervision
+
+When the daemon is started with `--next-command`, the Next.js child process is a
+required appliance component. The daemon tracks the child in memory and includes
+that required-child state in `/ready`.
+
+The 0.1.1 policy is bounded restart:
+
+- the daemon emits `next.supervisor.started` when a child starts;
+- any child exit emits `next.supervisor.exited`;
+- transient exits schedule up to three `next.supervisor.restart_attempt` events;
+- a successful restarted child emits `next.supervisor.recovered`;
+- an exhausted restart budget emits `next.supervisor.final_failure` and makes
+	`/ready` return `not_ready`.
+
+When no Next supervisor is configured, daemon readiness remains scoped to the
+SQLite appliance checks so local daemon-only development keeps working.
+
+These supervision events are realtime system lifecycle events in 0.1.1. Durable
+event replay is tracked separately from this runtime supervision slice.
 
 ## Next.js
 

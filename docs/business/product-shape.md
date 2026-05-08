@@ -5,6 +5,10 @@ Status: Product direction, not fully implemented
 Ordo is a local-first operating system for one-person businesses. The current
 repo proves the appliance spine. The full product shape is broader.
 
+The product should feel like a browser-like runtime for AI work: one place to
+interact, inspect, approve, remember, and move artifacts across governed
+capabilities.
+
 ## Implemented Today
 
 The current product surface is the System appliance shell:

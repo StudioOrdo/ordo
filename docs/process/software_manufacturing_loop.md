@@ -54,3 +54,20 @@ Humans keep final authority over acceptance, merge, and release.
 
 Do not claim Ordo automatically files or resolves GitHub issues until that path
 is implemented and validated.
+
+## Verification Is The Bottleneck
+
+AI can accelerate research, specification, implementation, and test generation.
+That does not make work done.
+
+Work is not complete until it has evidence, review, and functional validation.
+The scarce resource is verification:
+
+- manual QA;
+- code review;
+- functional review;
+- evidence review;
+- regression checks;
+- public issue closeout.
+
+Ordo treats velocity without verification as waste.

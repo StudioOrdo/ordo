@@ -5,6 +5,10 @@
 Small-business AI infrastructure should be portable, inspectable, and
 inexpensive enough to survive without enterprise complexity.
 
+Local-first is also an economic stance: people should be able to create value
+with AI without surrendering their memory, workflows, and context to an opaque
+platform.
+
 The baseline direction:
 
 - SQLite for durable local-first state;

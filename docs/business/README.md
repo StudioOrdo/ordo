@@ -1,6 +1,8 @@
 # Business Canon
 
-These docs explain why Ordo exists and how the product should be judged.
+These docs explain why Ordo exists, how the product should be judged, and why
+the project is shaped as an open appliance for observable AI work instead of a
+conventional SaaS product.
 
 The short version:
 
@@ -18,6 +20,8 @@ These docs are product guidance. They are not all shipped features.
 - [Sovereignty Stack](sovereignty-stack.md)
 - [Production Engine](production-engine.md)
 - [Product Shape](product-shape.md)
+- [Project Philosophy](project-philosophy.md)
+- [Founder Note](founder-note.md)
 
 ## Core Principle
 

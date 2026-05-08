@@ -47,6 +47,21 @@ A typical loop is:
 7. Measure what happened.
 8. Recommend the next useful action.
 
+## Project Philosophy
+
+Ordo is not trying to become another SaaS dashboard. It is an open appliance for
+observable AI work: intent, evidence, capability, decision, artifact, and review
+should be inspectable by the people using the system.
+
+If the browser made the web usable, Ordo is trying to make AI work governable.
+The code is one expression of that philosophy; the durable goal is a repeatable,
+auditable system of work that people can run, study, modify, and leave with.
+
+Ordo is happily self-funded and community-first. AI-assisted development gives
+the project unusual velocity, but the limiting factor is intentionally human:
+manual QA, code review, functional review, public evidence, and judgment.
+Velocity without verification is waste.
+
 ## Technical Direction
 
 Ordo is being designed as a sovereign appliance:

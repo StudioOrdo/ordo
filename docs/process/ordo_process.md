@@ -6,6 +6,9 @@ This document defines the execution process used to build and run Ordo.
 
 AI leverage is determined by process quality, not prompt cleverness.
 
+Ordo's process is designed for AI-assisted velocity constrained by human
+judgment, manual QA, code review, and public evidence.
+
 ## Delivery Loop
 
 Collect -> Decide -> Spec -> QA -> Ground -> Phase -> Implement -> QA ->

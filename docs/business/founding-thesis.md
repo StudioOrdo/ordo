@@ -38,3 +38,7 @@ Not bespoke as custom consulting per customer. Bespoke as:
 ## Product Principle
 
 Human decides. Assistant operates. Process governs.
+
+Ordo should make that principle observable. Intent, evidence, capability,
+decision, artifact, and review should be traceable instead of hidden behind a
+generic AI answer.

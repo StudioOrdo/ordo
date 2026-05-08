@@ -12,6 +12,7 @@ These docs turn the product thesis into system shape.
 - [System Shell](system-shell.md)
 - [Backup And Restore](backup-restore.md)
 - [Diagnostics And Reports](diagnostics-and-reports.md)
+- [Resource, Provenance, And Policy Spine](resource-provenance-policy.md)
 - [Scaling With Worker Ordos](scaling-worker-ordos.md)
 - [Sovereign Appliance](sovereign-appliance.md)
 

@@ -104,3 +104,7 @@ The 0.1.1 MCP export policy tiers are:
 unqualified public-safe exports. `restore.preflight.validate` is
 `operator_confirmed`. Restore execution remains `dangerous_none` and is not
 exported through MCP.
+
+MCP tool-call results include Ordo policy decision metadata so the appliance can
+explain the actor, capability, resource, action, and decision outcome for the
+governed projection path.

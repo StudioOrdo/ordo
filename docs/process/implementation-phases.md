@@ -57,5 +57,5 @@ No app code is scaffolded in this phase.
 
 - Add seed capability catalog.
 - Route UI, scheduler, and job tasks through cataloged capabilities.
-- Export safe system tools through MCP.
+- Export governed system tools through explicit MCP policy tiers.
 - Keep MCP as a projection, not the execution spine.

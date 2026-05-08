@@ -84,6 +84,11 @@ fn list_tools(db_path: &Path) -> Result<Value> {
                 "title": capability.label,
                 "description": capability.description,
                 "inputSchema": capability.input_schema,
+                "metadata": {
+                    "mcpExportPolicy": capability.mcp_export_policy,
+                    "sideEffects": capability.side_effects,
+                    "approvalRequirement": capability.approval_requirement,
+                },
             })
         })
         .collect();
@@ -143,7 +148,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn mcp_lists_safe_system_tools() {
+    fn mcp_lists_tools_with_policy_metadata() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
         init_database(&db_path).unwrap();
@@ -163,6 +168,24 @@ mod tests {
         assert!(tools
             .iter()
             .any(|tool| tool["name"] == "system.status.read"));
+        let backup_create = tools
+            .iter()
+            .find(|tool| tool["name"] == "backup.create")
+            .unwrap();
+        assert_eq!(
+            backup_create["metadata"]["mcpExportPolicy"],
+            "local_mutation"
+        );
+        assert_eq!(
+            backup_create["metadata"]["approvalRequirement"],
+            "local_access_required"
+        );
+        assert!(backup_create["metadata"]["sideEffects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|effect| effect == "writes_backup_archive"));
+        assert!(!tools.iter().any(|tool| tool["name"] == "restore.execute"));
     }
 
     #[test]

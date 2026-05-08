@@ -39,8 +39,9 @@ The 0.1.1 policy is bounded restart:
 When no Next supervisor is configured, daemon readiness remains scoped to the
 SQLite appliance checks so local daemon-only development keeps working.
 
-These supervision events are realtime system lifecycle events in 0.1.1. Durable
-event replay is tracked separately from this runtime supervision slice.
+These supervision events are durable system lifecycle events in 0.1.1. They are
+persisted before WebSocket fanout so clients can replay missed events after a
+cursor.
 
 ## Next.js
 

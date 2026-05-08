@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{ConnectInfo, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -24,7 +24,9 @@ use crate::briefs::{
     generate_system_brief, latest_system_brief, run_due_system_brief_schedules, LatestBriefResponse,
 };
 use crate::capabilities::{list_capabilities, CapabilityCatalogResponse};
-use crate::events::{system_event, RealtimeEvent};
+use crate::events::{
+    append_system_event, replay_events, system_event, EventReplayResponse, RealtimeEvent,
+};
 use crate::health::{
     build_health_report, build_readiness_report, HealthCheck, HealthReport, ReadinessReport,
 };
@@ -126,18 +128,26 @@ pub async fn serve(
         .route("/backups", get(list_backup_restore_handler))
         .route("/backups/create", post(create_backup_handler))
         .route("/restore/validate", post(validate_restore_handler))
+        .route("/events", get(events_handler))
         .route("/mcp", post(mcp_handler))
         .route("/ws", get(ws_handler))
         .with_state(state.clone());
 
-    let _ = state.event_sender.send(system_event(
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
         "daemon.started",
         json!({ "host": host, "port": port }),
-    ));
+    );
     if let (Some(config), Some(next_status)) =
         (next_supervisor, state.next_supervisor_status.clone())
     {
-        spawn_next_supervisor(config, state.event_sender.clone(), next_status)?;
+        spawn_next_supervisor(
+            config,
+            state.db_path.clone(),
+            state.event_sender.clone(),
+            next_status,
+        )?;
     }
     spawn_system_brief_scheduler(state.db_path.clone(), state.event_sender.clone());
 
@@ -152,30 +162,40 @@ pub async fn serve(
 
 fn spawn_next_supervisor(
     config: NextSupervisorConfig,
+    db_path: Arc<PathBuf>,
     event_sender: broadcast::Sender<RealtimeEvent>,
     next_status: SharedNextSupervisorStatus,
 ) -> Result<()> {
     thread::Builder::new()
         .name("ordo-next-supervisor".to_string())
-        .spawn(move || supervise_next_child(config, event_sender, next_status))
+        .spawn(move || supervise_next_child(config, db_path, event_sender, next_status))
         .context("Failed to spawn Next.js supervisor thread")?;
     Ok(())
 }
 
 fn supervise_next_child(
     config: NextSupervisorConfig,
+    db_path: Arc<PathBuf>,
     event_sender: broadcast::Sender<RealtimeEvent>,
     next_status: SharedNextSupervisorStatus,
 ) {
     let mut restart_count = 0;
 
     loop {
-        match start_next_child(&config, &event_sender, &next_status, restart_count) {
+        match start_next_child(
+            &config,
+            &db_path,
+            &event_sender,
+            &next_status,
+            restart_count,
+        ) {
             Ok(mut child) => {
                 let child_id = child.id();
                 match child.wait() {
                     Ok(exit_status) => {
-                        let _ = event_sender.send(system_event(
+                        emit_system_event(
+                            &db_path,
+                            &event_sender,
                             "next.supervisor.exited",
                             json!({
                                 "pid": child_id,
@@ -183,8 +203,9 @@ fn supervise_next_child(
                                 "code": exit_status.code(),
                                 "restartCount": restart_count,
                             }),
-                        ));
+                        );
                         if schedule_next_restart(
+                            &db_path,
                             &event_sender,
                             &next_status,
                             child_exit_message(child_id, &exit_status),
@@ -195,11 +216,14 @@ fn supervise_next_child(
                         return;
                     }
                     Err(error) => {
-                        let _ = event_sender.send(system_event(
+                        emit_system_event(
+                            &db_path,
+                            &event_sender,
                             "next.supervisor.wait_failed",
                             json!({ "pid": child_id, "message": error.to_string(), "restartCount": restart_count }),
-                        ));
+                        );
                         if schedule_next_restart(
+                            &db_path,
                             &event_sender,
                             &next_status,
                             format!("Next.js child wait failed: {error}"),
@@ -213,11 +237,19 @@ fn supervise_next_child(
             }
             Err(error) => {
                 let message = format!("Failed to start Next.js child process: {error}");
-                let _ = event_sender.send(system_event(
+                emit_system_event(
+                    &db_path,
+                    &event_sender,
                     "next.supervisor.start_failed",
                     json!({ "command": config.command, "args": config.args, "message": message.clone(), "restartCount": restart_count }),
-                ));
-                if schedule_next_restart(&event_sender, &next_status, message, &mut restart_count) {
+                );
+                if schedule_next_restart(
+                    &db_path,
+                    &event_sender,
+                    &next_status,
+                    message,
+                    &mut restart_count,
+                ) {
                     continue;
                 }
                 return;
@@ -228,6 +260,7 @@ fn supervise_next_child(
 
 fn start_next_child(
     config: &NextSupervisorConfig,
+    db_path: &Path,
     event_sender: &broadcast::Sender<RealtimeEvent>,
     next_status: &SharedNextSupervisorStatus,
     restart_count: u32,
@@ -246,7 +279,9 @@ fn start_next_child(
         status.restart_count = restart_count;
         status.detail = format!("Next.js child process is running with pid {child_id}.");
     });
-    let _ = event_sender.send(system_event(
+    emit_system_event(
+        db_path,
+        event_sender,
         "next.supervisor.started",
         json!({
             "command": config.command,
@@ -254,17 +289,20 @@ fn start_next_child(
             "pid": child_id,
             "restartCount": restart_count,
         }),
-    ));
+    );
     if restart_count > 0 {
-        let _ = event_sender.send(system_event(
+        emit_system_event(
+            db_path,
+            event_sender,
             "next.supervisor.recovered",
             json!({ "pid": child_id, "restartCount": restart_count }),
-        ));
+        );
     }
     Ok(child)
 }
 
 fn schedule_next_restart(
+    db_path: &Path,
     event_sender: &broadcast::Sender<RealtimeEvent>,
     next_status: &SharedNextSupervisorStatus,
     message: String,
@@ -281,7 +319,9 @@ fn schedule_next_restart(
                 *restart_count
             );
         });
-        let _ = event_sender.send(system_event(
+        emit_system_event(
+            db_path,
+            event_sender,
             "next.supervisor.restart_attempt",
             json!({
                 "restartCount": *restart_count,
@@ -289,7 +329,7 @@ fn schedule_next_restart(
                 "delayMs": NEXT_SUPERVISOR_RESTART_DELAY.as_millis(),
                 "message": message,
             }),
-        ));
+        );
         thread::sleep(NEXT_SUPERVISOR_RESTART_DELAY);
         true
     } else {
@@ -302,14 +342,16 @@ fn schedule_next_restart(
                 *restart_count
             );
         });
-        let _ = event_sender.send(system_event(
+        emit_system_event(
+            db_path,
+            event_sender,
             "next.supervisor.final_failure",
             json!({
                 "restartCount": *restart_count,
                 "maxRestarts": NEXT_SUPERVISOR_MAX_RESTARTS,
                 "message": message,
             }),
-        ));
+        );
         false
     }
 }
@@ -377,7 +419,9 @@ fn spawn_system_brief_scheduler(
             match run_due_system_brief_schedules(&db_path) {
                 Ok(briefs) => {
                     for brief in briefs {
-                        let _ = event_sender.send(system_event(
+                        emit_system_event(
+                            &db_path,
+                            &event_sender,
                             "brief.system.generated",
                             json!({
                                 "briefId": brief.id,
@@ -385,14 +429,16 @@ fn spawn_system_brief_scheduler(
                                 "version": brief.version,
                                 "origin": "scheduler",
                             }),
-                        ));
+                        );
                     }
                 }
                 Err(error) => {
-                    let _ = event_sender.send(system_event(
+                    emit_system_event(
+                        &db_path,
+                        &event_sender,
                         "brief.system.schedule_failed",
                         json!({ "message": error.to_string() }),
-                    ));
+                    );
                 }
             }
         }
@@ -433,6 +479,13 @@ struct ErrorResponse {
     error: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EventReplayQuery {
+    after: Option<i64>,
+    limit: Option<usize>,
+}
+
 async fn latest_system_brief_handler(
     State(state): State<AppState>,
 ) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -448,10 +501,12 @@ async fn generate_system_brief_handler(
 ) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
     authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let brief = generate_system_brief(&state.db_path, "http", None).map_err(internal_error)?;
-    let _ = state.event_sender.send(system_event(
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
         "brief.system.generated",
         json!({ "briefId": brief.id, "jobId": brief.job_id, "version": brief.version }),
-    ));
+    );
     Ok(Json(LatestBriefResponse { brief: Some(brief) }))
 }
 
@@ -470,10 +525,12 @@ async fn create_backup_handler(
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
     authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let job = create_backup(&state.db_path, "http", None).map_err(internal_error)?;
-    let _ = state.event_sender.send(system_event(
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
         "backup.create.completed",
         json!({ "jobId": job.id, "artifactId": job.artifact.as_ref().map(|artifact| artifact.id.clone()) }),
-    ));
+    );
     list_backup_restore_jobs(&state.db_path)
         .map(Json)
         .map_err(internal_error)
@@ -488,11 +545,22 @@ async fn validate_restore_handler(
     authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let job =
         run_restore_preflight(&state.db_path, request, "http", None).map_err(internal_error)?;
-    let _ = state.event_sender.send(system_event(
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
         "restore.preflight.completed",
         json!({ "jobId": job.id, "status": job.status }),
-    ));
+    );
     list_backup_restore_jobs(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn events_handler(
+    State(state): State<AppState>,
+    Query(query): Query<EventReplayQuery>,
+) -> Result<Json<EventReplayResponse>, (StatusCode, Json<ErrorResponse>)> {
+    replay_events(&state.db_path, query.after, query.limit)
         .map(Json)
         .map_err(internal_error)
 }
@@ -561,6 +629,21 @@ fn forbidden_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
             error: message.to_string(),
         }),
     )
+}
+
+fn emit_system_event(
+    db_path: &Path,
+    event_sender: &broadcast::Sender<RealtimeEvent>,
+    event_type: &str,
+    payload: serde_json::Value,
+) {
+    let event = append_system_event(db_path, event_type, payload).unwrap_or_else(|error| {
+        system_event(
+            "system.event_persist_failed",
+            json!({ "eventType": event_type, "message": error.to_string() }),
+        )
+    });
+    let _ = event_sender.send(event);
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {

@@ -1,15 +1,16 @@
 # Realtime Events
 
-Status: Draft contract for Ordo 0.1.0
+Status: Implemented first durable replay slice for Ordo 0.1.1
 
 Realtime is a projection of durable events.
 
 ## Source Of Truth
 
-SQLite stores job, task, schedule, brief, and system events. WebSocket
-broadcasts those events to connected clients after persistence.
+SQLite stores job, task, schedule, brief, and system events. The daemon mirrors
+replayable events into a global cursor log and exposes them through `/events`.
+WebSocket broadcasts those events to connected clients after persistence.
 
-The browser must be able to reconnect, fetch missed events, and reconstruct
+The browser can reconnect, request events after its last cursor, and reconstruct
 state from persisted records.
 
 ## Event Families
@@ -31,3 +32,12 @@ store.
 
 The UI should show connection status, but job history and progress must remain
 correct after refresh.
+
+## Replay API
+
+`GET /events` returns persisted events ordered by global cursor. Clients may use
+`after=<cursor>` to fetch events missed while disconnected, and `limit=<count>`
+to bound the replay window.
+
+Job events keep their per-job sequence in `job_events`; the replay log adds a
+global cursor that spans job and system lifecycle events.

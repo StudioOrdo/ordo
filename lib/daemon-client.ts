@@ -89,14 +89,39 @@ export interface BackupRestoreJobSummary {
   tasks: BackupRestoreTaskSummary[];
 }
 
+export interface RealtimeEventSummary {
+  cursor: number;
+  schemaVersion: string;
+  family: string;
+  eventType: string;
+  jobId: string | null;
+  taskKey: string | null;
+  sequence: number | null;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}
+
 interface BackupRestoreResponse {
   jobs: BackupRestoreJobSummary[];
+}
+
+interface EventReplayResponse {
+  events: RealtimeEventSummary[];
+  nextCursor: number | null;
 }
 
 export interface BackupRestoreSnapshot {
   daemonUrl: string;
   createdAt: string;
   jobs: BackupRestoreJobSummary[];
+  degradedReason: string | null;
+}
+
+export interface EventReplaySnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  events: RealtimeEventSummary[];
+  nextCursor: number | null;
   degradedReason: string | null;
 }
 
@@ -184,6 +209,21 @@ export async function getBackupRestoreSnapshot(): Promise<BackupRestoreSnapshot>
     createdAt,
     jobs: backupResult.data?.jobs ?? [],
     degradedReason: backupResult.error,
+  };
+}
+
+export async function getEventReplaySnapshot(after?: number): Promise<EventReplaySnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const query = after && after > 0 ? `?after=${after}&limit=100` : "?limit=100";
+  const eventResult = await readEndpoint<EventReplayResponse>(baseUrl, `/events${query}`);
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    events: eventResult.data?.events ?? [],
+    nextCursor: eventResult.data?.nextCursor ?? null,
+    degradedReason: eventResult.error,
   };
 }
 

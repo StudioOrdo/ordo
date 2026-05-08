@@ -32,6 +32,8 @@ slice before deeper product surfaces land.
   and non-exported dangerous operations.
 - The local MCP projection validates JSON-RPC 2.0 request shape and tool
   arguments against catalog input schemas before dispatch.
+- Job events and system lifecycle events are replayable from SQLite through a
+  global event cursor, and the Events surface reads persisted event history.
 - The 0.1.0 release evidence dossier is recorded in
   [release-0.1.0.md](process/release-0.1.0.md).
 
@@ -44,14 +46,15 @@ slice before deeper product surfaces land.
 - RAG/vector memory and external integrations are not implemented yet.
 - MCP is currently a local JSON-RPC daemon projection with first policy tiers,
   not a third-party plugin surface.
-- Durable event replay, schema migrations, backup integrity, and UI smoke
-  coverage remain the next stabilization concerns.
+- Schema migrations, backup integrity, and UI smoke coverage remain the next
+  stabilization concerns.
 
 ## Current Goal
 
 Continue `0.1.1 Appliance Trust Boundary` after the runtime supervision,
-network posture, MCP policy tier, and MCP request strictness slices, then
-harden event replay, schema migrations, backup integrity, and UI smoke coverage.
+network posture, MCP policy tier, MCP request strictness, and durable event
+replay slices, then harden schema migrations, backup integrity, and UI smoke
+coverage.
 
 ## How To Read Claims
 

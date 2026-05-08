@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use crate::capabilities::assert_capability_ids_registered;
+use crate::events::{append_realtime_event, append_realtime_event_tx, job_event};
 use crate::templates::{ProcessTemplate, TaskDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -285,6 +286,7 @@ pub fn append_job_event(
     payload: Value,
 ) -> Result<i64> {
     let sequence = next_event_sequence(connection, job_id)?;
+    let event = job_event(event_type, job_id, task_key, sequence, payload.clone());
     connection.execute(
         "INSERT INTO job_events (id, job_id, task_key, sequence, event_type, payload_json, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -295,9 +297,10 @@ pub fn append_job_event(
             sequence,
             event_type,
             payload.to_string(),
-            Utc::now().to_rfc3339(),
+            event.occurred_at,
         ],
     )?;
+    append_realtime_event(connection, &event)?;
     Ok(sequence)
 }
 
@@ -309,6 +312,7 @@ fn append_job_event_tx(
     payload: Value,
 ) -> Result<i64> {
     let sequence = next_event_sequence(transaction, job_id)?;
+    let event = job_event(event_type, job_id, task_key, sequence, payload.clone());
     transaction.execute(
         "INSERT INTO job_events (id, job_id, task_key, sequence, event_type, payload_json, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -319,9 +323,10 @@ fn append_job_event_tx(
             sequence,
             event_type,
             payload.to_string(),
-            Utc::now().to_rfc3339(),
+            event.occurred_at,
         ],
     )?;
+    append_realtime_event_tx(transaction, &event)?;
     Ok(sequence)
 }
 
@@ -461,5 +466,15 @@ mod tests {
 
         assert_eq!(task_count, 2);
         assert_eq!(event_count, 2);
+
+        let replay_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM realtime_events WHERE job_id = ?1",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(replay_count, 2);
     }
 }

@@ -42,4 +42,16 @@ export const systemMenuItems: readonly SystemMenuItem[] = [
     description: "Realtime and persisted evidence trail.",
     href: "/events",
   },
+  {
+    id: "logs",
+    label: "Logs",
+    description: "Structured diagnostic observations.",
+    href: "/logs",
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    description: "Issue reports and diagnostic packages.",
+    href: "/reports",
+  },
 ];

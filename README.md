@@ -164,6 +164,8 @@ cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/cal
 
 `tools/list` returns policy metadata such as `read_only`, `local_mutation`, and
 `operator_confirmed` so read tools and local mutating tools are distinguishable.
+MCP requests are validated as JSON-RPC 2.0 before dispatch, and `tools/call`
+arguments are checked against the catalog input schema before any tool runs.
 
 Useful runtime commands:
 

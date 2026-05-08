@@ -74,6 +74,13 @@ The daemon exposes a small JSON-RPC MCP projection at `/mcp`. It supports:
 - `tools/list` for capabilities exported by the current MCP policy tiers;
 - `tools/call` for exported tools backed by existing daemon functions.
 
+The MCP projection validates JSON-RPC 2.0 request shape before dispatch. Parse
+errors, invalid request shapes, unknown methods, and invalid parameters map to
+the standard JSON-RPC error codes. `tools/call` validates argument objects
+against the capability catalog input schema before running the tool-specific
+daemon path, while deeper domain validation remains in the existing Rust kernel
+functions.
+
 MCP tool calls do not run arbitrary code. Mutating tools such as
 `brief.system.generate` and `backup.create` call the same governed Rust kernel
 paths used by HTTP and CLI entrypoints, with origin set to `mcp`.

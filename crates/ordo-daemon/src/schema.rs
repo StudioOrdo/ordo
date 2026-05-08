@@ -3,6 +3,7 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::Path;
 
+use crate::scheduler::ensure_default_system_brief_schedule;
 use crate::templates::seed_builtin_templates;
 
 pub const REQUIRED_TABLES: &[&str] = &[
@@ -28,6 +29,7 @@ pub fn init_database(db_path: &Path) -> Result<()> {
     let connection = Connection::open(db_path)?;
     init_schema(&connection)?;
     seed_builtin_templates(&connection)?;
+    ensure_default_system_brief_schedule(&connection)?;
     Ok(())
 }
 

@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+use ordo_daemon::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
 use ordo_daemon::health::{build_health_report, build_readiness_report};
 use ordo_daemon::schema::init_database;
 use ordo_daemon::server::serve;
@@ -24,6 +25,16 @@ enum Commands {
     },
     #[command(name = "init-db")]
     InitDb {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+    },
+    #[command(name = "latest-system-brief-json")]
+    LatestSystemBriefJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+    },
+    #[command(name = "generate-system-brief-json")]
+    GenerateSystemBriefJson {
         #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
         db_path: PathBuf,
     },
@@ -54,6 +65,24 @@ async fn main() -> Result<()> {
         Commands::InitDb { db_path } => {
             init_database(&db_path)?;
             println!("{}", serde_json::json!({ "ok": true, "dbPath": db_path }));
+        }
+        Commands::LatestSystemBriefJson { db_path } => {
+            init_database(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&LatestBriefResponse {
+                    brief: latest_system_brief(&db_path)?
+                })?
+            );
+        }
+        Commands::GenerateSystemBriefJson { db_path } => {
+            init_database(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&LatestBriefResponse {
+                    brief: Some(generate_system_brief(&db_path, "cli", None)?)
+                })?
+            );
         }
         Commands::Serve {
             host,

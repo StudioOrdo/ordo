@@ -3,13 +3,18 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::Serialize;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tokio::time::{self, Duration};
 
+use crate::briefs::{
+    generate_system_brief, latest_system_brief, run_due_system_brief_schedules, LatestBriefResponse,
+};
 use crate::events::{system_event, RealtimeEvent};
 use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
 use crate::schema::init_database;
@@ -22,6 +27,7 @@ struct AppState {
 
 pub async fn serve(host: String, port: u16, db_path: PathBuf) -> Result<()> {
     init_database(&db_path)?;
+    let _generated_briefs = run_due_system_brief_schedules(&db_path)?;
 
     let (event_sender, _) = broadcast::channel(128);
     let state = AppState {
@@ -31,6 +37,11 @@ pub async fn serve(host: String, port: u16, db_path: PathBuf) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
+        .route("/briefs/system/latest", get(latest_system_brief_handler))
+        .route(
+            "/briefs/system/generate",
+            post(generate_system_brief_handler),
+        )
         .route("/ws", get(ws_handler))
         .with_state(state.clone());
 
@@ -38,12 +49,45 @@ pub async fn serve(host: String, port: u16, db_path: PathBuf) -> Result<()> {
         "daemon.started",
         json!({ "host": host, "port": port }),
     ));
+    spawn_system_brief_scheduler(state.db_path.clone(), state.event_sender.clone());
 
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }
 
+fn spawn_system_brief_scheduler(
+    db_path: Arc<PathBuf>,
+    event_sender: broadcast::Sender<RealtimeEvent>,
+) {
+    tokio::spawn(async move {
+        let mut interval = time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            match run_due_system_brief_schedules(&db_path) {
+                Ok(briefs) => {
+                    for brief in briefs {
+                        let _ = event_sender.send(system_event(
+                            "brief.system.generated",
+                            json!({
+                                "briefId": brief.id,
+                                "jobId": brief.job_id,
+                                "version": brief.version,
+                                "origin": "scheduler",
+                            }),
+                        ));
+                    }
+                }
+                Err(error) => {
+                    let _ = event_sender.send(system_event(
+                        "brief.system.schedule_failed",
+                        json!({ "message": error.to_string() }),
+                    ));
+                }
+            }
+        }
+    });
+}
 async fn health_handler() -> Json<HealthReport> {
     Json(build_health_report())
 }
@@ -56,6 +100,40 @@ async fn ready_handler(State(state): State<AppState>) -> (StatusCode, Json<Readi
         StatusCode::SERVICE_UNAVAILABLE
     };
     (status, Json(report))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ErrorResponse {
+    error: String,
+}
+
+async fn latest_system_brief_handler(
+    State(state): State<AppState>,
+) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
+    latest_system_brief(&state.db_path)
+        .map(|brief| Json(LatestBriefResponse { brief }))
+        .map_err(internal_error)
+}
+
+async fn generate_system_brief_handler(
+    State(state): State<AppState>,
+) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let brief = generate_system_brief(&state.db_path, "http", None).map_err(internal_error)?;
+    let _ = state.event_sender.send(system_event(
+        "brief.system.generated",
+        json!({ "briefId": brief.id, "jobId": brief.job_id, "version": brief.version }),
+    ));
+    Ok(Json(LatestBriefResponse { brief: Some(brief) }))
+}
+
+fn internal_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorResponse {
+            error: error.to_string(),
+        }),
+    )
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {

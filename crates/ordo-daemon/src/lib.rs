@@ -1,3 +1,4 @@
+pub mod briefs;
 pub mod events;
 pub mod health;
 pub mod kernel;

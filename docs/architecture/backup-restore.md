@@ -21,6 +21,12 @@ They must not become bespoke flows outside the job/task/event model.
 Some tasks may run independently when safe, but the job must preserve explicit
 dependencies.
 
+Backup manifests record SHA-256 checksum evidence as `sha256:v1:<hex>` and
+include the checksum algorithm version. The database snapshot checksum is stored
+in the manifest and artifact metadata. The manifest checksum is computed from a
+normalized manifest payload with the self-referential manifest checksum field
+cleared, then stored back in the manifest and artifact evidence.
+
 ## Restore Job
 
 `restore.execute` should include tasks similar to:
@@ -38,6 +44,13 @@ dependencies.
 
 Restore must be confirmation-gated and must create a safety backup before
 changing live data.
+
+Restore preflight verifies the backup manifest before any destructive restore
+task can proceed. The reader rejects malformed JSON, unsupported manifest schema
+versions, unsupported checksum algorithms or versions, database checksum
+mismatches, manifest checksum mismatches, artifact manifest paths outside the
+local backups boundary, and manifest-declared archive paths that escape their
+backup archive.
 
 ## UI Contract
 

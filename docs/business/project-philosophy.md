@@ -51,7 +51,7 @@ Ordo is trying to play a similar role for AI work:
 - artifacts as outputs;
 - logs and reports as history and QA;
 - capabilities as governed extensions;
-- policy and future RBAC as permission boundaries;
+- policy and the local RBAC foundation as permission boundaries;
 - packs and future Ordo-to-Ordo exchange as portability.
 
 If the browser made the web usable, Ordo is trying to make AI work governable.
@@ -73,9 +73,10 @@ In Ordo, governance should become operational:
 - human judgment as explicit authority.
 
 The current codebase already implements the local appliance spine, System shell,
-jobs, events, artifacts, logs, reports, capability policy, and provenance
-foundations. Full RBAC, RAG, hosted trials, Worker Ordos, A2A, content packs,
-and external submissions remain planned or future work.
+jobs, events, artifacts, logs, reports, capability policy, provenance, and a
+durable local access foundation. Authentication UI, product-depth RBAC, RAG,
+hosted trials, Worker Ordos, A2A, content packs, and external submissions remain
+planned or future work.
 
 ## AI Velocity Makes Verification The Bottleneck
 
@@ -132,7 +133,7 @@ This is not the full business product yet.
 Planned and future layers include:
 
 - public Chat, About, Offers, and Feed surfaces;
-- full RBAC and user access boundaries;
+- authentication flows and product-depth user access boundaries;
 - knowledge/RAG with provenance;
 - hosted trials;
 - content packs;

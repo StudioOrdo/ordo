@@ -158,6 +158,7 @@ header.
 
 ```bash
 curl http://localhost:17760/capabilities
+curl 'http://localhost:17760/events?after=0&limit=100'
 cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/list
 cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/call --params-json '{"name":"system.status.read","arguments":{}}'
 ```
@@ -166,6 +167,8 @@ cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/cal
 `operator_confirmed` so read tools and local mutating tools are distinguishable.
 MCP requests are validated as JSON-RPC 2.0 before dispatch, and `tools/call`
 arguments are checked against the catalog input schema before any tool runs.
+`/events` returns persisted job and system lifecycle events after a cursor so
+the UI can recover missed WebSocket events after reconnecting.
 
 Useful runtime commands:
 

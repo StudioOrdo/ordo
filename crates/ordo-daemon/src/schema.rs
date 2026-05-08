@@ -14,6 +14,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "job_tasks",
     "job_task_dependencies",
     "job_events",
+    "realtime_events",
     "job_artifacts",
     "schedules",
     "scheduled_job_runs",
@@ -122,6 +123,21 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_job_events_job_sequence ON job_events(job_id, sequence);
+
+        CREATE TABLE IF NOT EXISTS realtime_events (
+            cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+            schema_version TEXT NOT NULL,
+            family TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            job_id TEXT,
+            task_key TEXT,
+            job_sequence INTEGER,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            occurred_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_realtime_events_cursor ON realtime_events(cursor);
+        CREATE INDEX IF NOT EXISTS idx_realtime_events_family_cursor ON realtime_events(family, cursor);
 
         CREATE TABLE IF NOT EXISTS job_artifacts (
             id TEXT PRIMARY KEY,

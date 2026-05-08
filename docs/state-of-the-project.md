@@ -1,31 +1,47 @@
 # State Of The Project
 
-Date: 2026-05-07
+Date: 2026-05-08
 
-Ordo is being initialized as a clean Studio Ordo build.
+Ordo has completed the 0.1.0 Appliance Specimen implementation pass.
 
-The current work is repository foundation, not product implementation.
+The current work is release closeout and the next trust-boundary stabilization
+slice before deeper product surfaces land.
 
 ## What Is Real Now
 
 - The repository exists under `StudioOrdo/ordo`.
 - The project is licensed as AGPL-3.0-only.
-- The public README and docs foundation are being established through GitHub
-  issue and pull request workflow.
-- The intended process is evidence-backed software manufacturing in public.
+- The public README, architecture docs, process docs, and release evidence are
+  established through GitHub issue and pull request workflow.
+- The process is evidence-backed software manufacturing in public.
+- The Rust daemon initializes SQLite, reports health/readiness, owns the job
+  kernel, runs scheduled System Brief generation, creates backups, validates
+  restore preflight, exposes WebSocket events, and serves a capability/MCP
+  projection.
+- The Next.js System shell renders Brief, Health, Backup And Restore,
+  Schedules, Preferences, and Events surfaces.
+- Docker packages the Rust daemon and Next.js management UI as one appliance
+  image with `.data` as the durable state boundary.
+- The 0.1.0 release evidence dossier is recorded in
+  [release-0.1.0.md](process/release-0.1.0.md).
 
 ## What Is Not Built Yet
 
-- The application has not been scaffolded in this repository.
-- The Docker appliance has not been implemented here.
-- The Rust daemon has not been implemented here.
-- The realtime, RAG, RBAC, MCP, and product surfaces remain architecture
-  direction until accepted implementation issues land.
+- Full product-depth surfaces such as Studio, People, Offers, Today, and
+  Conversations are not built yet.
+- Authentication, RBAC enforcement depth, and multi-user policy surfaces are not
+  implemented yet.
+- RAG/vector memory and external integrations are not implemented yet.
+- MCP is currently a local JSON-RPC daemon projection, not a fully hardened
+  public transport boundary.
+- Runtime supervision, durable event replay, schema migrations, and network
+  hardening remain the next stabilization concerns.
 
 ## Current Goal
 
-Establish the idea base and public work process before autonomous software
-manufacturing begins.
+Close the 0.1.0 release cleanly, then start `0.1.1 Appliance Trust Boundary` to
+harden runtime supervision, network posture, MCP policy tiers, event replay,
+schema migrations, backup integrity, and UI smoke coverage.
 
 ## How To Read Claims
 

@@ -9,7 +9,10 @@ use crate::backups::{
 use crate::briefs::{generate_system_brief, latest_system_brief};
 use crate::capabilities::{list_mcp_exported_capabilities, load_capabilities};
 use crate::health::{build_health_report, build_readiness_report};
-use crate::policy::{authorize_mcp_capability, ActorContext, PolicyOutcome, LOCAL_OWNER_ACTOR_ID};
+use crate::policy::{
+    authorize_mcp_capability, record_policy_decision, ActorContext, PolicyDecisionCorrelation,
+    PolicyOutcome, LOCAL_OWNER_ACTOR_ID,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -273,6 +276,12 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
         })?;
     let policy_decision =
         authorize_mcp_capability(&connection, ActorContext::mcp_client(), capability);
+    record_policy_decision(
+        &connection,
+        &policy_decision,
+        PolicyDecisionCorrelation::default(),
+    )
+    .map_err(|error| McpDispatchError::internal(error.into()))?;
     if policy_decision.outcome == PolicyOutcome::Denied {
         return Err(McpDispatchError::invalid_params(policy_decision.reason));
     }
@@ -511,6 +520,44 @@ mod tests {
         assert_eq!(result["ordoPolicy"]["actor"]["kind"], "mcp_client");
         assert_eq!(result["structuredContent"]["health"]["status"], "ok");
         assert_eq!(result["structuredContent"]["readiness"]["status"], "ready");
+
+        let connection = Connection::open(&db_path).unwrap();
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'system.status.read' AND outcome = 'allowed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn mcp_review_required_policy_decisions_are_persisted_before_argument_validation() {
+        let (_temp_dir, db_path) = test_db_path();
+
+        let response = handle_mcp_request(
+            &db_path,
+            request(
+                "tools/call",
+                Some(
+                    json!({ "name": "restore.preflight.validate", "arguments": { "backupId": "backup_1" } }),
+                ),
+            ),
+        );
+
+        assert_error(response, INVALID_PARAMS, "missing required property");
+        let connection = Connection::open(&db_path).unwrap();
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'restore.preflight.validate' AND outcome = 'review_required'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]

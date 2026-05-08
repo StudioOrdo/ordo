@@ -1,6 +1,8 @@
+use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use crate::capabilities::{
     CapabilityDefinition, MCP_EXPORT_POLICY_DANGEROUS_NONE, MCP_EXPORT_POLICY_OPERATOR_CONFIRMED,
@@ -279,6 +281,14 @@ pub struct PolicyDecision {
     pub reason: String,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PolicyDecisionCorrelation {
+    pub request_id: Option<String>,
+    pub job_id: Option<String>,
+    pub task_key: Option<String>,
+    pub artifact_id: Option<String>,
+}
+
 impl PolicyDecision {
     pub fn allowed(&self) -> bool {
         matches!(
@@ -304,6 +314,40 @@ impl PolicyDecision {
             "reason": self.reason,
         })
     }
+}
+
+pub fn record_policy_decision(
+    connection: &Connection,
+    decision: &PolicyDecision,
+    correlation: PolicyDecisionCorrelation,
+) -> rusqlite::Result<String> {
+    let id = format!("policy_decision_{}", Uuid::new_v4());
+    connection.execute(
+        "INSERT INTO policy_decisions (
+            id, decided_at, actor_kind, actor_id, actor_origin, action, resource_kind,
+            resource_id, capability_id, outcome, reason, request_id, job_id, task_key,
+            artifact_id, metadata_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+        params![
+            id,
+            Utc::now().to_rfc3339(),
+            decision.actor.kind.as_str(),
+            decision.actor.id.as_deref(),
+            decision.actor.origin.as_str(),
+            decision.action.as_str(),
+            decision.resource.kind.as_str(),
+            decision.resource.id.as_str(),
+            decision.capability_id.as_deref(),
+            decision.outcome.as_str(),
+            decision.reason.as_str(),
+            correlation.request_id.as_deref(),
+            correlation.job_id.as_deref(),
+            correlation.task_key.as_deref(),
+            correlation.artifact_id.as_deref(),
+            decision.metadata().to_string(),
+        ],
+    )?;
+    Ok(id)
 }
 
 pub fn authorize_protected_daemon_action(
@@ -899,5 +943,82 @@ mod tests {
 
         assert_eq!(capability_decision.outcome, PolicyOutcome::Allowed);
         assert_eq!(resource_decision.outcome, PolicyOutcome::Denied);
+    }
+
+    #[test]
+    fn records_policy_decision_audit_evidence() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let decision = authorize_resource_access(
+            &connection,
+            ActorContext::local_owner("test"),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::OwnerSystem, "issue_report_artifacts"),
+            Some("issue.report.list"),
+        );
+
+        let id = record_policy_decision(
+            &connection,
+            &decision,
+            PolicyDecisionCorrelation {
+                request_id: Some("request_123".to_string()),
+                ..PolicyDecisionCorrelation::default()
+            },
+        )
+        .unwrap();
+
+        let row: (String, String, String, String, String) = connection
+            .query_row(
+                "SELECT actor_kind, action, resource_kind, outcome, request_id
+                 FROM policy_decisions WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(row.0, "local_owner");
+        assert_eq!(row.1, "read");
+        assert_eq!(row.2, "owner_system");
+        assert_eq!(row.3, "allowed");
+        assert_eq!(row.4, "request_123");
+    }
+
+    #[test]
+    fn records_denied_policy_decision_audit_evidence() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let decision = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_unknown".to_string()),
+            ),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::OwnerSystem, "issue_report_artifacts"),
+            None,
+        );
+
+        let id =
+            record_policy_decision(&connection, &decision, PolicyDecisionCorrelation::default())
+                .unwrap();
+
+        let outcome: String = connection
+            .query_row(
+                "SELECT outcome FROM policy_decisions WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(outcome, "denied");
     }
 }

@@ -22,6 +22,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "roles",
     "actor_role_memberships",
     "resource_grants",
+    "policy_decisions",
     "corpus_sources",
     "corpus_items",
     "schedules",
@@ -30,7 +31,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 7;
+pub const CURRENT_SCHEMA_VERSION: i64 = 8;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -75,6 +76,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 7,
         name: "add_access_aware_corpus_skeleton",
         apply: add_access_aware_corpus_skeleton,
+    },
+    SchemaMigration {
+        version: 8,
+        name: "add_policy_decision_audit_trail",
+        apply: add_policy_decision_audit_trail,
     },
 ];
 
@@ -642,6 +648,39 @@ fn add_access_aware_corpus_skeleton(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_policy_decision_audit_trail(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS policy_decisions (
+            id TEXT PRIMARY KEY,
+            decided_at TEXT NOT NULL,
+            actor_kind TEXT NOT NULL,
+            actor_id TEXT,
+            actor_origin TEXT NOT NULL,
+            action TEXT NOT NULL,
+            resource_kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            capability_id TEXT,
+            outcome TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            request_id TEXT,
+            job_id TEXT,
+            task_key TEXT,
+            artifact_id TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_policy_decisions_time ON policy_decisions(decided_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_policy_decisions_outcome_time ON policy_decisions(outcome, decided_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_policy_decisions_actor_time ON policy_decisions(actor_kind, actor_id, decided_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_policy_decisions_resource_time ON policy_decisions(resource_kind, resource_id, decided_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_policy_decisions_capability_time ON policy_decisions(capability_id, decided_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -743,8 +782,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 7);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 8);
     }
 
     #[test]
@@ -815,6 +854,7 @@ mod tests {
         assert!(table_exists(&connection, "roles"));
         assert!(table_exists(&connection, "actor_role_memberships"));
         assert!(table_exists(&connection, "resource_grants"));
+        assert!(table_exists(&connection, "policy_decisions"));
         assert!(table_exists(&connection, "corpus_sources"));
         assert!(table_exists(&connection, "corpus_items"));
 

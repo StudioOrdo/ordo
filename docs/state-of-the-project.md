@@ -44,6 +44,8 @@ surfaces land.
 - Capability role metadata is bound to durable local role membership, so seeded
   owner/system actors can use owner/system capabilities while unknown actors
   without role membership are denied.
+- SQLite stores a durable policy decision audit trail for important protected
+  daemon and MCP tool-call decisions, separate from diagnostic logs.
 - The local MCP projection validates JSON-RPC 2.0 request shape and tool
   arguments against catalog input schemas before dispatch, and tool-call results
   include Ordo policy decision metadata.

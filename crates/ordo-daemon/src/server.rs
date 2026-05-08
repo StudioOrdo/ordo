@@ -40,6 +40,9 @@ use crate::policy::{
     authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
     PolicyDecision, PolicyDecisionCorrelation, ProtectedAccessEvidence, ResourceKind, ResourceRef,
 };
+use crate::policy_audit::{
+    list_policy_decisions, PolicyDecisionAuditQuery, PolicyDecisionAuditResponse,
+};
 use crate::reports::{
     list_issue_reports, prepare_issue_report, IssueReportPrepareRequest, IssueReportsResponse,
 };
@@ -133,6 +136,7 @@ pub async fn serve(
         .route("/ready", get(ready_handler))
         .route("/capabilities", get(capabilities_handler))
         .route("/logs", get(logs_handler))
+        .route("/policy-decisions", get(policy_decisions_handler))
         .route("/briefs/system/latest", get(latest_system_brief_handler))
         .route(
             "/briefs/system/generate",
@@ -520,6 +524,26 @@ async fn logs_handler(
     Query(query): Query<DiagnosticLogQuery>,
 ) -> Result<Json<DiagnosticLogsResponse>, (StatusCode, Json<ErrorResponse>)> {
     list_diagnostic_logs(&state.db_path, query)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn policy_decisions_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<PolicyDecisionAuditQuery>,
+) -> Result<Json<PolicyDecisionAuditResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/policy-decisions"),
+        Some("policy.decisions.list"),
+    )?;
+    list_policy_decisions(&state.db_path, query)
         .map(Json)
         .map_err(internal_error)
 }
@@ -1002,5 +1026,48 @@ mod tests {
             &headers,
             socket_addr("192.168.1.10:4000")
         ));
+    }
+
+    #[test]
+    fn policy_decision_query_route_uses_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/policy-decisions"),
+            Some("policy.decisions.list"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/policy-decisions"),
+            Some("policy.decisions.list"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'policy.decisions.list'
+                   AND resource_id = '/policy-decisions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
     }
 }

@@ -35,7 +35,9 @@ durable capability role binding before the export-tier decision is accepted.
 Important policy decisions are also persisted to a local SQLite audit trail.
 This audit trail records actor, action, resource, capability, outcome, reason,
 decision metadata, and optional correlation fields. It is separate from
-diagnostic logs.
+diagnostic logs. The daemon exposes the recent audit trail through a protected
+local read path with narrow filters for outcome, actor kind, capability,
+resource kind, and bounded limit.
 
 ## Provenance
 
@@ -68,8 +70,9 @@ The shipped classification vocabulary includes:
 
 The current implementation uses this vocabulary for local operational reports,
 durable local resource grants, capability role decisions, and policy decision
-audit evidence. It does not yet provide authentication UI, hosted identity,
-public portals, or access-aware retrieval.
+audit evidence that can be inspected through the protected daemon read path. It
+does not yet provide authentication UI, hosted identity, public portals,
+analytics dashboards, compliance reporting UI, or access-aware retrieval.
 
 ## Relationship To RBAC
 
@@ -82,6 +85,7 @@ add authentication flows, public/session actors, and retrieval access checks.
 ## Non-Goals
 
 - No authentication UI.
+- No audit dashboard or compliance reporting UI.
 - No external report submission transport.
 - No legal, medical, finance, or tax product mode.
 - No RAG/vector memory.

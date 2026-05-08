@@ -39,6 +39,9 @@ slice before deeper product surfaces land.
 - Backup manifests now record SHA-256 checksum evidence with an algorithm
   version, and restore preflight rejects malformed manifests, checksum
   mismatches, and paths that escape the local backups boundary.
+- The System shell now has Playwright browser smoke coverage for healthy and
+  degraded daemon states, System Brief evidence/provenance, and Backup And
+  Restore operator paths across desktop and mobile Chromium viewports.
 - The 0.1.0 release evidence dossier is recorded in
   [release-0.1.0.md](process/release-0.1.0.md).
 
@@ -51,14 +54,13 @@ slice before deeper product surfaces land.
 - RAG/vector memory and external integrations are not implemented yet.
 - MCP is currently a local JSON-RPC daemon projection with first policy tiers,
   not a third-party plugin surface.
-- UI smoke coverage remains the next stabilization concern.
+- Full visual regression coverage is not implemented yet.
 
 ## Current Goal
 
 Continue `0.1.1 Appliance Trust Boundary` after the runtime supervision,
 network posture, MCP policy tier, MCP request strictness, and durable event
-replay, schema migration, and backup integrity slices, then harden UI smoke
-coverage.
+replay, schema migration, backup integrity, and UI smoke coverage slices.
 
 ## How To Read Claims
 

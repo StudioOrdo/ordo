@@ -128,6 +128,7 @@ The Phase 2 system shell is a minimal Next.js app.
 npm install
 npm run dev
 npm run build
+npm run smoke:ui
 ```
 
 ## Docker Appliance Runtime
@@ -191,10 +192,17 @@ Validation:
 
 ```bash
 npm run check
+npm run smoke:ui
 cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+The UI smoke suite uses Playwright with a lightweight mock daemon on
+`127.0.0.1:19080` and a Next.js test server on `127.0.0.1:3100`. It covers
+desktop and mobile Chromium viewports for daemon-available and daemon-degraded
+shell behavior, System Brief evidence/provenance, Backup And Restore persisted
+jobs, operator controls, and the browser backup creation path.
 
 ## Docs
 

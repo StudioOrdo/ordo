@@ -87,6 +87,8 @@ enum Commands {
         next_command: Option<String>,
         #[arg(long = "next-arg", env = "ORDO_NEXT_ARGS", value_delimiter = ' ')]
         next_args: Vec<String>,
+        #[arg(long, env = "ORDO_DAEMON_ACCESS_TOKEN")]
+        daemon_access_token: Option<String>,
     },
 }
 
@@ -191,12 +193,13 @@ async fn main() -> Result<()> {
             db_path,
             next_command,
             next_args,
+            daemon_access_token,
         } => {
             let next_supervisor = next_command.map(|command| NextSupervisorConfig {
                 command,
                 args: next_args,
             });
-            serve(host, port, db_path, next_supervisor).await?
+            serve(host, port, db_path, next_supervisor, daemon_access_token).await?
         }
     }
 

@@ -22,6 +22,11 @@ slice before deeper product surfaces land.
   Schedules, Preferences, and Events surfaces.
 - Docker packages the Rust daemon and Next.js management UI as one appliance
   image with `.data` as the durable state boundary.
+- The daemon supervises the required Next.js child process with a bounded
+  restart policy when the appliance runtime configures `--next-command`.
+- Mutating daemon routes and MCP now have a first trust-boundary guard: requests
+  must come from loopback-to-daemon access or provide the configured daemon
+  access token.
 - The 0.1.0 release evidence dossier is recorded in
   [release-0.1.0.md](process/release-0.1.0.md).
 
@@ -34,14 +39,14 @@ slice before deeper product surfaces land.
 - RAG/vector memory and external integrations are not implemented yet.
 - MCP is currently a local JSON-RPC daemon projection, not a fully hardened
   public transport boundary.
-- Runtime supervision, durable event replay, schema migrations, and network
-  hardening remain the next stabilization concerns.
+- Durable event replay, schema migrations, backup integrity, MCP policy depth,
+  and UI smoke coverage remain the next stabilization concerns.
 
 ## Current Goal
 
-Close the 0.1.0 release cleanly, then start `0.1.1 Appliance Trust Boundary` to
-harden runtime supervision, network posture, MCP policy tiers, event replay,
-schema migrations, backup integrity, and UI smoke coverage.
+Continue `0.1.1 Appliance Trust Boundary` after the runtime supervision and
+first network posture slices, then harden MCP policy tiers, event replay, schema
+migrations, backup integrity, and UI smoke coverage.
 
 ## How To Read Claims
 

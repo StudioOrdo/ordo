@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use uuid::Uuid;
 
 use crate::kernel::{append_job_event, create_job_from_template};
@@ -106,6 +106,16 @@ struct BackupArchiveEvidence {
     archive_path: String,
     database_snapshot_path: String,
     manifest_path: String,
+    archived_files: Vec<ArchivedFileEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArchivedFileEvidence {
+    source_path: String,
+    archive_path: String,
+    size_bytes: u64,
+    checksum: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +273,7 @@ fn complete_backup_job(connection: &Connection, db_path: &Path, job_id: &str) ->
     )?;
 
     let file_scan = scan_data_dir(&data_dir, db_path, &backups_dir)?;
+    let archived_files = archive_scanned_files(&data_dir, &archive_path, &file_scan.scanned_files)?;
     let scanned_files = file_scan.scanned_files.clone();
     let excluded_paths = file_scan.excluded_paths.clone();
     run_task(
@@ -279,6 +290,7 @@ fn complete_backup_job(connection: &Connection, db_path: &Path, job_id: &str) ->
             "backupId": backup_id,
             "archivePath": path_string(&archive_path),
             "databaseSnapshotPath": path_string(&database_snapshot_path),
+            "archivedFiles": archived_files.clone(),
         }),
     )?;
 
@@ -294,6 +306,7 @@ fn complete_backup_job(connection: &Connection, db_path: &Path, job_id: &str) ->
             archive_path: path_string(&archive_path),
             database_snapshot_path: path_string(&database_snapshot_path),
             manifest_path: path_string(&manifest_path),
+            archived_files,
         },
         database: DatabaseEvidence {
             source_size_bytes,
@@ -347,6 +360,7 @@ fn complete_backup_job(connection: &Connection, db_path: &Path, job_id: &str) ->
             "archivePath": path_string(&archive_path),
             "manifestPath": path_string(&manifest_path),
             "databaseSnapshotPath": path_string(&database_snapshot_path),
+            "archivedFiles": manifest.archive.archived_files,
             "checksumAlgorithm": CHECKSUM_ALGORITHM,
             "checksumAlgorithmVersion": CHECKSUM_ALGORITHM_VERSION,
             "databaseSnapshotChecksum": checksum_file(&database_snapshot_path)?,
@@ -873,6 +887,7 @@ fn verify_backup_manifest(manifest_path: &Path, db_path: &Path) -> Result<Backup
             manifest.backup_id
         );
     }
+    verify_archived_files(&manifest, &archive_path)?;
     Ok(manifest)
 }
 
@@ -956,6 +971,78 @@ fn scan_data_dir(data_dir: &Path, db_path: &Path, backups_dir: &Path) -> Result<
         scanned_files,
         excluded_paths,
     })
+}
+
+fn archive_scanned_files(
+    data_dir: &Path,
+    archive_path: &Path,
+    scanned_files: &[String],
+) -> Result<Vec<ArchivedFileEvidence>> {
+    let files_archive_dir = archive_path.join("files");
+    let mut archived_files = Vec::new();
+    for source in scanned_files {
+        let source_path = Path::new(source);
+        let relative_path = source_path
+            .strip_prefix(data_dir)
+            .with_context(|| format!("Scanned file escapes data boundary: {source}"))?;
+        ensure_safe_relative_archive_path(relative_path)?;
+        let target_path = files_archive_dir.join(relative_path);
+        if let Some(parent) = target_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(source_path, &target_path).with_context(|| {
+            format!(
+                "Failed to copy backup sidecar file from {} to {}",
+                source_path.display(),
+                target_path.display()
+            )
+        })?;
+        archived_files.push(ArchivedFileEvidence {
+            source_path: path_string(source_path),
+            archive_path: path_string(&target_path),
+            size_bytes: fs::metadata(&target_path)?.len(),
+            checksum: checksum_file(&target_path)?,
+        });
+    }
+    Ok(archived_files)
+}
+
+fn verify_archived_files(manifest: &BackupManifest, archive_path: &Path) -> Result<()> {
+    for archived_file in &manifest.archive.archived_files {
+        let archived_path = canonical_manifest_path(
+            &archived_file.archive_path,
+            archive_path,
+            "archived file path",
+        )?;
+        let checksum = checksum_file(&archived_path)?;
+        if checksum != archived_file.checksum {
+            bail!(
+                "Backup archived file checksum mismatch for {}",
+                archived_file.source_path
+            );
+        }
+        let size_bytes = fs::metadata(&archived_path)?.len();
+        if size_bytes != archived_file.size_bytes {
+            bail!(
+                "Backup archived file size mismatch for {}",
+                archived_file.source_path
+            );
+        }
+    }
+    Ok(())
+}
+
+fn ensure_safe_relative_archive_path(path: &Path) -> Result<()> {
+    if path.as_os_str().is_empty() {
+        bail!("Backup archive file path is empty");
+    }
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => {}
+            _ => bail!("Backup archive file path is unsafe"),
+        }
+    }
+    Ok(())
 }
 
 fn acquire_backup_lock(backups_dir: &Path) -> Result<BackupLock> {
@@ -1045,7 +1132,9 @@ fn path_string(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::install::{update_provider_config, ProviderUpdateRequest};
     use crate::schema::init_database;
+    use crate::vault::{decrypt_secret, vault_key_path_for_db};
     use rusqlite::Connection;
     use tempfile::TempDir;
 
@@ -1066,6 +1155,10 @@ mod tests {
                 .as_str()
                 .unwrap(),
         )
+    }
+
+    fn read_manifest(job: &BackupRestoreJobSummary) -> BackupManifest {
+        serde_json::from_str(&fs::read_to_string(manifest_path_from(job)).unwrap()).unwrap()
     }
 
     #[test]
@@ -1112,6 +1205,88 @@ mod tests {
             .unwrap()
             .starts_with("sha256:v1:"));
         assert_eq!(job.tasks.len(), 8);
+    }
+
+    #[test]
+    fn backup_archives_vault_key_and_preserves_provider_secret_restore_usability() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = test_db_path(&temp_dir);
+        init_database(&db_path).unwrap();
+        update_provider_config(
+            &db_path,
+            "anthropic",
+            ProviderUpdateRequest {
+                provider_name: None,
+                enabled: Some(true),
+                default_provider: Some(true),
+                model: None,
+                base_url: None,
+                api_key: Some("sk-backup-vault-secret".to_string()),
+                non_secret_config: None,
+            },
+        )
+        .unwrap();
+
+        let backup_job = create_backup(&db_path, "test", None).unwrap();
+        let manifest = read_manifest(&backup_job);
+        let vault_key_path = vault_key_path_for_db(&db_path);
+        let archived_vault_key = manifest
+            .archive
+            .archived_files
+            .iter()
+            .find(|file| file.source_path == path_string(&vault_key_path))
+            .expect("vault key should be archived");
+        assert!(Path::new(&archived_vault_key.archive_path).exists());
+        let manifest_json = fs::read_to_string(manifest_path_from(&backup_job)).unwrap();
+        assert!(!manifest_json.contains("sk-backup-vault-secret"));
+
+        let restore_dir = temp_dir.path().join("restored");
+        fs::create_dir_all(&restore_dir).unwrap();
+        let restored_db_path = restore_dir.join("local.db");
+        let restored_vault_key_path = restore_dir.join("vault.key");
+        fs::copy(&manifest.archive.database_snapshot_path, &restored_db_path).unwrap();
+        fs::copy(&archived_vault_key.archive_path, &restored_vault_key_path).unwrap();
+        let restored_connection = Connection::open(&restored_db_path).unwrap();
+        let secret_ref: String = restored_connection
+            .query_row(
+                "SELECT secret_ref FROM provider_configs WHERE provider_id = 'anthropic'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(
+            decrypt_secret(&restored_db_path, &restored_connection, &secret_ref).unwrap(),
+            "sk-backup-vault-secret"
+        );
+    }
+
+    #[test]
+    fn restore_preflight_rejects_archived_sidecar_checksum_mismatch() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = test_db_path(&temp_dir);
+        init_database(&db_path).unwrap();
+        fs::write(temp_dir.path().join("vault.key"), b"not-a-real-vault-key").unwrap();
+        let backup_job = create_backup(&db_path, "test", None).unwrap();
+        let backup_id = backup_id_from(&backup_job);
+        let manifest = read_manifest(&backup_job);
+        let archived_file = manifest.archive.archived_files.first().unwrap();
+        fs::write(&archived_file.archive_path, b"tampered").unwrap();
+
+        let result = run_restore_preflight(
+            &db_path,
+            RestorePreflightRequest {
+                backup_id: backup_id.clone(),
+                confirmation: format!("RESTORE {backup_id}"),
+            },
+            "test",
+            None,
+        );
+
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("archived file checksum mismatch"));
     }
 
     #[test]

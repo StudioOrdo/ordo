@@ -45,6 +45,9 @@ Secret-like payload keys are redacted before storage. Query results are bounded
 so the System UI can inspect recent observations without exposing the appliance
 as an unbounded log export.
 
+Provider API keys and local vault material must not appear in diagnostic log
+payloads. API-key-shaped payload keys are redacted before storage.
+
 ## Issue Reports
 
 Reports are local evidence packages.
@@ -61,6 +64,10 @@ Preparing a report:
 
 Reports are stored locally as artifacts. They are not automatically submitted to
 GitHub, support systems, model providers, or other Ordos.
+
+Reports must not include plaintext provider keys or local vault key material.
+Provider status may be summarized only through redacted presence/source
+metadata.
 
 Issue report job artifacts include provenance metadata for the current local
 policy spine: actor, action, report resource, producing capability, producing

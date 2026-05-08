@@ -23,6 +23,11 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "actor_role_memberships",
     "resource_grants",
     "policy_decisions",
+    "install_state",
+    "appliance_owner",
+    "business_profile",
+    "vault_items",
+    "provider_configs",
     "corpus_sources",
     "corpus_items",
     "schedules",
@@ -31,7 +36,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 8;
+pub const CURRENT_SCHEMA_VERSION: i64 = 9;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -81,6 +86,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 8,
         name: "add_policy_decision_audit_trail",
         apply: add_policy_decision_audit_trail,
+    },
+    SchemaMigration {
+        version: 9,
+        name: "add_local_install_and_provider_config",
+        apply: add_local_install_and_provider_config,
     },
 ];
 
@@ -681,6 +691,73 @@ fn add_policy_decision_audit_trail(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_local_install_and_provider_config(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS appliance_owner (
+            id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            email TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS business_profile (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            workspace_label TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS install_state (
+            id TEXT PRIMARY KEY,
+            installed INTEGER NOT NULL DEFAULT 0,
+            completed_at TEXT,
+            owner_id TEXT,
+            business_profile_id TEXT,
+            default_provider_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (owner_id) REFERENCES appliance_owner(id) ON DELETE SET NULL,
+            FOREIGN KEY (business_profile_id) REFERENCES business_profile(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS vault_items (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            label TEXT NOT NULL,
+            encrypted_value TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_used_at TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_vault_items_kind ON vault_items(kind, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS provider_configs (
+            provider_id TEXT PRIMARY KEY,
+            provider_name TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            default_provider INTEGER NOT NULL DEFAULT 0,
+            model TEXT,
+            base_url TEXT,
+            secret_ref TEXT,
+            non_secret_config_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (secret_ref) REFERENCES vault_items(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_provider_configs_enabled ON provider_configs(enabled, provider_id);
+        CREATE INDEX IF NOT EXISTS idx_provider_configs_default ON provider_configs(default_provider, provider_id);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -782,8 +859,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 8);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 9);
     }
 
     #[test]
@@ -855,6 +932,10 @@ mod tests {
         assert!(table_exists(&connection, "actor_role_memberships"));
         assert!(table_exists(&connection, "resource_grants"));
         assert!(table_exists(&connection, "policy_decisions"));
+        assert!(table_exists(&connection, "install_state"));
+        assert!(table_exists(&connection, "appliance_owner"));
+        assert!(table_exists(&connection, "business_profile"));
+        assert!(table_exists(&connection, "provider_configs"));
         assert!(table_exists(&connection, "corpus_sources"));
         assert!(table_exists(&connection, "corpus_items"));
 
@@ -998,6 +1079,29 @@ mod tests {
 
         assert_eq!(metadata, "{\"embedding\":\"not_present\"}");
         assert_eq!(classification, "{\"visibility\":\"owner_system\"}");
+    }
+
+    #[test]
+    fn local_install_and_provider_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "install_state"));
+        assert!(table_exists(&connection, "appliance_owner"));
+        assert!(table_exists(&connection, "business_profile"));
+        assert!(table_exists(&connection, "vault_items"));
+        assert!(table_exists(&connection, "provider_configs"));
+        assert!(column_exists(&connection, "provider_configs", "secret_ref"));
+        assert!(!column_exists(
+            &connection,
+            "provider_configs",
+            "api_key_secret"
+        ));
+        assert!(column_exists(
+            &connection,
+            "provider_configs",
+            "non_secret_config_json"
+        ));
     }
 
     fn create_legacy_unversioned_database(connection: &Connection) {

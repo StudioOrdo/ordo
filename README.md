@@ -125,6 +125,43 @@ npm run dev
 npm run build
 ```
 
+## Docker Appliance Runtime
+
+The Phase 5 appliance packages the Rust daemon and Next.js management UI in one
+image. The daemon is the top-level process and starts the Next standalone server
+as a child process.
+
+Build the image:
+
+```bash
+docker compose build
+```
+
+Run the appliance:
+
+```bash
+docker compose up
+```
+
+Then open `http://localhost:3000` for the UI. The daemon is exposed at
+`http://localhost:17760` for health, readiness, API routes, and WebSocket
+projection.
+
+Useful runtime commands:
+
+```bash
+docker compose logs -f ordo
+docker compose stop
+docker compose start
+docker compose down
+```
+
+Persistence is handled by the named Compose volume `ordo-data`, mounted at
+`/app/.data` in the container. SQLite lives at `/app/.data/local.db`; backup
+archives and restore safety records are written below `/app/.data/backups`.
+`docker compose down` preserves that volume. `docker compose down -v` removes
+it.
+
 Validation:
 
 ```bash

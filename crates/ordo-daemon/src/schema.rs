@@ -37,7 +37,7 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
         PRAGMA foreign_keys = ON;
 
         CREATE TABLE IF NOT EXISTS process_templates (
-            id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
             kind TEXT NOT NULL,
             name TEXT NOT NULL,
             version INTEGER NOT NULL,
@@ -45,7 +45,7 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
             tasks_json TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            UNIQUE(id, version)
+            PRIMARY KEY (id, version)
         );
 
         CREATE TABLE IF NOT EXISTS jobs (
@@ -208,5 +208,34 @@ mod tests {
                 .unwrap();
             assert_eq!(exists, 1, "missing table {table_name}");
         }
+    }
+
+    #[test]
+    fn process_templates_allow_multiple_versions() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        connection.execute(
+            "INSERT INTO process_templates (
+                id, kind, name, version, description, tasks_json, created_at, updated_at
+             ) VALUES ('brief.system.generate', 'brief.system.generate', 'System Brief', 1, 'v1', '[]', 'now', 'now')",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO process_templates (
+                id, kind, name, version, description, tasks_json, created_at, updated_at
+             ) VALUES ('brief.system.generate', 'brief.system.generate', 'System Brief', 2, 'v2', '[]', 'now', 'now')",
+            [],
+        ).unwrap();
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM process_templates WHERE id = 'brief.system.generate'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(count, 2);
     }
 }

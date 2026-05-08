@@ -49,6 +49,12 @@ pub fn find_builtin_template(template_id: &str) -> Option<ProcessTemplate> {
         .find(|template| template.id == template_id)
 }
 
+pub fn find_builtin_template_version(template_id: &str, version: i64) -> Option<ProcessTemplate> {
+    built_in_templates()
+        .into_iter()
+        .find(|template| template.id == template_id && template.version == version)
+}
+
 pub fn seed_builtin_templates(connection: &Connection) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     for template in built_in_templates() {
@@ -80,6 +86,15 @@ pub fn seed_builtin_templates(connection: &Connection) -> Result<()> {
 pub fn require_builtin_template(template_id: &str) -> Result<ProcessTemplate> {
     find_builtin_template(template_id)
         .ok_or_else(|| anyhow::anyhow!("Unknown built-in process template: {template_id}"))
+}
+
+pub fn require_builtin_template_version(
+    template_id: &str,
+    version: i64,
+) -> Result<ProcessTemplate> {
+    find_builtin_template_version(template_id, version).ok_or_else(|| {
+        anyhow::anyhow!("Unknown built-in process template version: {template_id}@{version}")
+    })
 }
 
 fn task(key: &str, kind: &str, label: &str, depends_on: &[&str]) -> TaskDefinition {

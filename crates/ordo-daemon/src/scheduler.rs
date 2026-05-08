@@ -5,7 +5,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::kernel::create_job_from_template;
-use crate::templates::require_builtin_template;
+use crate::templates::require_builtin_template_version;
 
 #[derive(Debug, Clone)]
 pub struct ScheduleRecord {
@@ -108,7 +108,8 @@ pub fn create_job_for_due_schedule(
         bail!("Schedule {schedule_id} is not due yet");
     }
 
-    let template = require_builtin_template(&schedule.template_id)?;
+    let template =
+        require_builtin_template_version(&schedule.template_id, schedule.template_version)?;
     let payload: Value = serde_json::from_str(&schedule.payload_json)?;
     let job_id = create_job_from_template(
         connection,

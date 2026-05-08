@@ -1,0 +1,32 @@
+# OS/editor noise
+.DS_Store
+.vscode/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and builds
+node_modules/
+.next/
+out/
+dist/
+build/
+target/
+
+# Runtime data and generated artifacts
+.data/
+.runtime-logs/
+.ordo/
+.ordo-artifacts/
+coverage/
+test-results/
+playwright-report/
+*.log
+*.jsonl
+*.tsbuildinfo
+
+# Private/local docs workspaces.
+# Public docs live in non-underscore folders such as docs/business and docs/process.
+docs/_*/

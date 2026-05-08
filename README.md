@@ -61,6 +61,12 @@ Ordo is being designed as a sovereign appliance:
 
 Managed hosting should be convenience, not captivity.
 
+The first release target is [Ordo 0.1.0 Appliance Specimen](docs/process/release-0.1.0.md):
+a small, working proof of the core architecture before product depth.
+
+Read the [system architecture contract](docs/architecture/system-architecture.md)
+for the 0.1.0 design.
+
 ## Software Manufacturing
 
 This repository builds Ordo in public using the same process Ordo asks the

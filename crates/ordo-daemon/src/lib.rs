@@ -1,3 +1,4 @@
+pub mod backups;
 pub mod briefs;
 pub mod events;
 pub mod health;

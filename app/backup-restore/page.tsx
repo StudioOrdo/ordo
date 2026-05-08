@@ -1,11 +1,14 @@
 import { SystemShell } from "@/components/system-shell";
-import { PageTitle } from "@/components/system-panels";
-import { getSystemSnapshot } from "@/lib/daemon-client";
+import { BackupRestoreActions } from "@/components/backup-restore-actions";
+import { PageTitle, statusClass } from "@/components/system-panels";
+import { BackupRestoreJobSummary, getBackupRestoreSnapshot, getSystemSnapshot } from "@/lib/daemon-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function BackupRestorePage() {
-  const snapshot = await getSystemSnapshot();
+  const [snapshot, backupSnapshot] = await Promise.all([getSystemSnapshot(), getBackupRestoreSnapshot()]);
+  const latestBackupId = latestBackupArtifactId(backupSnapshot.jobs);
+  const daemonUnavailable = Boolean(snapshot.degradedReason || backupSnapshot.degradedReason);
 
   return (
     <SystemShell currentItemId="backup-restore" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
@@ -14,6 +17,15 @@ export default async function BackupRestorePage() {
         title="Backup & Restore"
         description="Backup and restore jobs will run through the shared task DAG kernel."
       />
+
+      <BackupRestoreActions latestBackupId={latestBackupId} disabled={daemonUnavailable} />
+
+      {backupSnapshot.degradedReason ? (
+        <section className="plain-panel">
+          <h3 className="panel-title">State</h3>
+          <p className="brief-body">{backupSnapshot.degradedReason}</p>
+        </section>
+      ) : null}
 
       <section className="plain-panel table-shell">
         <table className="data-table">
@@ -28,11 +40,15 @@ export default async function BackupRestorePage() {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td colSpan={6} className="table-empty">
-                No backup or restore jobs are available yet. This table is reserved for task-count progress and artifacts.
-              </td>
-            </tr>
+            {backupSnapshot.jobs.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="table-empty">
+                  No backup or restore jobs are available yet.
+                </td>
+              </tr>
+            ) : (
+              backupSnapshot.jobs.map((job) => <JobRow key={job.id} job={job} />)
+            )}
           </tbody>
         </table>
       </section>
@@ -46,4 +62,53 @@ export default async function BackupRestorePage() {
       </section>
     </SystemShell>
   );
+}
+
+function JobRow({ job }: { job: BackupRestoreJobSummary }) {
+  const artifactLabel = artifactText(job);
+  return (
+    <tr>
+      <td>
+        <strong>{job.operation}</strong>
+        <span className="table-subtle">{job.id}</span>
+      </td>
+      <td>
+        <span className={statusClass(job.status)}>{job.status}</span>
+        {job.failureMessage ? <span className="table-subtle">{job.failureMessage}</span> : null}
+      </td>
+      <td>
+        {job.progress.completedRequiredTasks}/{job.progress.totalRequiredTasks} tasks
+        <span className="table-subtle">{job.progress.percent}%</span>
+      </td>
+      <td>{job.currentTaskKey ?? "complete"}</td>
+      <td>{job.elapsedSeconds === null ? "pending" : `${job.elapsedSeconds}s`}</td>
+      <td>
+        {artifactLabel.primary}
+        {artifactLabel.secondary ? <span className="table-subtle">{artifactLabel.secondary}</span> : null}
+      </td>
+    </tr>
+  );
+}
+
+function latestBackupArtifactId(jobs: BackupRestoreJobSummary[]): string | null {
+  for (const job of jobs) {
+    const backupId = job.artifact?.metadata.backupId;
+    if (job.operation === "backup" && typeof backupId === "string") {
+      return backupId;
+    }
+  }
+  return null;
+}
+
+function artifactText(job: BackupRestoreJobSummary): { primary: string; secondary: string | null } {
+  if (!job.artifact) {
+    return { primary: "none", secondary: null };
+  }
+  const backupId = job.artifact.metadata.backupId;
+  const manifestPath = job.artifact.metadata.manifestPath;
+  const safetyRecordPath = job.artifact.metadata.safetyRecordPath;
+  return {
+    primary: typeof backupId === "string" ? backupId : job.artifact.label,
+    secondary: typeof manifestPath === "string" ? manifestPath : typeof safetyRecordPath === "string" ? safetyRecordPath : job.artifact.uri,
+  };
 }

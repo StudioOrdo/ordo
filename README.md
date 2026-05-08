@@ -111,6 +111,9 @@ cargo run -p ordo-daemon -- init-db --db-path .data/local.db
 cargo run -p ordo-daemon -- ready-json --db-path .data/local.db
 cargo run -p ordo-daemon -- latest-system-brief-json --db-path .data/local.db
 cargo run -p ordo-daemon -- generate-system-brief-json --db-path .data/local.db
+cargo run -p ordo-daemon -- create-backup-json --db-path .data/local.db
+cargo run -p ordo-daemon -- list-backups-json --db-path .data/local.db
+cargo run -p ordo-daemon -- restore-preflight-json --db-path .data/local.db --backup-id <backup_id> --confirmation "RESTORE <backup_id>"
 cargo run -p ordo-daemon -- serve --db-path .data/local.db
 ```
 

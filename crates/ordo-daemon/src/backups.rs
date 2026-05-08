@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -13,7 +14,8 @@ use crate::templates::require_builtin_template;
 
 const BACKUP_TEMPLATE_ID: &str = "backup.create";
 const RESTORE_TEMPLATE_ID: &str = "restore.execute";
-const CHECKSUM_ALGORITHM: &str = "fnv1a64";
+const CHECKSUM_ALGORITHM: &str = "sha256";
+const CHECKSUM_ALGORITHM_VERSION: &str = "1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,7 +80,7 @@ pub struct RestorePreflightRequest {
     pub confirmation: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BackupManifest {
     schema_version: String,
@@ -91,14 +93,14 @@ struct BackupManifest {
     integrity: IntegrityEvidence,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BackupSourcePaths {
     data_dir: String,
     database_path: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BackupArchiveEvidence {
     archive_path: String,
@@ -106,7 +108,7 @@ struct BackupArchiveEvidence {
     manifest_path: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DatabaseEvidence {
     source_size_bytes: u64,
@@ -115,17 +117,18 @@ struct DatabaseEvidence {
     integrity_check: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FileScanEvidence {
     scanned_files: Vec<String>,
     excluded_paths: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IntegrityEvidence {
     checksum_algorithm: String,
+    checksum_algorithm_version: String,
     database_snapshot_checksum: String,
     manifest_checksum: Option<String>,
 }
@@ -279,7 +282,7 @@ fn complete_backup_job(connection: &Connection, db_path: &Path, job_id: &str) ->
         }),
     )?;
 
-    let manifest = BackupManifest {
+    let mut manifest = BackupManifest {
         schema_version: "1".to_string(),
         backup_id: backup_id.clone(),
         created_at: Utc::now().to_rfc3339(),
@@ -301,31 +304,34 @@ fn complete_backup_job(connection: &Connection, db_path: &Path, job_id: &str) ->
         file_scan,
         integrity: IntegrityEvidence {
             checksum_algorithm: CHECKSUM_ALGORITHM.to_string(),
+            checksum_algorithm_version: CHECKSUM_ALGORITHM_VERSION.to_string(),
             database_snapshot_checksum: database_checksum.clone(),
             manifest_checksum: None,
         },
     };
+    let manifest_checksum = checksum_manifest_payload(&manifest)?;
+    manifest.integrity.manifest_checksum = Some(manifest_checksum.clone());
     fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
-    let manifest_checksum = checksum_file(&manifest_path)?;
     run_task(
         connection,
         job_id,
         "manifest.write",
         json!({
             "manifestPath": path_string(&manifest_path),
-            "manifestChecksum": manifest_checksum,
+            "manifestChecksum": manifest_checksum.clone(),
         }),
     )?;
 
-    verify_backup_manifest(&manifest_path)?;
+    verify_backup_manifest(&manifest_path, db_path)?;
     run_task(
         connection,
         job_id,
         "integrity.verify",
         json!({
             "checksumAlgorithm": CHECKSUM_ALGORITHM,
+            "checksumAlgorithmVersion": CHECKSUM_ALGORITHM_VERSION,
             "databaseSnapshotChecksum": database_checksum,
-            "manifestChecksum": manifest_checksum,
+            "manifestChecksum": manifest_checksum.clone(),
         }),
     )?;
 
@@ -342,8 +348,9 @@ fn complete_backup_job(connection: &Connection, db_path: &Path, job_id: &str) ->
             "manifestPath": path_string(&manifest_path),
             "databaseSnapshotPath": path_string(&database_snapshot_path),
             "checksumAlgorithm": CHECKSUM_ALGORITHM,
+            "checksumAlgorithmVersion": CHECKSUM_ALGORITHM_VERSION,
             "databaseSnapshotChecksum": checksum_file(&database_snapshot_path)?,
-            "manifestChecksum": checksum_file(&manifest_path)?,
+            "manifestChecksum": manifest_checksum,
         }),
     )?;
     run_task(
@@ -377,7 +384,7 @@ fn complete_restore_preflight_job(
         .get("manifestPath")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow::anyhow!("Backup artifact is missing manifestPath metadata"))?;
-    let manifest = verify_backup_manifest(Path::new(manifest_path))?;
+    let manifest = verify_backup_manifest(Path::new(manifest_path), db_path)?;
     run_task(
         connection,
         job_id,
@@ -386,6 +393,7 @@ fn complete_restore_preflight_job(
             "backupId": manifest.backup_id,
             "manifestPath": manifest_path,
             "checksumAlgorithm": CHECKSUM_ALGORITHM,
+            "checksumAlgorithmVersion": CHECKSUM_ALGORITHM_VERSION,
         }),
     )?;
 
@@ -812,18 +820,110 @@ fn load_backup_artifact(connection: &Connection, backup_id: &str) -> Result<JobA
     bail!("Unknown backup artifact: {backup_id}")
 }
 
-fn verify_backup_manifest(manifest_path: &Path) -> Result<BackupManifest> {
-    let manifest_json = fs::read_to_string(manifest_path)?;
-    let manifest: BackupManifest = serde_json::from_str(&manifest_json)?;
-    let database_snapshot_path = Path::new(&manifest.archive.database_snapshot_path);
-    let checksum = checksum_file(database_snapshot_path)?;
+fn verify_backup_manifest(manifest_path: &Path, db_path: &Path) -> Result<BackupManifest> {
+    let backup_boundary = backups_dir_for(db_path)?.canonicalize()?;
+    let manifest_path = manifest_path.canonicalize().with_context(|| {
+        format!(
+            "Backup manifest path does not exist or is not accessible: {}",
+            manifest_path.display()
+        )
+    })?;
+    ensure_path_within(&manifest_path, &backup_boundary, "manifest path")?;
+
+    let manifest_json = fs::read_to_string(&manifest_path)?;
+    let manifest: BackupManifest = serde_json::from_str(&manifest_json)
+        .with_context(|| format!("Backup manifest is malformed: {}", manifest_path.display()))?;
+    validate_manifest_shape(&manifest)?;
+
+    let archive_path = canonical_manifest_path(
+        &manifest.archive.archive_path,
+        &backup_boundary,
+        "archive path",
+    )?;
+    let database_snapshot_path = canonical_manifest_path(
+        &manifest.archive.database_snapshot_path,
+        &archive_path,
+        "database snapshot path",
+    )?;
+    let declared_manifest_path = canonical_manifest_path(
+        &manifest.archive.manifest_path,
+        &archive_path,
+        "declared manifest path",
+    )?;
+    if declared_manifest_path != manifest_path {
+        bail!("Backup manifest path does not match declared manifest path");
+    }
+
+    let checksum = checksum_file(&database_snapshot_path)?;
     if checksum != manifest.integrity.database_snapshot_checksum {
         bail!(
             "Backup database checksum mismatch for {}",
             manifest.backup_id
         );
     }
+    let expected_manifest_checksum = manifest
+        .integrity
+        .manifest_checksum
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Backup manifest is missing manifest checksum"))?;
+    let manifest_checksum = checksum_manifest_payload(&manifest)?;
+    if manifest_checksum != expected_manifest_checksum {
+        bail!(
+            "Backup manifest checksum mismatch for {}",
+            manifest.backup_id
+        );
+    }
     Ok(manifest)
+}
+
+fn validate_manifest_shape(manifest: &BackupManifest) -> Result<()> {
+    if manifest.schema_version != "1" {
+        bail!(
+            "Unsupported backup manifest schema version: {}",
+            manifest.schema_version
+        );
+    }
+    if manifest.backup_id.trim().is_empty()
+        || manifest.backup_id.contains('/')
+        || manifest.backup_id.contains('\\')
+    {
+        bail!("Backup manifest has invalid backupId");
+    }
+    if manifest.integrity.checksum_algorithm != CHECKSUM_ALGORITHM {
+        bail!(
+            "Unsupported backup checksum algorithm: {}",
+            manifest.integrity.checksum_algorithm
+        );
+    }
+    if manifest.integrity.checksum_algorithm_version != CHECKSUM_ALGORITHM_VERSION {
+        bail!(
+            "Unsupported backup checksum algorithm version: {}",
+            manifest.integrity.checksum_algorithm_version
+        );
+    }
+    if !manifest
+        .integrity
+        .database_snapshot_checksum
+        .starts_with("sha256:v1:")
+    {
+        bail!("Backup manifest has invalid database snapshot checksum format");
+    }
+    Ok(())
+}
+
+fn canonical_manifest_path(path: &str, boundary: &Path, label: &str) -> Result<PathBuf> {
+    let path = Path::new(path)
+        .canonicalize()
+        .with_context(|| format!("Backup manifest {label} is not accessible: {path}"))?;
+    ensure_path_within(&path, boundary, label)?;
+    Ok(path)
+}
+
+fn ensure_path_within(path: &Path, boundary: &Path, label: &str) -> Result<()> {
+    if !path.starts_with(boundary) {
+        bail!("Backup manifest {label} escapes backup boundary");
+    }
+    Ok(())
 }
 
 fn sqlite_integrity_check(connection: &Connection) -> Result<String> {
@@ -870,19 +970,46 @@ fn acquire_backup_lock(backups_dir: &Path) -> Result<BackupLock> {
 
 fn checksum_file(path: &Path) -> Result<String> {
     let mut file = File::open(path)?;
-    let mut checksum: u64 = 0xcbf29ce484222325;
+    let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 8192];
     loop {
         let bytes_read = file.read(&mut buffer)?;
         if bytes_read == 0 {
             break;
         }
-        for byte in &buffer[..bytes_read] {
-            checksum ^= u64::from(*byte);
-            checksum = checksum.wrapping_mul(0x100000001b3);
-        }
+        hasher.update(&buffer[..bytes_read]);
     }
-    Ok(format!("{CHECKSUM_ALGORITHM}:{checksum:016x}"))
+    Ok(format_checksum(&hasher.finalize()))
+}
+
+fn checksum_manifest_payload(manifest: &BackupManifest) -> Result<String> {
+    let mut normalized_manifest = manifest.clone();
+    normalized_manifest.integrity.manifest_checksum = None;
+    let bytes = serde_json::to_vec_pretty(&normalized_manifest)?;
+    Ok(checksum_bytes(&bytes))
+}
+
+fn checksum_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format_checksum(&hasher.finalize())
+}
+
+fn format_checksum(bytes: &[u8]) -> String {
+    format!(
+        "{CHECKSUM_ALGORITHM}:v{CHECKSUM_ALGORITHM_VERSION}:{}",
+        hex_lower(bytes)
+    )
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
 }
 
 fn data_dir_for(db_path: &Path) -> PathBuf {
@@ -919,10 +1046,26 @@ fn path_string(path: &Path) -> String {
 mod tests {
     use super::*;
     use crate::schema::init_database;
+    use rusqlite::Connection;
     use tempfile::TempDir;
 
     fn test_db_path(temp_dir: &TempDir) -> PathBuf {
         temp_dir.path().join("local.db")
+    }
+
+    fn backup_id_from(job: &BackupRestoreJobSummary) -> String {
+        job.artifact.as_ref().unwrap().metadata["backupId"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn manifest_path_from(job: &BackupRestoreJobSummary) -> PathBuf {
+        PathBuf::from(
+            job.artifact.as_ref().unwrap().metadata["manifestPath"]
+                .as_str()
+                .unwrap(),
+        )
     }
 
     #[test]
@@ -939,7 +1082,160 @@ mod tests {
         assert_eq!(job.progress.percent, 100);
         assert_eq!(artifact.artifact_kind, "backup.archive");
         assert!(Path::new(manifest_path).exists());
+        assert_eq!(
+            artifact.metadata["checksumAlgorithm"].as_str(),
+            Some(CHECKSUM_ALGORITHM)
+        );
+        assert_eq!(
+            artifact.metadata["checksumAlgorithmVersion"].as_str(),
+            Some(CHECKSUM_ALGORITHM_VERSION)
+        );
+        assert!(artifact.metadata["databaseSnapshotChecksum"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:v1:"));
+        assert!(artifact.metadata["manifestChecksum"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:v1:"));
+        let manifest: BackupManifest =
+            serde_json::from_str(&fs::read_to_string(manifest_path).unwrap()).unwrap();
+        assert_eq!(manifest.integrity.checksum_algorithm, CHECKSUM_ALGORITHM);
+        assert_eq!(
+            manifest.integrity.checksum_algorithm_version,
+            CHECKSUM_ALGORITHM_VERSION
+        );
+        assert!(manifest
+            .integrity
+            .manifest_checksum
+            .as_deref()
+            .unwrap()
+            .starts_with("sha256:v1:"));
         assert_eq!(job.tasks.len(), 8);
+    }
+
+    #[test]
+    fn restore_preflight_rejects_checksum_mismatch() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = test_db_path(&temp_dir);
+        init_database(&db_path).unwrap();
+        let backup_job = create_backup(&db_path, "test", None).unwrap();
+        let backup_id = backup_id_from(&backup_job);
+        let manifest_path = manifest_path_from(&backup_job);
+        let mut manifest: BackupManifest =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest.integrity.database_snapshot_checksum = "sha256:v1:00".to_string();
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let result = run_restore_preflight(
+            &db_path,
+            RestorePreflightRequest {
+                backup_id: backup_id.clone(),
+                confirmation: format!("RESTORE {backup_id}"),
+            },
+            "test",
+            None,
+        );
+
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn restore_preflight_rejects_malformed_manifest() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = test_db_path(&temp_dir);
+        init_database(&db_path).unwrap();
+        let backup_job = create_backup(&db_path, "test", None).unwrap();
+        let backup_id = backup_id_from(&backup_job);
+        let manifest_path = manifest_path_from(&backup_job);
+        fs::write(&manifest_path, b"{not json").unwrap();
+
+        let result = run_restore_preflight(
+            &db_path,
+            RestorePreflightRequest {
+                backup_id: backup_id.clone(),
+                confirmation: format!("RESTORE {backup_id}"),
+            },
+            "test",
+            None,
+        );
+
+        assert!(result.unwrap_err().to_string().contains("malformed"));
+    }
+
+    #[test]
+    fn restore_preflight_rejects_manifest_path_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = test_db_path(&temp_dir);
+        init_database(&db_path).unwrap();
+        let backup_job = create_backup(&db_path, "test", None).unwrap();
+        let backup_id = backup_id_from(&backup_job);
+        let outside_manifest_path = temp_dir.path().join("outside_manifest.json");
+        fs::write(&outside_manifest_path, b"{}").unwrap();
+        let connection = Connection::open(&db_path).unwrap();
+        connection
+            .execute(
+                "UPDATE job_artifacts SET metadata_json = json_set(metadata_json, '$.manifestPath', ?1)
+                 WHERE artifact_kind = 'backup.archive'",
+                [path_string(&outside_manifest_path)],
+            )
+            .unwrap();
+
+        let result = run_restore_preflight(
+            &db_path,
+            RestorePreflightRequest {
+                backup_id: backup_id.clone(),
+                confirmation: format!("RESTORE {backup_id}"),
+            },
+            "test",
+            None,
+        );
+
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("escapes backup boundary"));
+    }
+
+    #[test]
+    fn restore_preflight_rejects_snapshot_path_traversal_inside_manifest() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = test_db_path(&temp_dir);
+        init_database(&db_path).unwrap();
+        let backup_job = create_backup(&db_path, "test", None).unwrap();
+        let backup_id = backup_id_from(&backup_job);
+        let manifest_path = manifest_path_from(&backup_job);
+        let mut manifest: BackupManifest =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest.archive.database_snapshot_path = path_string(&db_path);
+        manifest.integrity.manifest_checksum = Some(checksum_manifest_payload(&manifest).unwrap());
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let result = run_restore_preflight(
+            &db_path,
+            RestorePreflightRequest {
+                backup_id: backup_id.clone(),
+                confirmation: format!("RESTORE {backup_id}"),
+            },
+            "test",
+            None,
+        );
+
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("escapes backup boundary"));
     }
 
     #[test]

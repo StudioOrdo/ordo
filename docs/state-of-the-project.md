@@ -36,6 +36,9 @@ slice before deeper product surfaces land.
   global event cursor, and the Events surface reads persisted event history.
 - SQLite initialization now runs ordered schema migrations tracked by
   `PRAGMA user_version`; fresh databases and 0.1.0 databases use the same path.
+- Backup manifests now record SHA-256 checksum evidence with an algorithm
+  version, and restore preflight rejects malformed manifests, checksum
+  mismatches, and paths that escape the local backups boundary.
 - The 0.1.0 release evidence dossier is recorded in
   [release-0.1.0.md](process/release-0.1.0.md).
 
@@ -48,14 +51,13 @@ slice before deeper product surfaces land.
 - RAG/vector memory and external integrations are not implemented yet.
 - MCP is currently a local JSON-RPC daemon projection with first policy tiers,
   not a third-party plugin surface.
-- Backup integrity and UI smoke coverage remain the next stabilization
-  concerns.
+- UI smoke coverage remains the next stabilization concern.
 
 ## Current Goal
 
 Continue `0.1.1 Appliance Trust Boundary` after the runtime supervision,
 network posture, MCP policy tier, MCP request strictness, and durable event
-replay and schema migration slices, then harden backup integrity and UI smoke
+replay, schema migration, and backup integrity slices, then harden UI smoke
 coverage.
 
 ## How To Read Claims

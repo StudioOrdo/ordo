@@ -26,7 +26,7 @@ surfaces land.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
-- Protected daemon actions now pass through a shared pre-RBAC policy decision
+- Protected daemon actions now pass through a shared policy decision
   spine that names actor, action, resource, capability, and outcome while
   preserving the current local trust boundary.
 - SQLite stores a durable local access foundation with actors, roles,

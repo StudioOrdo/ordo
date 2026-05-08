@@ -98,12 +98,15 @@ Implemented now:
 - structured diagnostic logs and local issue report preparation;
 - backup creation and restore preflight safety;
 - a capability catalog and local MCP JSON-RPC projection with policy tiers;
+- a resource/provenance policy spine and durable local access foundation for
+  system and owner resources;
 - persisted realtime event replay plus WebSocket projection.
 
 Not implemented yet:
 
 - public Chat, About, Offers, and Feed product surfaces;
-- authentication and full RBAC enforcement;
+- authentication UI, hosted identity, public portals, and product-depth access
+  enforcement;
 - RAG/vector memory and content packs;
 - hosted trial orchestration;
 - Worker Ordos, A2A networking, and external report submission.
@@ -121,7 +124,8 @@ solopreneur operating system:
 - About becomes the public business story.
 - Offers describe what can be bought.
 - Feed publishes composite public artifacts for people and machines.
-- RBAC keeps public, signed-in, owner/admin, and per-user private data separate.
+- Future product-depth RBAC keeps public, signed-in, owner/admin, and per-user
+  private data separate on top of the local access foundation.
 - Knowledge/RAG grounds answers in approved corpus material with provenance.
 - Content packs become portable, human-approved knowledge products.
 - Worker Ordos and A2A remain future architecture for scaling bounded work while

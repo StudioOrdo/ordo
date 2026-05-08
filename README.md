@@ -112,9 +112,18 @@ cargo run -p ordo-daemon -- ready-json --db-path .data/local.db
 cargo run -p ordo-daemon -- serve --db-path .data/local.db
 ```
 
+The Phase 2 system shell is a minimal Next.js app.
+
+```bash
+npm install
+npm run dev
+npm run build
+```
+
 Validation:
 
 ```bash
+npm run check
 cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings

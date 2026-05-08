@@ -8,7 +8,7 @@ use ordo_daemon::backups::{
 use ordo_daemon::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
 use ordo_daemon::health::{build_health_report, build_readiness_report};
 use ordo_daemon::schema::init_database;
-use ordo_daemon::server::serve;
+use ordo_daemon::server::{serve, NextSupervisorConfig};
 
 #[derive(Parser)]
 #[command(version, about = "Ordo appliance daemon")]
@@ -67,6 +67,10 @@ enum Commands {
         port: u16,
         #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
         db_path: PathBuf,
+        #[arg(long, env = "ORDO_NEXT_COMMAND")]
+        next_command: Option<String>,
+        #[arg(long = "next-arg", env = "ORDO_NEXT_ARGS", value_delimiter = ' ')]
+        next_args: Vec<String>,
     },
 }
 
@@ -143,7 +147,15 @@ async fn main() -> Result<()> {
             host,
             port,
             db_path,
-        } => serve(host, port, db_path).await?,
+            next_command,
+            next_args,
+        } => {
+            let next_supervisor = next_command.map(|command| NextSupervisorConfig {
+                command,
+                args: next_args,
+            });
+            serve(host, port, db_path, next_supervisor).await?
+        }
     }
 
     Ok(())

@@ -1,0 +1,33 @@
+# Source control and local editor state
+.git/
+.github/
+.vscode/
+.DS_Store
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Dependency and build outputs
+node_modules/
+.next/
+target/
+out/
+dist/
+build/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Runtime data and generated artifacts
+.data/
+.runtime-logs/
+.ordo/
+.ordo-artifacts/
+*.log
+*.jsonl
+
+# Private/local docs workspaces
+docs/_*/

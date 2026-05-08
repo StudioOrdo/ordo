@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -8,7 +8,9 @@ use axum::{Json, Router};
 use serde::Serialize;
 use serde_json::json;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::thread;
 use tokio::sync::broadcast;
 use tokio::time::{self, Duration};
 
@@ -29,7 +31,18 @@ struct AppState {
     event_sender: broadcast::Sender<RealtimeEvent>,
 }
 
-pub async fn serve(host: String, port: u16, db_path: PathBuf) -> Result<()> {
+#[derive(Debug, Clone)]
+pub struct NextSupervisorConfig {
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+pub async fn serve(
+    host: String,
+    port: u16,
+    db_path: PathBuf,
+    next_supervisor: Option<NextSupervisorConfig>,
+) -> Result<()> {
     init_database(&db_path)?;
     let _generated_briefs = run_due_system_brief_schedules(&db_path)?;
 
@@ -56,10 +69,50 @@ pub async fn serve(host: String, port: u16, db_path: PathBuf) -> Result<()> {
         "daemon.started",
         json!({ "host": host, "port": port }),
     ));
+    if let Some(config) = next_supervisor {
+        spawn_next_supervisor(config, state.event_sender.clone())?;
+    }
     spawn_system_brief_scheduler(state.db_path.clone(), state.event_sender.clone());
 
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
     axum::serve(listener, app).await?;
+    Ok(())
+}
+
+fn spawn_next_supervisor(
+    config: NextSupervisorConfig,
+    event_sender: broadcast::Sender<RealtimeEvent>,
+) -> Result<()> {
+    let mut child = Command::new(&config.command)
+        .args(&config.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("Failed to start Next.js child process: {}", config.command))?;
+    let child_id = child.id();
+    let _ = event_sender.send(system_event(
+        "next.supervisor.started",
+        json!({ "command": config.command, "args": config.args, "pid": child_id }),
+    ));
+
+    thread::Builder::new()
+        .name("ordo-next-supervisor".to_string())
+        .spawn(move || match child.wait() {
+            Ok(status) => {
+                let _ = event_sender.send(system_event(
+                    "next.supervisor.exited",
+                    json!({ "pid": child_id, "success": status.success(), "code": status.code() }),
+                ));
+            }
+            Err(error) => {
+                let _ = event_sender.send(system_event(
+                    "next.supervisor.failed",
+                    json!({ "pid": child_id, "message": error.to_string() }),
+                ));
+            }
+        })
+        .context("Failed to spawn Next.js supervisor thread")?;
     Ok(())
 }
 

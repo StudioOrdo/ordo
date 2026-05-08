@@ -27,6 +27,9 @@ slice before deeper product surfaces land.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
+- The capability catalog distinguishes MCP export policy tiers, side effects,
+  and approval requirements for read-only, local mutation, operator-confirmed,
+  and non-exported dangerous operations.
 - The 0.1.0 release evidence dossier is recorded in
   [release-0.1.0.md](process/release-0.1.0.md).
 
@@ -37,16 +40,17 @@ slice before deeper product surfaces land.
 - Authentication, RBAC enforcement depth, and multi-user policy surfaces are not
   implemented yet.
 - RAG/vector memory and external integrations are not implemented yet.
-- MCP is currently a local JSON-RPC daemon projection, not a fully hardened
-  public transport boundary.
-- Durable event replay, schema migrations, backup integrity, MCP policy depth,
-  and UI smoke coverage remain the next stabilization concerns.
+- MCP is currently a local JSON-RPC daemon projection with first policy tiers,
+  not a third-party plugin surface.
+- Durable event replay, schema migrations, backup integrity, MCP request
+  strictness, and UI smoke coverage remain the next stabilization concerns.
 
 ## Current Goal
 
 Continue `0.1.1 Appliance Trust Boundary` after the runtime supervision and
-first network posture slices, then harden MCP policy tiers, event replay, schema
-migrations, backup integrity, and UI smoke coverage.
+first network posture and MCP policy tier slices, then harden MCP request
+strictness, event replay, schema migrations, backup integrity, and UI smoke
+coverage.
 
 ## How To Read Claims
 

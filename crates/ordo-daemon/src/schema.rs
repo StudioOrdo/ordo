@@ -206,7 +206,9 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
             artifact_kinds_json TEXT NOT NULL DEFAULT '[]',
             scheduler_eligible INTEGER NOT NULL DEFAULT 0,
             prompt_exposure TEXT NOT NULL DEFAULT 'internal',
-            mcp_export_policy TEXT NOT NULL DEFAULT 'none',
+            mcp_export_policy TEXT NOT NULL DEFAULT 'dangerous_none',
+            side_effects_json TEXT NOT NULL DEFAULT '[]',
+            approval_requirement TEXT NOT NULL DEFAULT 'not_exported',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -233,6 +235,18 @@ pub fn init_schema(connection: &Connection) -> Result<()> {
         "job_tasks",
         "capability_id",
         "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        connection,
+        "capabilities",
+        "side_effects_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "capabilities",
+        "approval_requirement",
+        "TEXT NOT NULL DEFAULT 'not_exported'",
     )?;
     connection.execute(
         "UPDATE process_templates SET capability_id = kind WHERE capability_id = ''",

@@ -150,17 +150,20 @@ Then open `http://localhost:3000` for the UI. The daemon is exposed at
 `http://localhost:17760` for health, readiness, API routes, and WebSocket
 projection.
 
-The daemon also exposes the Phase 6 capability catalog and MCP projection:
+The daemon also exposes the capability catalog. MCP is protected by the daemon
+access boundary: local CLI calls work directly, while HTTP calls to `/mcp` from
+outside the daemon network namespace need `ORDO_DAEMON_ACCESS_TOKEN` and a
+matching `Authorization: Bearer <token>` or `X-Ordo-Daemon-Token: <token>`
+header.
 
 ```bash
 curl http://localhost:17760/capabilities
-curl -s http://localhost:17760/mcp \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-curl -s http://localhost:17760/mcp \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"system.status.read","arguments":{}}}'
+cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/list
+cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/call --params-json '{"name":"system.status.read","arguments":{}}'
 ```
+
+`tools/list` returns policy metadata such as `read_only`, `local_mutation`, and
+`operator_confirmed` so read tools and local mutating tools are distinguishable.
 
 Useful runtime commands:
 

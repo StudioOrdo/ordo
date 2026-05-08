@@ -30,6 +30,7 @@ export interface SystemSnapshot {
 
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:17760";
 const DEFAULT_DAEMON_WS_URL = "ws://127.0.0.1:17760/ws";
+const DAEMON_REQUEST_TIMEOUT_MS = 2_000;
 
 function daemonUrl(): string {
   return process.env.ORDO_DAEMON_URL?.trim() || DEFAULT_DAEMON_URL;
@@ -40,43 +41,53 @@ export function daemonWebSocketUrl(): string {
 }
 
 async function fetchJson<T>(baseUrl: string, path: string): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DAEMON_REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`${path} responded with ${response.status}`);
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`${path} responded with ${response.status}`);
+    }
+
+    return response.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeout);
   }
+}
 
-  return response.json() as Promise<T>;
+async function readEndpoint<T>(baseUrl: string, path: string): Promise<{ data: T | null; error: string | null }> {
+  try {
+    return { data: await fetchJson<T>(baseUrl, path), error: null };
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? `${path}: ${error.message}` : `${path}: unavailable`,
+    };
+  }
 }
 
 export async function getSystemSnapshot(): Promise<SystemSnapshot> {
   const baseUrl = daemonUrl();
   const createdAt = new Date().toISOString();
 
-  try {
-    const [health, readiness] = await Promise.all([
-      fetchJson<DaemonHealthReport>(baseUrl, "/health"),
-      fetchJson<DaemonReadinessReport>(baseUrl, "/ready"),
-    ]);
+  const [healthResult, readinessResult] = await Promise.all([
+    readEndpoint<DaemonHealthReport>(baseUrl, "/health"),
+    readEndpoint<DaemonReadinessReport>(baseUrl, "/ready"),
+  ]);
 
-    return {
-      daemonUrl: baseUrl,
-      websocketUrl: daemonWebSocketUrl(),
-      createdAt,
-      health,
-      readiness,
-      degradedReason: null,
-    };
-  } catch (error) {
-    return {
-      daemonUrl: baseUrl,
-      websocketUrl: daemonWebSocketUrl(),
-      createdAt,
-      health: null,
-      readiness: null,
-      degradedReason: error instanceof Error ? error.message : "Daemon is unavailable.",
-    };
-  }
+  const degradedReasons = [healthResult.error, readinessResult.error].filter(Boolean);
+
+  return {
+    daemonUrl: baseUrl,
+    websocketUrl: daemonWebSocketUrl(),
+    createdAt,
+    health: healthResult.data,
+    readiness: readinessResult.data,
+    degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
+  };
 }

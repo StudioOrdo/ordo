@@ -6,7 +6,7 @@ import { systemMenuItems } from "@/lib/system-menu";
 
 interface Props {
   currentItemId: string;
-  websocketUrl: string;
+  websocketUrl: string | null;
   children: ReactNode;
 }
 

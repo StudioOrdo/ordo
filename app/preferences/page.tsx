@@ -8,7 +8,7 @@ export default async function PreferencesPage() {
   const snapshot = await getSystemSnapshot();
 
   return (
-    <SystemShell currentItemId="preferences" websocketUrl={snapshot.websocketUrl}>
+    <SystemShell currentItemId="preferences" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
       <PageTitle
         eyebrow="Settings"
         title="Preferences"

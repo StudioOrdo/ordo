@@ -8,7 +8,7 @@ export default async function EventsPage() {
   const snapshot = await getSystemSnapshot();
 
   return (
-    <SystemShell currentItemId="events" websocketUrl={snapshot.websocketUrl}>
+    <SystemShell currentItemId="events" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
       <PageTitle
         eyebrow="Trail"
         title="Events"

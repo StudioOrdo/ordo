@@ -8,7 +8,7 @@ export default async function HealthPage() {
   const snapshot = await getSystemSnapshot();
 
   return (
-    <SystemShell currentItemId="health" websocketUrl={snapshot.websocketUrl}>
+    <SystemShell currentItemId="health" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
       <PageTitle
         eyebrow="Evidence"
         title="Health"

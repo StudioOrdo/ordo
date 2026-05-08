@@ -23,7 +23,7 @@ export default async function SystemBriefPage() {
       ];
 
   return (
-    <SystemShell currentItemId="brief" websocketUrl={snapshot.websocketUrl}>
+    <SystemShell currentItemId="brief" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
       <PageTitle
         eyebrow="Brief"
         title="System Brief"

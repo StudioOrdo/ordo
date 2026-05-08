@@ -8,7 +8,7 @@ export default async function BackupRestorePage() {
   const snapshot = await getSystemSnapshot();
 
   return (
-    <SystemShell currentItemId="backup-restore" websocketUrl={snapshot.websocketUrl}>
+    <SystemShell currentItemId="backup-restore" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
       <PageTitle
         eyebrow="Safety"
         title="Backup & Restore"

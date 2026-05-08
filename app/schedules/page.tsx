@@ -14,7 +14,7 @@ export default async function SchedulesPage() {
   const snapshot = await getSystemSnapshot();
 
   return (
-    <SystemShell currentItemId="schedules" websocketUrl={snapshot.websocketUrl}>
+    <SystemShell currentItemId="schedules" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
       <PageTitle
         eyebrow="Clock"
         title="Schedules"

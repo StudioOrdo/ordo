@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 interface Props {
-  url: string;
+  url: string | null;
 }
 
 type ConnectionState = "connecting" | "live" | "degraded";
@@ -19,6 +19,12 @@ export function WebSocketStatus({ url }: Props) {
   }, [state]);
 
   useEffect(() => {
+    if (!url) {
+      setState("degraded");
+      setMessage("Realtime channel is unavailable.");
+      return;
+    }
+
     let cancelled = false;
     let socket: WebSocket | null = null;
 
@@ -31,7 +37,10 @@ export function WebSocketStatus({ url }: Props) {
       socket = new WebSocket(url);
 
       socket.addEventListener("open", () => {
-        if (cancelled) return;
+        if (cancelled) {
+          socket?.close();
+          return;
+        }
         setState("live");
         setMessage("Realtime channel is connected.");
       });

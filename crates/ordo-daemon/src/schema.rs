@@ -22,13 +22,15 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "roles",
     "actor_role_memberships",
     "resource_grants",
+    "corpus_sources",
+    "corpus_items",
     "schedules",
     "scheduled_job_runs",
     "brief_artifacts",
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 6;
+pub const CURRENT_SCHEMA_VERSION: i64 = 7;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -68,6 +70,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 6,
         name: "add_durable_access_model",
         apply: add_durable_access_model,
+    },
+    SchemaMigration {
+        version: 7,
+        name: "add_access_aware_corpus_skeleton",
+        apply: add_access_aware_corpus_skeleton,
     },
 ];
 
@@ -586,6 +593,55 @@ fn seed_resource_grant(
     Ok(())
 }
 
+fn add_access_aware_corpus_skeleton(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS corpus_sources (
+            id TEXT PRIMARY KEY,
+            source_kind TEXT NOT NULL,
+            label TEXT NOT NULL,
+            uri TEXT,
+            resource_kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            classification_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_corpus_sources_resource ON corpus_sources(resource_kind, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_corpus_sources_status ON corpus_sources(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS corpus_items (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL,
+            item_kind TEXT NOT NULL,
+            ordinal INTEGER NOT NULL DEFAULT 0,
+            title TEXT NOT NULL,
+            body_text TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            resource_kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            classification_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (source_id) REFERENCES corpus_sources(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_corpus_items_source_ordinal ON corpus_items(source_id, ordinal);
+        CREATE INDEX IF NOT EXISTS idx_corpus_items_resource ON corpus_items(resource_kind, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_corpus_items_status ON corpus_items(status, updated_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -687,8 +743,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 6);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 7);
     }
 
     #[test]
@@ -759,6 +815,8 @@ mod tests {
         assert!(table_exists(&connection, "roles"));
         assert!(table_exists(&connection, "actor_role_memberships"));
         assert!(table_exists(&connection, "resource_grants"));
+        assert!(table_exists(&connection, "corpus_sources"));
+        assert!(table_exists(&connection, "corpus_items"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -843,6 +901,63 @@ mod tests {
         assert_eq!(owner_roles, 1);
         assert_eq!(system_roles, 1);
         assert_eq!(owner_grants, 1);
+    }
+
+    #[test]
+    fn corpus_skeleton_stores_access_classification_and_provenance_metadata() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        connection
+            .execute(
+                "INSERT INTO corpus_sources (
+                    id, source_kind, label, uri, resource_kind, resource_id, status,
+                    classification_json, provenance_json, metadata_json, created_at, updated_at
+                 ) VALUES (
+                    'corpus_source_owner_manual', 'markdown', 'Owner Manual', 'file://owner.md',
+                    'owner_system', 'knowledge_owner_manual', 'approved',
+                    '{\"visibility\":\"owner_system\"}',
+                    '{\"actor\":{\"id\":\"actor_local_owner\"}}',
+                    '{\"note\":\"retrieval safety prep only\"}', 'now', 'now'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO corpus_items (
+                    id, source_id, item_kind, ordinal, title, body_text, content_hash,
+                    resource_kind, resource_id, status, classification_json, provenance_json,
+                    metadata_json, created_at, updated_at
+                 ) VALUES (
+                    'corpus_item_owner_manual_1', 'corpus_source_owner_manual', 'chunk', 1,
+                    'Owner Manual Chunk', 'Local owner-only operating guidance.', 'sha256:test',
+                    'owner_system', 'knowledge_owner_manual', 'approved',
+                    '{\"visibility\":\"owner_system\"}',
+                    '{\"resource\":{\"kind\":\"corpus_item\"}}',
+                    '{\"embedding\":\"not_present\"}', 'now', 'now'
+                 )",
+                [],
+            )
+            .unwrap();
+
+        let metadata: String = connection
+            .query_row(
+                "SELECT metadata_json FROM corpus_items WHERE id = 'corpus_item_owner_manual_1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let classification: String = connection
+            .query_row(
+                "SELECT classification_json FROM corpus_sources WHERE id = 'corpus_source_owner_manual'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(metadata, "{\"embedding\":\"not_present\"}");
+        assert_eq!(classification, "{\"visibility\":\"owner_system\"}");
     }
 
     fn create_legacy_unversioned_database(connection: &Connection) {

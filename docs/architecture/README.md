@@ -14,6 +14,7 @@ These docs turn the product thesis into system shape.
 - [Diagnostics And Reports](diagnostics-and-reports.md)
 - [Resource, Provenance, And Policy Spine](resource-provenance-policy.md)
 - [Access And Local RBAC](access-rbac.md)
+- [Knowledge Corpus Skeleton](knowledge-corpus.md)
 - [Scaling With Worker Ordos](scaling-worker-ordos.md)
 - [Sovereign Appliance](sovereign-appliance.md)
 

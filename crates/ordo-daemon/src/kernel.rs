@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use crate::capabilities::assert_capability_ids_registered;
+use crate::diagnostics::{diagnostic_log, insert_diagnostic_log_connection, NewDiagnosticLogEntry};
 use crate::events::{append_realtime_event, append_realtime_event_tx, job_event};
 use crate::templates::{ProcessTemplate, TaskDefinition};
 
@@ -301,6 +302,10 @@ pub fn append_job_event(
         ],
     )?;
     append_realtime_event(connection, &event)?;
+    insert_diagnostic_log_connection(
+        connection,
+        job_event_log_entry(job_id, task_key, event_type, payload),
+    )?;
     Ok(sequence)
 }
 
@@ -327,7 +332,32 @@ fn append_job_event_tx(
         ],
     )?;
     append_realtime_event_tx(transaction, &event)?;
+    insert_diagnostic_log_connection(
+        transaction,
+        job_event_log_entry(job_id, task_key, event_type, payload),
+    )?;
     Ok(sequence)
+}
+
+fn job_event_log_entry(
+    job_id: &str,
+    task_key: Option<&str>,
+    event_type: &str,
+    payload: Value,
+) -> NewDiagnosticLogEntry {
+    let level = if event_type.contains("failed") || event_type.contains("blocked") {
+        "error"
+    } else if event_type.contains("waiting") {
+        "warn"
+    } else {
+        "info"
+    };
+    NewDiagnosticLogEntry {
+        job_id: Some(job_id.to_string()),
+        task_key: task_key.map(ToString::to_string),
+        event_type: Some(event_type.to_string()),
+        ..diagnostic_log(level, "job", format!("Job event {event_type}"), payload)
+    }
 }
 
 fn next_event_sequence(connection: &Connection, job_id: &str) -> Result<i64> {

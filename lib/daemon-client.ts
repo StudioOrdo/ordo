@@ -101,6 +101,78 @@ export interface RealtimeEventSummary {
   occurredAt: string;
 }
 
+export interface DiagnosticLogEntry {
+  id: string;
+  timestamp: string;
+  level: string;
+  source: string;
+  message: string;
+  requestId: string | null;
+  jobId: string | null;
+  taskKey: string | null;
+  capabilityId: string | null;
+  eventType: string | null;
+  errorCode: string | null;
+  durationMs: number | null;
+  payload: Record<string, unknown>;
+}
+
+export interface DiagnosticLogsResponse {
+  logs: DiagnosticLogEntry[];
+}
+
+export interface DiagnosticLogsSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  logs: DiagnosticLogEntry[];
+  degradedReason: string | null;
+}
+
+export type IssueSeverity = "low" | "medium" | "high" | "blocker";
+export type IssueReportStatus = "draft" | "ready_for_review" | "exported" | "submitted" | "dismissed";
+
+export interface EvidenceEnvelope {
+  source: string;
+  collectedAt: string;
+  status: string;
+  summary: string;
+  payload: unknown;
+  redactions: string[];
+  limits: unknown;
+  errors: string[];
+}
+
+export interface IssueReportArtifact {
+  id: string;
+  jobId: string | null;
+  status: IssueReportStatus;
+  severity: IssueSeverity;
+  title: string;
+  summary: string;
+  description: string;
+  sourceRoute: string | null;
+  markdownBody: string;
+  diagnostics: unknown;
+  evidence: EvidenceEnvelope[];
+  redactions: string[];
+  createdAt: string;
+  updatedAt: string;
+  exportedAt: string | null;
+  submittedAt: string | null;
+  externalUrl: string | null;
+}
+
+export interface IssueReportsResponse {
+  reports: IssueReportArtifact[];
+}
+
+export interface IssueReportsSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  reports: IssueReportArtifact[];
+  degradedReason: string | null;
+}
+
 interface BackupRestoreResponse {
   jobs: BackupRestoreJobSummary[];
 }
@@ -224,6 +296,32 @@ export async function getEventReplaySnapshot(after?: number): Promise<EventRepla
     events: eventResult.data?.events ?? [],
     nextCursor: eventResult.data?.nextCursor ?? null,
     degradedReason: eventResult.error,
+  };
+}
+
+export async function getDiagnosticLogsSnapshot(): Promise<DiagnosticLogsSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const logResult = await readEndpoint<DiagnosticLogsResponse>(baseUrl, "/logs?limit=100");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    logs: logResult.data?.logs ?? [],
+    degradedReason: logResult.error,
+  };
+}
+
+export async function getIssueReportsSnapshot(): Promise<IssueReportsSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const reportResult = await readEndpoint<IssueReportsResponse>(baseUrl, "/reports/issues");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    reports: reportResult.data?.reports ?? [],
+    degradedReason: reportResult.error,
   };
 }
 

@@ -5,7 +5,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -24,6 +24,11 @@ use crate::briefs::{
     generate_system_brief, latest_system_brief, run_due_system_brief_schedules, LatestBriefResponse,
 };
 use crate::capabilities::{list_capabilities, CapabilityCatalogResponse};
+use crate::diagnostics::{
+    diagnostic_log, list_diagnostic_logs, record_diagnostic_log, DiagnosticLogQuery,
+    DiagnosticLogsResponse, NewDiagnosticLogEntry,
+};
+use crate::errors::{DaemonErrorCode, ErrorResponse};
 use crate::events::{
     append_system_event, replay_events, system_event, EventReplayResponse, RealtimeEvent,
 };
@@ -31,6 +36,9 @@ use crate::health::{
     build_health_report, build_readiness_report, HealthCheck, HealthReport, ReadinessReport,
 };
 use crate::mcp::{handle_mcp_json, McpResponse};
+use crate::reports::{
+    list_issue_reports, prepare_issue_report, IssueReportPrepareRequest, IssueReportsResponse,
+};
 use crate::schema::init_database;
 
 const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
@@ -120,6 +128,7 @@ pub async fn serve(
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
         .route("/capabilities", get(capabilities_handler))
+        .route("/logs", get(logs_handler))
         .route("/briefs/system/latest", get(latest_system_brief_handler))
         .route(
             "/briefs/system/generate",
@@ -129,6 +138,11 @@ pub async fn serve(
         .route("/backups/create", post(create_backup_handler))
         .route("/restore/validate", post(validate_restore_handler))
         .route("/events", get(events_handler))
+        .route("/reports/issues", get(list_issue_reports_handler))
+        .route(
+            "/reports/issues/prepare",
+            post(prepare_issue_report_handler),
+        )
         .route("/mcp", post(mcp_handler))
         .route("/ws", get(ws_handler))
         .with_state(state.clone());
@@ -138,6 +152,15 @@ pub async fn serve(
         &state.event_sender,
         "daemon.started",
         json!({ "host": host, "port": port }),
+    );
+    record_log(
+        &state.db_path,
+        diagnostic_log(
+            "info",
+            "daemon",
+            "Daemon started.",
+            json!({ "host": host, "port": port }),
+        ),
     );
     if let (Some(config), Some(next_status)) =
         (next_supervisor, state.next_supervisor_status.clone())
@@ -473,12 +496,6 @@ async fn capabilities_handler(
         .map_err(internal_error)
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ErrorResponse {
-    error: String,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EventReplayQuery {
@@ -494,6 +511,15 @@ async fn latest_system_brief_handler(
         .map_err(internal_error)
 }
 
+async fn logs_handler(
+    State(state): State<AppState>,
+    Query(query): Query<DiagnosticLogQuery>,
+) -> Result<Json<DiagnosticLogsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    list_diagnostic_logs(&state.db_path, query)
+        .map(Json)
+        .map_err(internal_error)
+}
+
 async fn generate_system_brief_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -501,6 +527,20 @@ async fn generate_system_brief_handler(
 ) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
     authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let brief = generate_system_brief(&state.db_path, "http", None).map_err(internal_error)?;
+    record_log(
+        &state.db_path,
+        NewDiagnosticLogEntry {
+            job_id: brief.job_id.clone(),
+            capability_id: Some("brief.system.generate".to_string()),
+            event_type: Some("brief.system.generated".to_string()),
+            ..diagnostic_log(
+                "info",
+                "brief",
+                "System Brief generated.",
+                json!({ "briefId": brief.id }),
+            )
+        },
+    );
     emit_system_event(
         &state.db_path,
         &state.event_sender,
@@ -525,6 +565,20 @@ async fn create_backup_handler(
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
     authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let job = create_backup(&state.db_path, "http", None).map_err(internal_error)?;
+    record_log(
+        &state.db_path,
+        NewDiagnosticLogEntry {
+            job_id: Some(job.id.clone()),
+            capability_id: Some("backup.create".to_string()),
+            event_type: Some("backup.create.completed".to_string()),
+            ..diagnostic_log(
+                "info",
+                "backup",
+                "Backup creation completed.",
+                json!({ "status": job.status }),
+            )
+        },
+    );
     emit_system_event(
         &state.db_path,
         &state.event_sender,
@@ -545,6 +599,20 @@ async fn validate_restore_handler(
     authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let job =
         run_restore_preflight(&state.db_path, request, "http", None).map_err(internal_error)?;
+    record_log(
+        &state.db_path,
+        NewDiagnosticLogEntry {
+            job_id: Some(job.id.clone()),
+            capability_id: Some("restore.preflight.validate".to_string()),
+            event_type: Some("restore.preflight.completed".to_string()),
+            ..diagnostic_log(
+                "info",
+                "restore",
+                "Restore preflight completed.",
+                json!({ "status": job.status }),
+            )
+        },
+    );
     emit_system_event(
         &state.db_path,
         &state.event_sender,
@@ -561,6 +629,39 @@ async fn events_handler(
     Query(query): Query<EventReplayQuery>,
 ) -> Result<Json<EventReplayResponse>, (StatusCode, Json<ErrorResponse>)> {
     replay_events(&state.db_path, query.after, query.limit)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn list_issue_reports_handler(
+    State(state): State<AppState>,
+) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    list_issue_reports(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn prepare_issue_report_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<IssueReportPrepareRequest>,
+) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
+    let report =
+        prepare_issue_report(&state.db_path, request, "http", None).map_err(internal_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "issue.report.prepared",
+        json!({
+            "reportId": report.id,
+            "jobId": report.job_id,
+            "severity": report.severity,
+            "status": report.status,
+        }),
+    );
+    list_issue_reports(&state.db_path)
         .map(Json)
         .map_err(internal_error)
 }
@@ -616,19 +717,22 @@ fn request_has_access_token(headers: &HeaderMap, expected_token: &str) -> bool {
 fn internal_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse {
-            error: error.to_string(),
-        }),
+        Json(ErrorResponse::new(
+            DaemonErrorCode::Internal,
+            error.to_string(),
+        )),
     )
 }
 
 fn forbidden_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
     (
         StatusCode::FORBIDDEN,
-        Json(ErrorResponse {
-            error: message.to_string(),
-        }),
+        Json(ErrorResponse::new(DaemonErrorCode::Forbidden, message)),
     )
+}
+
+fn record_log(db_path: &Path, entry: NewDiagnosticLogEntry) {
+    let _ = record_diagnostic_log(db_path, entry);
 }
 
 fn emit_system_event(

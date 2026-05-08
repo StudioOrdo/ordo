@@ -15,14 +15,16 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "job_task_dependencies",
     "job_events",
     "realtime_events",
+    "diagnostic_logs",
     "job_artifacts",
+    "issue_report_artifacts",
     "schedules",
     "scheduled_job_runs",
     "brief_artifacts",
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 4;
+pub const CURRENT_SCHEMA_VERSION: i64 = 5;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -52,6 +54,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 4,
         name: "add_realtime_event_replay",
         apply: add_realtime_event_replay,
+    },
+    SchemaMigration {
+        version: 5,
+        name: "add_diagnostics_and_reports",
+        apply: add_diagnostics_and_reports,
     },
 ];
 
@@ -374,6 +381,60 @@ fn add_realtime_event_replay(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_diagnostics_and_reports(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS diagnostic_logs (
+            id TEXT PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            level TEXT NOT NULL,
+            source TEXT NOT NULL,
+            message TEXT NOT NULL,
+            request_id TEXT,
+            job_id TEXT,
+            task_key TEXT,
+            capability_id TEXT,
+            event_type TEXT,
+            error_code TEXT,
+            duration_ms INTEGER,
+            payload_json TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_time ON diagnostic_logs(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_level_time ON diagnostic_logs(level, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_source_time ON diagnostic_logs(source, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_job_time ON diagnostic_logs(job_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_task_time ON diagnostic_logs(task_key, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_capability_time ON diagnostic_logs(capability_id, timestamp DESC);
+
+        CREATE TABLE IF NOT EXISTS issue_report_artifacts (
+            id TEXT PRIMARY KEY,
+            job_id TEXT,
+            status TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            description TEXT NOT NULL,
+            source_route TEXT,
+            markdown_body TEXT NOT NULL,
+            diagnostics_json TEXT NOT NULL DEFAULT '{}',
+            evidence_json TEXT NOT NULL DEFAULT '[]',
+            redactions_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            exported_at TEXT,
+            submitted_at TEXT,
+            external_url TEXT,
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_issue_report_artifacts_updated ON issue_report_artifacts(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_issue_report_artifacts_status_updated ON issue_report_artifacts(status, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -475,8 +536,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 4);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 5);
     }
 
     #[test]

@@ -64,6 +64,7 @@ pub fn built_in_templates() -> Vec<ProcessTemplate> {
         system_brief_template(),
         backup_create_template(),
         restore_execute_template(),
+        issue_report_prepare_template(),
     ]
 }
 
@@ -362,6 +363,68 @@ fn restore_execute_template() -> ProcessTemplate {
     }
 }
 
+fn issue_report_prepare_template() -> ProcessTemplate {
+    ProcessTemplate {
+        id: "issue.report.prepare".to_string(),
+        capability_id: "issue.report.prepare".to_string(),
+        kind: "issue.report.prepare".to_string(),
+        name: "Prepare Issue Report".to_string(),
+        version: 1,
+        description: "Prepare a local issue report with redacted diagnostics and evidence."
+            .to_string(),
+        tasks: vec![
+            task(
+                "scope.validate",
+                "issue.scope.validate",
+                "Validate issue scope",
+                &[],
+            ),
+            task(
+                "narrative.capture",
+                "issue.narrative.capture",
+                "Capture issue narrative",
+                &[],
+            ),
+            task(
+                "diagnostics.collect",
+                "issue.diagnostics.collect",
+                "Collect diagnostics",
+                &["scope.validate"],
+            ),
+            task(
+                "events.collect",
+                "issue.events.collect",
+                "Collect recent events",
+                &["scope.validate"],
+            ),
+            task(
+                "jobs.collect",
+                "issue.jobs.collect",
+                "Collect recent jobs",
+                &["scope.validate"],
+            ),
+            task(
+                "redactions.apply",
+                "issue.redactions.apply",
+                "Apply redactions",
+                &["diagnostics.collect", "events.collect", "jobs.collect"],
+            ),
+            task(
+                "draft.generate",
+                "issue.draft.generate",
+                "Generate report draft",
+                &["narrative.capture", "redactions.apply"],
+            ),
+            task(
+                "artifact.save",
+                "issue.artifact.save",
+                "Save report artifact",
+                &["draft.generate"],
+            ),
+        ],
+    }
+}
+
 pub fn assert_template_exists(template_id: &str) -> Result<()> {
     if find_builtin_template(template_id).is_none() {
         bail!("Unknown process template: {template_id}");
@@ -386,6 +449,7 @@ mod tests {
         assert!(template_ids.contains(&"brief.system.generate".to_string()));
         assert!(template_ids.contains(&"backup.create".to_string()));
         assert!(template_ids.contains(&"restore.execute".to_string()));
+        assert!(template_ids.contains(&"issue.report.prepare".to_string()));
     }
 
     #[test]

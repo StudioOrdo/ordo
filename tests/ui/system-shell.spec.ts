@@ -5,6 +5,7 @@ const daemonPort = 19080;
 
 interface MockDaemonState {
   backupCreated: boolean;
+  reportCreated: boolean;
   requests: string[];
 }
 
@@ -75,8 +76,43 @@ test("Backup creation can be triggered through the browser path", async ({ page 
   }
 });
 
+test("Logs renders structured diagnostic observations", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/logs");
+
+    await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Backup creation completed.");
+    await expect(page.locator("main")).toContainText("job_backup_smoke_1");
+    await expect(page.locator("main")).toContainText("backup.create");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Reports can prepare and display local evidence packages", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/reports");
+
+    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Prepare Report" })).toBeDisabled();
+    await page.getByLabel("Description").fill("The backup screen displayed stale job evidence.");
+    await page.getByLabel("Expected behavior").fill("The report should include logs and jobs.");
+    await page.getByLabel("Actual behavior").fill("The operator saw stale data.");
+    await page.getByRole("button", { name: "Prepare Report" }).click();
+
+    await expect(page.locator("main")).toContainText("report_created_by_smoke");
+    await expect(page.locator("main")).toContainText("diagnostic_logs");
+    await expect(page.locator("main")).toContainText("Recent structured logs are attached.");
+    expect(daemon.state.requests).toContain("POST /reports/issues/prepare");
+  } finally {
+    await daemon.close();
+  }
+});
+
 function startMockDaemon(): Promise<{ close: () => Promise<void>; state: MockDaemonState }> {
-  const state: MockDaemonState = { backupCreated: false, requests: [] };
+  const state: MockDaemonState = { backupCreated: false, reportCreated: false, requests: [] };
   const server = createServer((request, response) => handleRequest(request, response, state));
 
   return new Promise((resolve, reject) => {
@@ -119,6 +155,14 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
     return jsonResponse(response, { jobs: backupJobs(state.backupCreated) });
   }
 
+  if (method === "GET" && path === "/logs?limit=100") {
+    return jsonResponse(response, { logs: diagnosticLogs() });
+  }
+
+  if (method === "GET" && path === "/reports/issues") {
+    return jsonResponse(response, { reports: issueReports(state.reportCreated) });
+  }
+
   if (method === "POST" && path === "/backups/create") {
     state.backupCreated = true;
     return jsonResponse(response, { job: backupJobs(true)[0] });
@@ -128,8 +172,97 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
     return jsonResponse(response, { job: restoreJob() });
   }
 
+  if (method === "POST" && path === "/reports/issues/prepare") {
+    state.reportCreated = true;
+    return jsonResponse(response, { reports: issueReports(true) });
+  }
+
   response.writeHead(404, { "content-type": "application/json" });
   response.end(JSON.stringify({ error: `Unhandled mock daemon route: ${method} ${path}` }));
+}
+
+function diagnosticLogs() {
+  return [
+    {
+      id: "log_smoke_backup",
+      timestamp: "2026-05-08T12:00:03.000Z",
+      level: "info",
+      source: "backup",
+      message: "Backup creation completed.",
+      requestId: null,
+      jobId: "job_backup_smoke_1",
+      taskKey: "backup.record",
+      capabilityId: "backup.create",
+      eventType: "backup.create.completed",
+      errorCode: null,
+      durationMs: 2000,
+      payload: { backupId: "backup_smoke_1" },
+    },
+    {
+      id: "log_smoke_report",
+      timestamp: "2026-05-08T12:00:04.000Z",
+      level: "warn",
+      source: "reports",
+      message: "Report source included bounded diagnostics.",
+      requestId: null,
+      jobId: "job_report_smoke_1",
+      taskKey: "diagnostics.collect",
+      capabilityId: "issue.report.prepare",
+      eventType: "task.succeeded",
+      errorCode: null,
+      durationMs: null,
+      payload: { sources: ["diagnostic_logs"] },
+    },
+  ];
+}
+
+function issueReports(includeCreatedReport: boolean) {
+  const reports = [issueReport("report_smoke_1", "job_report_smoke_1")];
+  if (includeCreatedReport) {
+    reports.unshift(issueReport("report_created_by_smoke", "job_report_created"));
+  }
+  return reports;
+}
+
+function issueReport(id: string, jobId: string) {
+  return {
+    id,
+    jobId,
+    status: "ready_for_review",
+    severity: "medium",
+    title: "Local diagnostic report",
+    summary: "5 evidence sources collected for a medium severity local report.",
+    description: "The operator prepared a local diagnostic report.",
+    sourceRoute: "/backup-restore",
+    markdownBody: "# Local diagnostic report\n\n## Diagnostics Summary\n\n- health: Daemon health is ok.\n- readiness: Daemon readiness is ready.\n- recent_events: Recent events are attached.\n- recent_jobs: Recent jobs are attached.\n- diagnostic_logs: Recent structured logs are attached.\n\n## Limitations\n\nExternal submission transports are not implemented.",
+    diagnostics: { localOnly: true, externalSubmission: "not_implemented" },
+    evidence: [
+      evidence("health", "Daemon health is ok."),
+      evidence("readiness", "Daemon readiness is ready."),
+      evidence("recent_events", "Recent events are attached."),
+      evidence("recent_jobs", "Recent jobs are attached."),
+      evidence("diagnostic_logs", "Recent structured logs are attached."),
+    ],
+    redactions: ["Secrets are redacted."],
+    createdAt: "2026-05-08T12:00:04.000Z",
+    updatedAt: "2026-05-08T12:00:04.000Z",
+    exportedAt: null,
+    submittedAt: null,
+    externalUrl: null,
+  };
+}
+
+function evidence(source: string, summary: string) {
+  return {
+    source,
+    collectedAt: "2026-05-08T12:00:04.000Z",
+    status: "succeeded",
+    summary,
+    payload: {},
+    redactions: [],
+    limits: {},
+    errors: [],
+  };
 }
 
 function systemBrief() {

@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
+use crate::capabilities::assert_capability_ids_registered;
 use crate::templates::{ProcessTemplate, TaskDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +153,7 @@ pub fn create_job_from_template(
     input: Value,
 ) -> Result<String> {
     validate_task_dag(&template.tasks)?;
+    validate_job_capabilities(connection, template)?;
 
     let transaction = connection.transaction()?;
     let now = Utc::now().to_rfc3339();
@@ -164,14 +166,15 @@ pub fn create_job_from_template(
 
     transaction.execute(
         "INSERT INTO jobs (
-            id, template_id, template_version, kind, status, origin, actor_id, input_json,
+            id, template_id, template_version, capability_id, kind, status, origin, actor_id, input_json,
             current_task_key, required_task_count, completed_required_task_count,
             started_at, completed_at, created_at, updated_at, failure_message
-         ) VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?6, ?7, NULL, ?8, 0, NULL, NULL, ?9, ?9, NULL)",
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7, ?8, NULL, ?9, 0, NULL, NULL, ?10, ?10, NULL)",
         params![
             job_id,
             template.id,
             template.version,
+            template.effective_capability_id(),
             template.kind,
             origin,
             actor_id,
@@ -237,6 +240,17 @@ pub fn create_job_from_template(
     Ok(job_id)
 }
 
+fn validate_job_capabilities(connection: &Connection, template: &ProcessTemplate) -> Result<()> {
+    let mut capability_ids = vec![template.effective_capability_id().to_string()];
+    capability_ids.extend(
+        template
+            .tasks
+            .iter()
+            .map(|task_definition| task_definition.effective_capability_id().to_string()),
+    );
+    assert_capability_ids_registered(connection, &capability_ids)
+}
+
 fn insert_task(
     transaction: &Transaction,
     job_id: &str,
@@ -245,13 +259,14 @@ fn insert_task(
 ) -> Result<()> {
     transaction.execute(
         "INSERT INTO job_tasks (
-            id, job_id, task_key, task_kind, label, required, status, input_json,
+            id, job_id, task_key, capability_id, task_kind, label, required, status, input_json,
             output_json, attempt_count, started_at, completed_at, created_at, updated_at, error_message
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, NULL, 0, NULL, NULL, ?8, ?8, NULL)",
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, NULL, 0, NULL, NULL, ?9, ?9, NULL)",
         params![
             format!("task_{}", Uuid::new_v4()),
             job_id,
             task_definition.key,
+            task_definition.effective_capability_id(),
             task_definition.kind,
             task_definition.label,
             if task_definition.required { 1 } else { 0 },
@@ -322,6 +337,7 @@ fn next_event_sequence(connection: &Connection, job_id: &str) -> Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capabilities::seed_builtin_capabilities;
     use crate::schema::init_schema;
     use crate::templates::{seed_builtin_templates, TaskDefinition};
     use rusqlite::Connection;
@@ -329,6 +345,7 @@ mod tests {
     fn test_task(key: &str, depends_on: &[&str]) -> TaskDefinition {
         TaskDefinition {
             key: key.to_string(),
+            capability_id: format!("test.{key}"),
             kind: format!("test.{key}"),
             label: key.to_string(),
             required: true,
@@ -420,6 +437,7 @@ mod tests {
     fn creates_job_from_template_and_records_events() {
         let mut connection = Connection::open_in_memory().unwrap();
         init_schema(&connection).unwrap();
+        seed_builtin_capabilities(&connection).unwrap();
         seed_builtin_templates(&connection).unwrap();
         let template = crate::templates::require_builtin_template("system.health.check").unwrap();
 

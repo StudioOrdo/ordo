@@ -1,8 +1,10 @@
 pub mod backups;
 pub mod briefs;
+pub mod capabilities;
 pub mod events;
 pub mod health;
 pub mod kernel;
+pub mod mcp;
 pub mod scheduler;
 pub mod schema;
 pub mod server;

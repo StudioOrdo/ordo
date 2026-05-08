@@ -217,6 +217,7 @@ fn next_due_after_run(schedule: &ScheduleRecord, now: DateTime<Utc>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capabilities::seed_builtin_capabilities;
     use crate::schema::init_schema;
     use crate::templates::seed_builtin_templates;
     use rusqlite::Connection;
@@ -226,6 +227,7 @@ mod tests {
     fn finds_due_schedules() {
         let connection = Connection::open_in_memory().unwrap();
         init_schema(&connection).unwrap();
+        seed_builtin_capabilities(&connection).unwrap();
         seed_builtin_templates(&connection).unwrap();
         create_schedule(
             &connection,
@@ -256,6 +258,7 @@ mod tests {
     fn due_schedule_creates_job_and_advances_interval() {
         let mut connection = Connection::open_in_memory().unwrap();
         init_schema(&connection).unwrap();
+        seed_builtin_capabilities(&connection).unwrap();
         seed_builtin_templates(&connection).unwrap();
         create_schedule(
             &connection,

@@ -45,7 +45,9 @@ surfaces land.
   owner/system actors can use owner/system capabilities while unknown actors
   without role membership are denied.
 - SQLite stores a durable policy decision audit trail for important protected
-  daemon and MCP tool-call decisions, separate from diagnostic logs.
+  daemon and MCP tool-call decisions, separate from diagnostic logs. The daemon
+  exposes a protected local read path for recent policy decision audit evidence
+  with narrow filters and bounded limits.
 - The local MCP projection validates JSON-RPC 2.0 request shape and tool
   arguments against catalog input schemas before dispatch, and tool-call results
   include Ordo policy decision metadata.

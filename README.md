@@ -104,6 +104,8 @@ The product is not ready for production use yet.
 ## Current Commands
 
 The 0.1.0 Rust appliance spine starts in `crates/ordo-daemon`.
+Database startup runs ordered SQLite migrations and seeders; repeat `init-db`
+or `serve` runs are idempotent.
 
 ```bash
 cargo run -p ordo-daemon -- health-json

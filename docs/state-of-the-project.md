@@ -26,11 +26,15 @@ surfaces land.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
+- Protected daemon actions now pass through a shared pre-RBAC policy decision
+  spine that names actor, action, resource, capability, and outcome while
+  preserving the current local trust boundary.
 - The capability catalog distinguishes MCP export policy tiers, side effects,
   and approval requirements for read-only, local mutation, operator-confirmed,
   and non-exported dangerous operations.
 - The local MCP projection validates JSON-RPC 2.0 request shape and tool
-  arguments against catalog input schemas before dispatch.
+  arguments against catalog input schemas before dispatch, and tool-call results
+  include Ordo policy decision metadata.
 - Job events and system lifecycle events are replayable from SQLite through a
   global event cursor, and the Events surface reads persisted event history.
 - Structured diagnostic logs are persisted locally with bounded retention,
@@ -40,6 +44,9 @@ surfaces land.
   stored as SQLite artifacts. Reports include health, readiness, recent events,
   recent jobs, and structured diagnostic logs as evidence envelopes, then render
   a local markdown draft for operator review, copy, or export.
+- Local issue report job artifacts include provenance metadata that identifies
+  actor, action, resource, producing capability, producing job, process template,
+  and high-trust classification.
 - SQLite initialization now runs ordered schema migrations tracked by
   `PRAGMA user_version`; fresh databases and 0.1.0 databases use the same path.
 - Backup manifests now record SHA-256 checksum evidence with an algorithm
@@ -78,6 +85,8 @@ slices.
 
 - [Diagnostics And Reports](architecture/diagnostics-and-reports.md) describes
   the implemented local Logs and Reports surfaces.
+- [Resource, Provenance, And Policy Spine](architecture/resource-provenance-policy.md)
+  describes the implemented pre-RBAC policy/provenance foundation.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,
   Offers, and Feed surfaces without claiming they are built.
 - [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md) describes

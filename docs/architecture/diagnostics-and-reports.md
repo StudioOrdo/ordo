@@ -62,6 +62,10 @@ Preparing a report:
 Reports are stored locally as artifacts. They are not automatically submitted to
 GitHub, support systems, model providers, or other Ordos.
 
+Issue report job artifacts include provenance metadata for the current local
+policy spine: actor, action, report resource, producing capability, producing
+job, process template, and local high-trust classification.
+
 ## Evidence Boundary
 
 Reports are intentionally bounded. The current report path should include enough

@@ -36,6 +36,10 @@ use crate::health::{
     build_health_report, build_readiness_report, HealthCheck, HealthReport, ReadinessReport,
 };
 use crate::mcp::{handle_mcp_json, McpResponse};
+use crate::policy::{
+    authorize_protected_daemon_action, ActorContext, PolicyAction, PolicyDecision,
+    ProtectedAccessEvidence, ResourceKind, ResourceRef,
+};
 use crate::reports::{
     list_issue_reports, prepare_issue_report, IssueReportPrepareRequest, IssueReportsResponse,
 };
@@ -525,8 +529,16 @@ async fn generate_system_brief_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
-    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
-    let brief = generate_system_brief(&state.db_path, "http", None).map_err(internal_error)?;
+    let policy_decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &headers,
+        remote_addr,
+        PolicyAction::Generate,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/briefs/system/generate"),
+        Some("brief.system.generate"),
+    )?;
+    let brief = generate_system_brief(&state.db_path, "http", actor_id(&policy_decision))
+        .map_err(internal_error)?;
     record_log(
         &state.db_path,
         NewDiagnosticLogEntry {
@@ -563,8 +575,16 @@ async fn create_backup_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
-    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
-    let job = create_backup(&state.db_path, "http", None).map_err(internal_error)?;
+    let policy_decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/backups/create"),
+        Some("backup.create"),
+    )?;
+    let job = create_backup(&state.db_path, "http", actor_id(&policy_decision))
+        .map_err(internal_error)?;
     record_log(
         &state.db_path,
         NewDiagnosticLogEntry {
@@ -596,9 +616,16 @@ async fn validate_restore_handler(
     State(state): State<AppState>,
     Json(request): Json<RestorePreflightRequest>,
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
-    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
-    let job =
-        run_restore_preflight(&state.db_path, request, "http", None).map_err(internal_error)?;
+    let policy_decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &headers,
+        remote_addr,
+        PolicyAction::Validate,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/restore/validate"),
+        Some("restore.preflight.validate"),
+    )?;
+    let job = run_restore_preflight(&state.db_path, request, "http", actor_id(&policy_decision))
+        .map_err(internal_error)?;
     record_log(
         &state.db_path,
         NewDiagnosticLogEntry {
@@ -647,9 +674,16 @@ async fn prepare_issue_report_handler(
     State(state): State<AppState>,
     Json(request): Json<IssueReportPrepareRequest>,
 ) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
-    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
-    let report =
-        prepare_issue_report(&state.db_path, request, "http", None).map_err(internal_error)?;
+    let policy_decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &headers,
+        remote_addr,
+        PolicyAction::Prepare,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/reports/issues/prepare"),
+        Some("issue.report.prepare"),
+    )?;
+    let report = prepare_issue_report(&state.db_path, request, "http", actor_id(&policy_decision))
+        .map_err(internal_error)?;
     emit_system_event(
         &state.db_path,
         &state.event_sender,
@@ -672,7 +706,14 @@ async fn mcp_handler(
     State(state): State<AppState>,
     request_body: String,
 ) -> Result<Json<McpResponse>, (StatusCode, Json<ErrorResponse>)> {
-    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &headers,
+        remote_addr,
+        PolicyAction::CallTool,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/mcp"),
+        None,
+    )?;
     Ok(Json(handle_mcp_json(&state.db_path, &request_body)))
 }
 
@@ -680,26 +721,67 @@ fn authorize_protected_daemon_route(
     policy: &DaemonAccessPolicy,
     headers: &HeaderMap,
     remote_addr: SocketAddr,
-) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
-    if protected_daemon_route_allowed(policy, headers, remote_addr) {
-        Ok(())
+    action: PolicyAction,
+    resource: ResourceRef,
+    capability_id: Option<&str>,
+) -> Result<PolicyDecision, (StatusCode, Json<ErrorResponse>)> {
+    let decision = protected_daemon_route_decision(
+        policy,
+        headers,
+        remote_addr,
+        action,
+        resource,
+        capability_id,
+    );
+    if decision.allowed() {
+        Ok(decision)
     } else {
-        Err(forbidden_error(
-            "Protected daemon route requires loopback access or a valid daemon access token.",
-        ))
+        Err(forbidden_error(&decision.reason))
     }
 }
 
+fn protected_daemon_route_decision(
+    policy: &DaemonAccessPolicy,
+    headers: &HeaderMap,
+    remote_addr: SocketAddr,
+    action: PolicyAction,
+    resource: ResourceRef,
+    capability_id: Option<&str>,
+) -> PolicyDecision {
+    authorize_protected_daemon_action(
+        ActorContext::browser_operator(),
+        action,
+        resource,
+        capability_id,
+        ProtectedAccessEvidence {
+            loopback: remote_addr.ip().is_loopback(),
+            token: policy
+                .access_token
+                .as_deref()
+                .is_some_and(|token| request_has_access_token(headers, token)),
+        },
+    )
+}
+
+#[cfg(test)]
 fn protected_daemon_route_allowed(
     policy: &DaemonAccessPolicy,
     headers: &HeaderMap,
     remote_addr: SocketAddr,
 ) -> bool {
-    remote_addr.ip().is_loopback()
-        || policy
-            .access_token
-            .as_deref()
-            .is_some_and(|token| request_has_access_token(headers, token))
+    protected_daemon_route_decision(
+        policy,
+        headers,
+        remote_addr,
+        PolicyAction::Execute,
+        ResourceRef::new(ResourceKind::DaemonRoute, "test"),
+        None,
+    )
+    .allowed()
+}
+
+fn actor_id(decision: &PolicyDecision) -> Option<&str> {
+    Some(decision.actor.kind.as_str())
 }
 
 fn request_has_access_token(headers: &HeaderMap, expected_token: &str) -> bool {

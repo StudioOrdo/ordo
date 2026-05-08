@@ -11,6 +11,10 @@ use crate::diagnostics::{
 };
 use crate::health::{build_health_report, build_readiness_report};
 use crate::kernel::{append_job_event, create_job_from_template};
+use crate::policy::{
+    provenance_metadata, ActorContext, ActorKind, PolicyAction, ResourceClassification,
+    ResourceKind, ResourceRef,
+};
 use crate::templates::require_builtin_template;
 
 pub const ISSUE_REPORT_TEMPLATE_ID: &str = "issue.report.prepare";
@@ -162,7 +166,7 @@ pub fn prepare_issue_report(
         }),
     )?;
 
-    match complete_issue_report_job(&connection, db_path, &job_id, normalized) {
+    match complete_issue_report_job(&connection, db_path, &job_id, normalized, origin, actor_id) {
         Ok(report) => Ok(report),
         Err(error) => {
             mark_job_failed(&connection, &job_id, &error.to_string())?;
@@ -176,6 +180,8 @@ fn complete_issue_report_job(
     db_path: &Path,
     job_id: &str,
     request: NormalizedIssueReportRequest,
+    origin: &str,
+    actor_id: Option<&str>,
 ) -> Result<IssueReportArtifact> {
     set_job_running(connection, job_id)?;
     run_task(
@@ -251,6 +257,7 @@ fn complete_issue_report_job(
         "evidenceCount": evidence.len(),
         "localOnly": true,
         "externalSubmission": "not_implemented",
+        "classification": ResourceClassification::local_operations_ready_for_review(),
     });
     let markdown = render_report_markdown(&request, &evidence, &redactions);
     run_task(
@@ -277,7 +284,12 @@ fn complete_issue_report_job(
         "issue.report",
         &format!("ordo://reports/issues/{}", report.id),
         "Issue report",
-        json!({ "reportId": report.id, "severity": report.severity, "status": report.status }),
+        json!({
+            "reportId": report.id,
+            "severity": report.severity,
+            "status": report.status,
+            "provenance": report_provenance_metadata(job_id, &report.id, origin, actor_id),
+        }),
     )?;
     append_job_event(
         connection,
@@ -648,6 +660,39 @@ fn insert_issue_report_artifact(
         .ok_or_else(|| anyhow::anyhow!("Inserted report was not found"))
 }
 
+fn report_provenance_metadata(
+    job_id: &str,
+    report_id: &str,
+    origin: &str,
+    actor_id: Option<&str>,
+) -> Value {
+    let mut metadata = provenance_metadata(
+        actor_context_for_origin(origin, actor_id),
+        PolicyAction::Prepare,
+        ResourceRef::new(ResourceKind::IssueReport, report_id),
+        Some("issue.report.prepare"),
+        ResourceClassification::local_operations_ready_for_review(),
+    );
+    if let Some(object) = metadata.as_object_mut() {
+        object.insert("jobId".to_string(), json!(job_id));
+        object.insert(
+            "processTemplateId".to_string(),
+            json!(ISSUE_REPORT_TEMPLATE_ID),
+        );
+    }
+    metadata
+}
+
+fn actor_context_for_origin(origin: &str, actor_id: Option<&str>) -> ActorContext {
+    let kind = match origin {
+        "mcp" => ActorKind::McpClient,
+        "scheduler" => ActorKind::Scheduler,
+        "system" => ActorKind::System,
+        _ => ActorKind::BrowserOperator,
+    };
+    ActorContext::new(kind, origin, actor_id.map(ToString::to_string))
+}
+
 fn load_issue_reports(connection: &Connection) -> Result<Vec<IssueReportArtifact>> {
     let mut statement = connection.prepare(
         "SELECT id, job_id, status, severity, title, summary, description, source_route,
@@ -900,8 +945,29 @@ mod tests {
             .evidence
             .iter()
             .any(|entry| entry.source == "diagnostic_logs"));
+        assert_eq!(
+            report.diagnostics["classification"]["visibility"],
+            "owner_system"
+        );
 
         let reports = list_issue_reports(db.path()).unwrap();
         assert_eq!(reports.reports.len(), 1);
+
+        let connection = Connection::open(db.path()).unwrap();
+        let metadata_json: String = connection
+            .query_row(
+                "SELECT metadata_json FROM job_artifacts WHERE artifact_kind = 'issue.report'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let metadata: Value = serde_json::from_str(&metadata_json).unwrap();
+        assert_eq!(metadata["provenance"]["actor"]["kind"], "browser_operator");
+        assert_eq!(metadata["provenance"]["action"], "prepare");
+        assert_eq!(metadata["provenance"]["resource"]["kind"], "issue_report");
+        assert_eq!(
+            metadata["provenance"]["jobId"],
+            json!(report.job_id.unwrap())
+        );
     }
 }

@@ -9,6 +9,7 @@ use crate::backups::{
 use crate::briefs::{generate_system_brief, latest_system_brief};
 use crate::capabilities::{list_mcp_exported_capabilities, load_capabilities};
 use crate::health::{build_health_report, build_readiness_report};
+use crate::policy::{authorize_mcp_capability, ActorContext, PolicyOutcome};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -270,6 +271,10 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
         .ok_or_else(|| {
             McpDispatchError::invalid_params(format!("Capability is not exported to MCP: {name}"))
         })?;
+    let policy_decision = authorize_mcp_capability(ActorContext::mcp_client(), capability);
+    if policy_decision.outcome == PolicyOutcome::Denied {
+        return Err(McpDispatchError::invalid_params(policy_decision.reason));
+    }
     validate_tool_arguments_against_schema(name, &arguments, &capability.input_schema)?;
     drop(connection);
 
@@ -287,18 +292,18 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
             json!({ "brief": latest_system_brief(db_path).map_err(McpDispatchError::internal)? })
         }
         "brief.system.generate" => {
-            json!({ "brief": generate_system_brief(db_path, "mcp", None).map_err(McpDispatchError::internal)? })
+            json!({ "brief": generate_system_brief(db_path, "mcp", Some("mcp_client")).map_err(McpDispatchError::internal)? })
         }
         "backup.restore_jobs.list" => {
             json!(list_backup_restore_jobs(db_path).map_err(McpDispatchError::internal)?)
         }
         "backup.create" => {
-            json!({ "job": create_backup(db_path, "mcp", None).map_err(McpDispatchError::internal)? })
+            json!({ "job": create_backup(db_path, "mcp", Some("mcp_client")).map_err(McpDispatchError::internal)? })
         }
         "restore.preflight.validate" => {
             let request: RestorePreflightRequest = serde_json::from_value(arguments)
                 .map_err(|error| McpDispatchError::invalid_params(error.to_string()))?;
-            json!({ "job": run_restore_preflight(db_path, request, "mcp", None).map_err(McpDispatchError::internal)? })
+            json!({ "job": run_restore_preflight(db_path, request, "mcp", Some("mcp_client")).map_err(McpDispatchError::internal)? })
         }
         other => {
             return Err(McpDispatchError::invalid_params(format!(
@@ -314,6 +319,7 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
                 .map_err(|error| McpDispatchError::internal(error.into()))?,
         }],
         "structuredContent": structured_content,
+        "ordoPolicy": policy_decision.metadata(),
         "isError": false,
     }))
 }
@@ -500,6 +506,8 @@ mod tests {
 
         assert!(response.error.is_none());
         let result = response.result.unwrap();
+        assert_eq!(result["ordoPolicy"]["outcome"], "allowed");
+        assert_eq!(result["ordoPolicy"]["actor"]["kind"], "mcp_client");
         assert_eq!(result["structuredContent"]["health"]["status"], "ok");
         assert_eq!(result["structuredContent"]["readiness"]["status"], "ready");
     }

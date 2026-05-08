@@ -101,6 +101,25 @@ At this stage, the goal is to establish:
 
 The product is not ready for production use yet.
 
+## Current Commands
+
+The 0.1.0 Rust appliance spine starts in `crates/ordo-daemon`.
+
+```bash
+cargo run -p ordo-daemon -- health-json
+cargo run -p ordo-daemon -- init-db --db-path .data/local.db
+cargo run -p ordo-daemon -- ready-json --db-path .data/local.db
+cargo run -p ordo-daemon -- serve --db-path .data/local.db
+```
+
+Validation:
+
+```bash
+cargo fmt --all -- --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ## Docs
 
 Start here:

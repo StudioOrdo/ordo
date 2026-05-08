@@ -1,0 +1,98 @@
+use anyhow::Result;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Json, Router};
+use serde_json::json;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::broadcast;
+
+use crate::events::{system_event, RealtimeEvent};
+use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
+use crate::schema::init_database;
+
+#[derive(Clone)]
+struct AppState {
+    db_path: Arc<PathBuf>,
+    event_sender: broadcast::Sender<RealtimeEvent>,
+}
+
+pub async fn serve(host: String, port: u16, db_path: PathBuf) -> Result<()> {
+    init_database(&db_path)?;
+
+    let (event_sender, _) = broadcast::channel(128);
+    let state = AppState {
+        db_path: Arc::new(db_path),
+        event_sender,
+    };
+    let app = Router::new()
+        .route("/health", get(health_handler))
+        .route("/ready", get(ready_handler))
+        .route("/ws", get(ws_handler))
+        .with_state(state.clone());
+
+    let _ = state.event_sender.send(system_event(
+        "daemon.started",
+        json!({ "host": host, "port": port }),
+    ));
+
+    let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+async fn health_handler() -> Json<HealthReport> {
+    Json(build_health_report())
+}
+
+async fn ready_handler(State(state): State<AppState>) -> (StatusCode, Json<ReadinessReport>) {
+    let report = build_readiness_report(&state.db_path);
+    let status = if report.status == "ready" {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (status, Json(report))
+}
+
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state.event_sender.subscribe()))
+}
+
+async fn handle_socket(
+    mut socket: WebSocket,
+    mut event_receiver: broadcast::Receiver<RealtimeEvent>,
+) {
+    let connected = system_event("websocket.connected", json!({ "transport": "websocket" }));
+    if send_event(&mut socket, &connected).await.is_err() {
+        return;
+    }
+
+    loop {
+        match event_receiver.recv().await {
+            Ok(event) => {
+                if send_event(&mut socket, &event).await.is_err() {
+                    return;
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                let lagged = system_event("websocket.lagged", json!({ "skipped": skipped }));
+                if send_event(&mut socket, &lagged).await.is_err() {
+                    return;
+                }
+            }
+            Err(broadcast::error::RecvError::Closed) => return,
+        }
+    }
+}
+
+async fn send_event(socket: &mut WebSocket, event: &RealtimeEvent) -> Result<(), axum::Error> {
+    socket
+        .send(Message::Text(
+            serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string()),
+        ))
+        .await
+}

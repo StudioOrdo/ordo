@@ -8,9 +8,10 @@ use axum::{Json, Router};
 use serde::Serialize;
 use serde_json::json;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration as StdDuration;
 use tokio::sync::broadcast;
 use tokio::time::{self, Duration};
 
@@ -23,20 +24,55 @@ use crate::briefs::{
 };
 use crate::capabilities::{list_capabilities, CapabilityCatalogResponse};
 use crate::events::{system_event, RealtimeEvent};
-use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
+use crate::health::{
+    build_health_report, build_readiness_report, HealthCheck, HealthReport, ReadinessReport,
+};
 use crate::mcp::{handle_mcp_request, McpRequest, McpResponse};
 use crate::schema::init_database;
+
+const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
+const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
+
+type SharedNextSupervisorStatus = Arc<Mutex<NextSupervisorStatus>>;
 
 #[derive(Clone)]
 struct AppState {
     db_path: Arc<PathBuf>,
     event_sender: broadcast::Sender<RealtimeEvent>,
+    next_supervisor_status: Option<SharedNextSupervisorStatus>,
 }
 
 #[derive(Debug, Clone)]
 pub struct NextSupervisorConfig {
     pub command: String,
     pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NextSupervisorPhase {
+    Starting,
+    Running,
+    Restarting,
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+struct NextSupervisorStatus {
+    phase: NextSupervisorPhase,
+    pid: Option<u32>,
+    restart_count: u32,
+    detail: String,
+}
+
+impl NextSupervisorStatus {
+    fn starting() -> Self {
+        Self {
+            phase: NextSupervisorPhase::Starting,
+            pid: None,
+            restart_count: 0,
+            detail: "Next.js child process is starting.".to_string(),
+        }
+    }
 }
 
 pub async fn serve(
@@ -49,9 +85,13 @@ pub async fn serve(
     let _generated_briefs = run_due_system_brief_schedules(&db_path)?;
 
     let (event_sender, _) = broadcast::channel(128);
+    let next_supervisor_status = next_supervisor
+        .as_ref()
+        .map(|_| Arc::new(Mutex::new(NextSupervisorStatus::starting())));
     let state = AppState {
         db_path: Arc::new(db_path),
         event_sender,
+        next_supervisor_status,
     };
     let app = Router::new()
         .route("/health", get(health_handler))
@@ -73,8 +113,10 @@ pub async fn serve(
         "daemon.started",
         json!({ "host": host, "port": port }),
     ));
-    if let Some(config) = next_supervisor {
-        spawn_next_supervisor(config, state.event_sender.clone())?;
+    if let (Some(config), Some(next_status)) =
+        (next_supervisor, state.next_supervisor_status.clone())
+    {
+        spawn_next_supervisor(config, state.event_sender.clone(), next_status)?;
     }
     spawn_system_brief_scheduler(state.db_path.clone(), state.event_sender.clone());
 
@@ -86,38 +128,217 @@ pub async fn serve(
 fn spawn_next_supervisor(
     config: NextSupervisorConfig,
     event_sender: broadcast::Sender<RealtimeEvent>,
+    next_status: SharedNextSupervisorStatus,
 ) -> Result<()> {
-    let mut child = Command::new(&config.command)
+    thread::Builder::new()
+        .name("ordo-next-supervisor".to_string())
+        .spawn(move || supervise_next_child(config, event_sender, next_status))
+        .context("Failed to spawn Next.js supervisor thread")?;
+    Ok(())
+}
+
+fn supervise_next_child(
+    config: NextSupervisorConfig,
+    event_sender: broadcast::Sender<RealtimeEvent>,
+    next_status: SharedNextSupervisorStatus,
+) {
+    let mut restart_count = 0;
+
+    loop {
+        match start_next_child(&config, &event_sender, &next_status, restart_count) {
+            Ok(mut child) => {
+                let child_id = child.id();
+                match child.wait() {
+                    Ok(exit_status) => {
+                        let _ = event_sender.send(system_event(
+                            "next.supervisor.exited",
+                            json!({
+                                "pid": child_id,
+                                "success": exit_status.success(),
+                                "code": exit_status.code(),
+                                "restartCount": restart_count,
+                            }),
+                        ));
+                        if schedule_next_restart(
+                            &event_sender,
+                            &next_status,
+                            child_exit_message(child_id, &exit_status),
+                            &mut restart_count,
+                        ) {
+                            continue;
+                        }
+                        return;
+                    }
+                    Err(error) => {
+                        let _ = event_sender.send(system_event(
+                            "next.supervisor.wait_failed",
+                            json!({ "pid": child_id, "message": error.to_string(), "restartCount": restart_count }),
+                        ));
+                        if schedule_next_restart(
+                            &event_sender,
+                            &next_status,
+                            format!("Next.js child wait failed: {error}"),
+                            &mut restart_count,
+                        ) {
+                            continue;
+                        }
+                        return;
+                    }
+                }
+            }
+            Err(error) => {
+                let message = format!("Failed to start Next.js child process: {error}");
+                let _ = event_sender.send(system_event(
+                    "next.supervisor.start_failed",
+                    json!({ "command": config.command, "args": config.args, "message": message.clone(), "restartCount": restart_count }),
+                ));
+                if schedule_next_restart(&event_sender, &next_status, message, &mut restart_count) {
+                    continue;
+                }
+                return;
+            }
+        }
+    }
+}
+
+fn start_next_child(
+    config: &NextSupervisorConfig,
+    event_sender: &broadcast::Sender<RealtimeEvent>,
+    next_status: &SharedNextSupervisorStatus,
+    restart_count: u32,
+) -> Result<Child> {
+    let child = Command::new(&config.command)
         .args(&config.args)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .with_context(|| format!("Failed to start Next.js child process: {}", config.command))?;
+        .with_context(|| config.command.clone())?;
     let child_id = child.id();
+    update_next_supervisor_status(next_status, |status| {
+        status.phase = NextSupervisorPhase::Running;
+        status.pid = Some(child_id);
+        status.restart_count = restart_count;
+        status.detail = format!("Next.js child process is running with pid {child_id}.");
+    });
     let _ = event_sender.send(system_event(
         "next.supervisor.started",
-        json!({ "command": config.command, "args": config.args, "pid": child_id }),
+        json!({
+            "command": config.command,
+            "args": config.args,
+            "pid": child_id,
+            "restartCount": restart_count,
+        }),
     ));
+    if restart_count > 0 {
+        let _ = event_sender.send(system_event(
+            "next.supervisor.recovered",
+            json!({ "pid": child_id, "restartCount": restart_count }),
+        ));
+    }
+    Ok(child)
+}
 
-    thread::Builder::new()
-        .name("ordo-next-supervisor".to_string())
-        .spawn(move || match child.wait() {
-            Ok(status) => {
-                let _ = event_sender.send(system_event(
-                    "next.supervisor.exited",
-                    json!({ "pid": child_id, "success": status.success(), "code": status.code() }),
-                ));
+fn schedule_next_restart(
+    event_sender: &broadcast::Sender<RealtimeEvent>,
+    next_status: &SharedNextSupervisorStatus,
+    message: String,
+    restart_count: &mut u32,
+) -> bool {
+    if should_restart_next_child(*restart_count, NEXT_SUPERVISOR_MAX_RESTARTS) {
+        *restart_count += 1;
+        update_next_supervisor_status(next_status, |status| {
+            status.phase = NextSupervisorPhase::Restarting;
+            status.pid = None;
+            status.restart_count = *restart_count;
+            status.detail = format!(
+                "{message} Restart attempt {} of {NEXT_SUPERVISOR_MAX_RESTARTS} is scheduled.",
+                *restart_count
+            );
+        });
+        let _ = event_sender.send(system_event(
+            "next.supervisor.restart_attempt",
+            json!({
+                "restartCount": *restart_count,
+                "maxRestarts": NEXT_SUPERVISOR_MAX_RESTARTS,
+                "delayMs": NEXT_SUPERVISOR_RESTART_DELAY.as_millis(),
+                "message": message,
+            }),
+        ));
+        thread::sleep(NEXT_SUPERVISOR_RESTART_DELAY);
+        true
+    } else {
+        update_next_supervisor_status(next_status, |status| {
+            status.phase = NextSupervisorPhase::Failed;
+            status.pid = None;
+            status.restart_count = *restart_count;
+            status.detail = format!(
+                "{message} Restart budget exhausted after {} attempts.",
+                *restart_count
+            );
+        });
+        let _ = event_sender.send(system_event(
+            "next.supervisor.final_failure",
+            json!({
+                "restartCount": *restart_count,
+                "maxRestarts": NEXT_SUPERVISOR_MAX_RESTARTS,
+                "message": message,
+            }),
+        ));
+        false
+    }
+}
+
+fn should_restart_next_child(restart_count: u32, max_restarts: u32) -> bool {
+    restart_count < max_restarts
+}
+
+fn child_exit_message(child_id: u32, exit_status: &ExitStatus) -> String {
+    format!(
+        "Next.js child process {child_id} exited with success={} and code={:?}.",
+        exit_status.success(),
+        exit_status.code()
+    )
+}
+
+fn update_next_supervisor_status(
+    next_status: &SharedNextSupervisorStatus,
+    update: impl FnOnce(&mut NextSupervisorStatus),
+) {
+    if let Ok(mut status) = next_status.lock() {
+        update(&mut status);
+    }
+}
+
+fn next_supervisor_readiness_check(next_status: &SharedNextSupervisorStatus) -> HealthCheck {
+    let status = match next_status.lock() {
+        Ok(status) => status.clone(),
+        Err(error) => {
+            return HealthCheck {
+                name: "next".to_string(),
+                status: "error".to_string(),
+                detail: format!("Next.js supervisor status lock failed: {error}."),
             }
-            Err(error) => {
-                let _ = event_sender.send(system_event(
-                    "next.supervisor.failed",
-                    json!({ "pid": child_id, "message": error.to_string() }),
-                ));
-            }
-        })
-        .context("Failed to spawn Next.js supervisor thread")?;
-    Ok(())
+        }
+    };
+
+    match status.phase {
+        NextSupervisorPhase::Running => HealthCheck {
+            name: "next".to_string(),
+            status: "ok".to_string(),
+            detail: status.detail,
+        },
+        NextSupervisorPhase::Starting | NextSupervisorPhase::Restarting => HealthCheck {
+            name: "next".to_string(),
+            status: "error".to_string(),
+            detail: status.detail,
+        },
+        NextSupervisorPhase::Failed => HealthCheck {
+            name: "next".to_string(),
+            status: "error".to_string(),
+            detail: status.detail,
+        },
+    }
 }
 
 fn spawn_system_brief_scheduler(
@@ -157,7 +378,14 @@ async fn health_handler() -> Json<HealthReport> {
 }
 
 async fn ready_handler(State(state): State<AppState>) -> (StatusCode, Json<ReadinessReport>) {
-    let report = build_readiness_report(&state.db_path);
+    let mut report = build_readiness_report(&state.db_path);
+    if let Some(next_status) = &state.next_supervisor_status {
+        let next_check = next_supervisor_readiness_check(next_status);
+        if next_check.status != "ok" {
+            report.status = "not_ready".to_string();
+        }
+        report.checks.push(next_check);
+    }
     let status = if report.status == "ready" {
         StatusCode::OK
     } else {
@@ -288,4 +516,64 @@ async fn send_event(socket: &mut WebSocket, event: &RealtimeEvent) -> Result<(),
             serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string()),
         ))
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_restart_policy_is_bounded() {
+        assert!(should_restart_next_child(0, 3));
+        assert!(should_restart_next_child(2, 3));
+        assert!(!should_restart_next_child(3, 3));
+    }
+
+    #[test]
+    fn next_readiness_is_ok_when_child_is_running() {
+        let next_status = Arc::new(Mutex::new(NextSupervisorStatus {
+            phase: NextSupervisorPhase::Running,
+            pid: Some(123),
+            restart_count: 1,
+            detail: "Next.js child process is running with pid 123.".to_string(),
+        }));
+
+        let check = next_supervisor_readiness_check(&next_status);
+
+        assert_eq!(check.name, "next");
+        assert_eq!(check.status, "ok");
+        assert!(check.detail.contains("pid 123"));
+    }
+
+    #[test]
+    fn next_readiness_fails_when_restart_budget_is_exhausted() {
+        let next_status = Arc::new(Mutex::new(NextSupervisorStatus {
+            phase: NextSupervisorPhase::Failed,
+            pid: None,
+            restart_count: 3,
+            detail: "Restart budget exhausted after 3 attempts.".to_string(),
+        }));
+
+        let check = next_supervisor_readiness_check(&next_status);
+
+        assert_eq!(check.name, "next");
+        assert_eq!(check.status, "error");
+        assert!(check.detail.contains("exhausted"));
+    }
+
+    #[test]
+    fn next_readiness_fails_while_child_is_restarting() {
+        let next_status = Arc::new(Mutex::new(NextSupervisorStatus {
+            phase: NextSupervisorPhase::Restarting,
+            pid: None,
+            restart_count: 1,
+            detail: "Restart attempt 1 of 3 is scheduled.".to_string(),
+        }));
+
+        let check = next_supervisor_readiness_check(&next_status);
+
+        assert_eq!(check.name, "next");
+        assert_eq!(check.status, "error");
+        assert!(check.detail.contains("Restart attempt"));
+    }
 }

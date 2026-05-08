@@ -1,8 +1,10 @@
 import type { DaemonCheck, SystemSnapshot } from "@/lib/daemon-client";
 
 export function statusClass(status: string): string {
-  if (status === "ok" || status === "ready" || status === "live") return "status-pill status-ok";
-  if (status === "not_ready" || status === "connecting") return "status-pill status-warn";
+  if (status === "ok" || status === "ready" || status === "live" || status === "succeeded") return "status-pill status-ok";
+  if (status === "not_ready" || status === "connecting" || status === "running" || status === "waiting_for_input" || status === "blocked") {
+    return "status-pill status-warn";
+  }
   return "status-pill status-error";
 }
 

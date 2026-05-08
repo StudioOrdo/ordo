@@ -2,6 +2,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+use ordo_daemon::backups::{
+    create_backup, list_backup_restore_jobs, run_restore_preflight, RestorePreflightRequest,
+};
 use ordo_daemon::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
 use ordo_daemon::health::{build_health_report, build_readiness_report};
 use ordo_daemon::schema::init_database;
@@ -37,6 +40,25 @@ enum Commands {
     GenerateSystemBriefJson {
         #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
         db_path: PathBuf,
+    },
+    #[command(name = "create-backup-json")]
+    CreateBackupJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+    },
+    #[command(name = "list-backups-json")]
+    ListBackupsJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+    },
+    #[command(name = "restore-preflight-json")]
+    RestorePreflightJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+        #[arg(long)]
+        backup_id: String,
+        #[arg(long)]
+        confirmation: String,
     },
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
@@ -82,6 +104,39 @@ async fn main() -> Result<()> {
                 serde_json::to_string_pretty(&LatestBriefResponse {
                     brief: Some(generate_system_brief(&db_path, "cli", None)?)
                 })?
+            );
+        }
+        Commands::CreateBackupJson { db_path } => {
+            init_database(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&create_backup(&db_path, "cli", None)?)?
+            );
+        }
+        Commands::ListBackupsJson { db_path } => {
+            init_database(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&list_backup_restore_jobs(&db_path)?)?
+            );
+        }
+        Commands::RestorePreflightJson {
+            db_path,
+            backup_id,
+            confirmation,
+        } => {
+            init_database(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&run_restore_preflight(
+                    &db_path,
+                    RestorePreflightRequest {
+                        backup_id,
+                        confirmation,
+                    },
+                    "cli",
+                    None,
+                )?)?
             );
         }
         Commands::Serve {

@@ -12,6 +12,10 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::time::{self, Duration};
 
+use crate::backups::{
+    create_backup, list_backup_restore_jobs, run_restore_preflight, BackupRestoreResponse,
+    RestorePreflightRequest,
+};
 use crate::briefs::{
     generate_system_brief, latest_system_brief, run_due_system_brief_schedules, LatestBriefResponse,
 };
@@ -42,6 +46,9 @@ pub async fn serve(host: String, port: u16, db_path: PathBuf) -> Result<()> {
             "/briefs/system/generate",
             post(generate_system_brief_handler),
         )
+        .route("/backups", get(list_backup_restore_handler))
+        .route("/backups/create", post(create_backup_handler))
+        .route("/restore/validate", post(validate_restore_handler))
         .route("/ws", get(ws_handler))
         .with_state(state.clone());
 
@@ -125,6 +132,42 @@ async fn generate_system_brief_handler(
         json!({ "briefId": brief.id, "jobId": brief.job_id, "version": brief.version }),
     ));
     Ok(Json(LatestBriefResponse { brief: Some(brief) }))
+}
+
+async fn list_backup_restore_handler(
+    State(state): State<AppState>,
+) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+    list_backup_restore_jobs(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn create_backup_handler(
+    State(state): State<AppState>,
+) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let job = create_backup(&state.db_path, "http", None).map_err(internal_error)?;
+    let _ = state.event_sender.send(system_event(
+        "backup.create.completed",
+        json!({ "jobId": job.id, "artifactId": job.artifact.as_ref().map(|artifact| artifact.id.clone()) }),
+    ));
+    list_backup_restore_jobs(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn validate_restore_handler(
+    State(state): State<AppState>,
+    Json(request): Json<RestorePreflightRequest>,
+) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let job =
+        run_restore_preflight(&state.db_path, request, "http", None).map_err(internal_error)?;
+    let _ = state.event_sender.send(system_event(
+        "restore.preflight.completed",
+        json!({ "jobId": job.id, "status": job.status }),
+    ));
+    list_backup_restore_jobs(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
 }
 
 fn internal_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {

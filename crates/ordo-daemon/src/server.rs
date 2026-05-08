@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
-use axum::http::StatusCode;
+use axum::extract::{ConnectInfo, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
 use serde_json::json;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,7 @@ use crate::schema::init_database;
 
 const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
 const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
+const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
 
 type SharedNextSupervisorStatus = Arc<Mutex<NextSupervisorStatus>>;
 
@@ -40,6 +42,23 @@ struct AppState {
     db_path: Arc<PathBuf>,
     event_sender: broadcast::Sender<RealtimeEvent>,
     next_supervisor_status: Option<SharedNextSupervisorStatus>,
+    access_policy: DaemonAccessPolicy,
+}
+
+#[derive(Debug, Clone)]
+struct DaemonAccessPolicy {
+    access_token: Option<String>,
+}
+
+impl DaemonAccessPolicy {
+    fn new(access_token: Option<String>) -> Self {
+        Self {
+            access_token: access_token.and_then(|token| {
+                let trimmed = token.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +99,7 @@ pub async fn serve(
     port: u16,
     db_path: PathBuf,
     next_supervisor: Option<NextSupervisorConfig>,
+    access_token: Option<String>,
 ) -> Result<()> {
     init_database(&db_path)?;
     let _generated_briefs = run_due_system_brief_schedules(&db_path)?;
@@ -92,6 +112,7 @@ pub async fn serve(
         db_path: Arc::new(db_path),
         event_sender,
         next_supervisor_status,
+        access_policy: DaemonAccessPolicy::new(access_token),
     };
     let app = Router::new()
         .route("/health", get(health_handler))
@@ -121,7 +142,11 @@ pub async fn serve(
     spawn_system_brief_scheduler(state.db_path.clone(), state.event_sender.clone());
 
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -417,8 +442,11 @@ async fn latest_system_brief_handler(
 }
 
 async fn generate_system_brief_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Result<Json<LatestBriefResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let brief = generate_system_brief(&state.db_path, "http", None).map_err(internal_error)?;
     let _ = state.event_sender.send(system_event(
         "brief.system.generated",
@@ -436,8 +464,11 @@ async fn list_backup_restore_handler(
 }
 
 async fn create_backup_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let job = create_backup(&state.db_path, "http", None).map_err(internal_error)?;
     let _ = state.event_sender.send(system_event(
         "backup.create.completed",
@@ -449,9 +480,12 @@ async fn create_backup_handler(
 }
 
 async fn validate_restore_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(request): Json<RestorePreflightRequest>,
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
     let job =
         run_restore_preflight(&state.db_path, request, "http", None).map_err(internal_error)?;
     let _ = state.event_sender.send(system_event(
@@ -464,10 +498,51 @@ async fn validate_restore_handler(
 }
 
 async fn mcp_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(request): Json<McpRequest>,
-) -> Json<McpResponse> {
-    Json(handle_mcp_request(&state.db_path, request))
+) -> Result<Json<McpResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(&state.access_policy, &headers, remote_addr)?;
+    Ok(Json(handle_mcp_request(&state.db_path, request)))
+}
+
+fn authorize_protected_daemon_route(
+    policy: &DaemonAccessPolicy,
+    headers: &HeaderMap,
+    remote_addr: SocketAddr,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if protected_daemon_route_allowed(policy, headers, remote_addr) {
+        Ok(())
+    } else {
+        Err(forbidden_error(
+            "Protected daemon route requires loopback access or a valid daemon access token.",
+        ))
+    }
+}
+
+fn protected_daemon_route_allowed(
+    policy: &DaemonAccessPolicy,
+    headers: &HeaderMap,
+    remote_addr: SocketAddr,
+) -> bool {
+    remote_addr.ip().is_loopback()
+        || policy
+            .access_token
+            .as_deref()
+            .is_some_and(|token| request_has_access_token(headers, token))
+}
+
+fn request_has_access_token(headers: &HeaderMap, expected_token: &str) -> bool {
+    headers
+        .get(DAEMON_ACCESS_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|token| token == expected_token)
+        || headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .is_some_and(|token| token == expected_token)
 }
 
 fn internal_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
@@ -475,6 +550,15 @@ fn internal_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse {
             error: error.to_string(),
+        }),
+    )
+}
+
+fn forbidden_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: message.to_string(),
         }),
     )
 }
@@ -521,6 +605,10 @@ async fn send_event(socket: &mut WebSocket, event: &RealtimeEvent) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn socket_addr(value: &str) -> SocketAddr {
+        value.parse().unwrap()
+    }
 
     #[test]
     fn next_restart_policy_is_bounded() {
@@ -575,5 +663,62 @@ mod tests {
         assert_eq!(check.name, "next");
         assert_eq!(check.status, "error");
         assert!(check.detail.contains("Restart attempt"));
+    }
+
+    #[test]
+    fn daemon_access_policy_ignores_empty_tokens() {
+        let policy = DaemonAccessPolicy::new(Some("  ".to_string()));
+
+        assert!(policy.access_token.is_none());
+    }
+
+    #[test]
+    fn protected_daemon_routes_allow_loopback_without_token() {
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        assert!(protected_daemon_route_allowed(
+            &policy,
+            &headers,
+            socket_addr("127.0.0.1:4000")
+        ));
+    }
+
+    #[test]
+    fn protected_daemon_routes_deny_non_loopback_without_token() {
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        assert!(!protected_daemon_route_allowed(
+            &policy,
+            &headers,
+            socket_addr("192.168.1.10:4000")
+        ));
+    }
+
+    #[test]
+    fn protected_daemon_routes_allow_bearer_token_for_non_loopback() {
+        let policy = DaemonAccessPolicy::new(Some("secret".to_string()));
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer secret".parse().unwrap());
+
+        assert!(protected_daemon_route_allowed(
+            &policy,
+            &headers,
+            socket_addr("192.168.1.10:4000")
+        ));
+    }
+
+    #[test]
+    fn protected_daemon_routes_allow_header_token_for_non_loopback() {
+        let policy = DaemonAccessPolicy::new(Some("secret".to_string()));
+        let mut headers = HeaderMap::new();
+        headers.insert(DAEMON_ACCESS_TOKEN_HEADER, "secret".parse().unwrap());
+
+        assert!(protected_daemon_route_allowed(
+            &policy,
+            &headers,
+            socket_addr("192.168.1.10:4000")
+        ));
     }
 }

@@ -1,8 +1,8 @@
 # Appliance Runtime
 
-Status: Draft contract for Ordo 0.1.0
+Status: Draft contract for Ordo 0.1.1 trust boundary
 
-Ordo 0.1.0 runs as one local appliance.
+Ordo runs as one local appliance.
 
 ## Rust Daemon
 
@@ -34,7 +34,7 @@ The 0.1.1 policy is bounded restart:
 - transient exits schedule up to three `next.supervisor.restart_attempt` events;
 - a successful restarted child emits `next.supervisor.recovered`;
 - an exhausted restart budget emits `next.supervisor.final_failure` and makes
-	`/ready` return `not_ready`.
+  `/ready` return `not_ready`.
 
 When no Next supervisor is configured, daemon readiness remains scoped to the
 SQLite appliance checks so local daemon-only development keeps working.
@@ -54,19 +54,57 @@ Next owns product surfaces:
 
 Next should not be the only process responsible for appliance survival.
 
+## Network And Access Boundary
+
+The daemon is the internal appliance authority. It is not a public product API
+surface by default.
+
+The default 0.1.1 access posture is:
+
+- `/health` and `/ready` remain unauthenticated so Docker and local operators can
+  probe the appliance;
+- read-model routes such as `/capabilities`, `/backups`, and
+  `/briefs/system/latest` remain available for the local System shell;
+- mutating daemon routes such as `/briefs/system/generate`, `/backups/create`,
+  and `/restore/validate` require either loopback access to the daemon or a
+  valid daemon access token;
+- `/mcp` requires the same loopback-or-token boundary;
+- WebSocket projection remains read-only runtime projection and is not an
+  execution boundary.
+
+Loopback access means the request reaches the daemon from the same network
+namespace, such as the bundled Next.js server calling `http://127.0.0.1:17760`
+inside the appliance. Non-loopback requests to protected routes must provide the
+configured daemon access token using either `Authorization: Bearer <token>` or
+`X-Ordo-Daemon-Token: <token>`.
+
+The token is configured with `--daemon-access-token` or
+`ORDO_DAEMON_ACCESS_TOKEN`. This is a first local trust-boundary guard, not a
+multi-user RBAC system.
+
+Local Compose binds both published ports to host loopback for development:
+
+- `127.0.0.1:3000` for the Next.js management UI;
+- `127.0.0.1:17760` for daemon health, readiness, development inspection, and
+  local WebSocket projection.
+
+Production-like deployment should expose the UI or reverse-proxy entrypoint and
+avoid publishing the daemon port directly unless the protected daemon routes are
+intentionally token-gated for that environment.
+
 ## Docker Boundary
 
-0.1.0 should package one Docker image with `.data` as the durable volume.
+The appliance packages one Docker image with `.data` as the durable volume.
 
 The image should not require external queues, external schedulers, hosted
 databases, or hosted realtime infrastructure for core behavior.
 
-## Phase 5 Runtime Shape
+## Current Runtime Shape
 
 The Phase 5 Docker appliance keeps the Rust daemon as PID 1. The daemon starts
 and monitors the Next.js standalone server as a child process.
 
-Default container ports:
+Container ports:
 
 - `3000` for the Next.js management UI;
 - `17760` for daemon health, readiness, API routes, and WebSocket projection.

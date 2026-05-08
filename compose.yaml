@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
     image: studio-ordo/ordo:0.1.0
     ports:
-      - "3000:3000"
-      - "17760:17760"
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:17760:17760"
     environment:
       ORDO_DB_PATH: /app/.data/local.db
       ORDO_DAEMON_URL: http://127.0.0.1:17760

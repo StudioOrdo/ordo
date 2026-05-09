@@ -37,7 +37,10 @@ export type ConversationCommandType =
   | "agent.delegate"
   | "agent.takeover"
   | "llm.run.request"
-  | "llm.run.cancel";
+  | "llm.run.cancel"
+  | "tool.approve"
+  | "tool.reject"
+  | "tool.execute";
 
 export type ConversationGatewayEnvelope<TPayload = unknown> = {
   schemaVersion: typeof CONVERSATION_GATEWAY_SCHEMA_VERSION;
@@ -142,6 +145,9 @@ export const conversationCommandCapabilities: Record<ConversationCommandType, st
   "agent.takeover": "conversation.agent.delegate",
   "llm.run.request": "llm.invoke",
   "llm.run.cancel": "llm.cancel",
+  "tool.approve": "llm.tool.approve",
+  "tool.reject": "llm.tool.reject",
+  "tool.execute": "llm.tool.execute",
 };
 
 export const conversationProtocolFixtures = {

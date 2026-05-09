@@ -64,6 +64,9 @@ pub enum ConversationCommandType {
     AgentTakeover,
     LlmRunRequest,
     LlmRunCancel,
+    LlmToolApprove,
+    LlmToolReject,
+    LlmToolExecute,
 }
 
 impl ConversationCommandType {
@@ -91,6 +94,9 @@ impl ConversationCommandType {
             ConversationCommandType::AgentTakeover => "agent.takeover",
             ConversationCommandType::LlmRunRequest => "llm.run.request",
             ConversationCommandType::LlmRunCancel => "llm.run.cancel",
+            ConversationCommandType::LlmToolApprove => "tool.approve",
+            ConversationCommandType::LlmToolReject => "tool.reject",
+            ConversationCommandType::LlmToolExecute => "tool.execute",
         }
     }
 
@@ -118,6 +124,9 @@ impl ConversationCommandType {
             }
             ConversationCommandType::LlmRunRequest => "llm.invoke",
             ConversationCommandType::LlmRunCancel => "llm.cancel",
+            ConversationCommandType::LlmToolApprove => "llm.tool.approve",
+            ConversationCommandType::LlmToolReject => "llm.tool.reject",
+            ConversationCommandType::LlmToolExecute => "llm.tool.execute",
         }
     }
 }

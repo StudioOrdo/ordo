@@ -154,13 +154,16 @@ Exit criteria:
 
 ## Phase 5: LLM Gateway Streaming
 
-Status: foundation implemented in PR #117. The implemented slice adds the
+Status: foundation implemented in PR #117 and governed tool approval foundation
+implemented in the #92 slice. The implemented slices add the
 Rust-owned provider adapter contract, deterministic local provider test path,
 prompt slot assembly, `llm.invoke` and `llm.cancel` capabilities, policy
 decision evidence, normalized ephemeral/durable LLM events, cancellation, and
-durable final assistant messages through the conversation event stream. External
-provider calls, tool approval execution, the privacy egress firewall, and full
-token ledger tables remain deferred to their owning phases.
+durable final assistant messages through the conversation event stream. Tool
+requests now record durable approval/rejection/execution evidence and require
+registered exported capabilities before execution. External provider calls,
+arbitrary MCP execution, the privacy egress firewall, and full token ledger
+tables remain deferred to their owning phases.
 
 Deliverables:
 

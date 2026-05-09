@@ -11,6 +11,7 @@ pub mod kernel;
 pub mod mcp;
 pub mod policy;
 pub mod policy_audit;
+pub mod public_surfaces;
 pub mod reports;
 pub mod scheduler;
 pub mod schema;

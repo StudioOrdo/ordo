@@ -1,6 +1,6 @@
 # Public Surfaces MVP
 
-Status: not built
+Status: backend read models implemented; UI not built
 
 ## Why It Matters
 
@@ -9,11 +9,14 @@ be built from approved public truth, not ad hoc page copy.
 
 ## MVP Scope
 
-- Add read models for About, Offers, Asks, and Feed.
-- Only include published public resources.
-- Provide basic public routes or previews.
-- Show provenance or source summary where useful.
-- Let System/owner surfaces identify missing public readiness.
+- Add read models for About, Offers, Asks, and Feed. Implemented in the daemon.
+- Only include published public resources. Implemented through the business fact
+  visibility and publication gate.
+- Provide basic public routes or previews. Implemented as daemon JSON routes.
+- Show provenance or source summary where useful. Implemented through public
+  field evidence.
+- Let System/owner surfaces identify missing public readiness. Implemented as
+  explicit readiness metadata; UI rendering is not built.
 
 ## Durable Product Nouns
 
@@ -27,9 +30,10 @@ be built from approved public truth, not ad hoc page copy.
 ## Acceptance Criteria
 
 - Public routes cannot include owner/private material.
-- Offer and Ask data are durable records, not only page strings.
-- Feed items carry artifact/provenance metadata.
-- System shell can show whether public surfaces are ready.
+- Offer and Ask data are durable business facts, not only page strings.
+- Feed items carry provenance metadata.
+- System shell can show whether public surfaces are ready once UI work consumes
+  the daemon readiness contract.
 
 ## Non-Goals
 
@@ -42,4 +46,4 @@ be built from approved public truth, not ad hoc page copy.
 
 - Visibility tests.
 - Public read model tests.
-- Browser smoke for public routes once built.
+- Browser smoke for public routes once UI surfaces are built.

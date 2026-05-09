@@ -52,6 +52,10 @@ use crate::policy::{
 use crate::policy_audit::{
     list_policy_decisions, PolicyDecisionAuditQuery, PolicyDecisionAuditResponse,
 };
+use crate::public_surfaces::{
+    public_about, public_asks, public_feed, public_offers, public_surfaces, AboutReadModel,
+    AsksReadModel, FeedReadModel, OffersReadModel, PublicSurfacesResponse,
+};
 use crate::reports::{
     list_issue_reports, prepare_issue_report, IssueReportPrepareRequest, IssueReportsResponse,
 };
@@ -154,6 +158,11 @@ pub async fn serve(
             "/business/facts/:fact_id",
             put(business_fact_update_handler),
         )
+        .route("/public/surfaces", get(public_surfaces_handler))
+        .route("/public/about", get(public_about_handler))
+        .route("/public/offers", get(public_offers_handler))
+        .route("/public/asks", get(public_asks_handler))
+        .route("/public/feed", get(public_feed_handler))
         .route("/logs", get(logs_handler))
         .route("/policy-decisions", get(policy_decisions_handler))
         .route("/briefs/system/latest", get(latest_system_brief_handler))
@@ -672,6 +681,46 @@ async fn business_fact_update_handler(
             .map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
     Ok(Json(fact))
+}
+
+async fn public_surfaces_handler(
+    State(state): State<AppState>,
+) -> Result<Json<PublicSurfacesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    public_surfaces(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn public_about_handler(
+    State(state): State<AppState>,
+) -> Result<Json<AboutReadModel>, (StatusCode, Json<ErrorResponse>)> {
+    public_about(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn public_offers_handler(
+    State(state): State<AppState>,
+) -> Result<Json<OffersReadModel>, (StatusCode, Json<ErrorResponse>)> {
+    public_offers(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn public_asks_handler(
+    State(state): State<AppState>,
+) -> Result<Json<AsksReadModel>, (StatusCode, Json<ErrorResponse>)> {
+    public_asks(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn public_feed_handler(
+    State(state): State<AppState>,
+) -> Result<Json<FeedReadModel>, (StatusCode, Json<ErrorResponse>)> {
+    public_feed(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
 }
 
 #[derive(Debug, Deserialize)]

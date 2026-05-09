@@ -34,7 +34,7 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | --- | --- | --- | --- | --- | --- |
 | 0 | Local install, providers, and vault | #49 | [Install And Provider Setup](install-provider-setup.md) | Daemon routes, schema, vault encryption, secret redaction, backup key archival, protected policy decisions, and docs exist. | complete |
 | 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | complete |
-| 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | next |
+| 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | ready for PR |
 | 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | not started |
 | 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | not started |
 | 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | not started |
@@ -96,11 +96,20 @@ Current validation evidence:
 
 This phase creates backend contracts for UI without designing the UI yet.
 
+GitHub issue: #51.
+
 Done means:
 
 - About, Offers, Asks, and Feed have read endpoints or read-model builders;
 - every response is derived from published public records;
 - missing-readiness states are explicit enough for the System UI.
+
+Current implementation evidence:
+
+- daemon routes exist for `/public/surfaces`, `/public/about`,
+  `/public/offers`, `/public/asks`, and `/public/feed`;
+- public read models are derived from published public `business_facts` only;
+- read-model responses include provenance evidence and explicit readiness.
 
 ### 3. Tracked Entry Points And Visitor Sessions
 

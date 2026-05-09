@@ -1,8 +1,9 @@
 # Conversation Realtime Implementation Plan
 
 Status: Staged delivery plan with protocol, schema, core service,
-bidirectional gateway, receipts/presence, first premium UI core, and UI
-recovery/accessibility hardening implemented.
+bidirectional gateway, receipts/presence, first premium UI core, UI
+recovery/accessibility hardening, LLM foundations, continuous analysis, and
+realtime release hardening implemented.
 
 This plan keeps the first implementation small enough to validate while
 preserving the architecture needed for premium realtime chat, brief-first
@@ -273,6 +274,13 @@ Exit criteria:
 
 ## Phase 9: Hardening
 
+Status: implemented for the 0.1.3 local realtime release slice. The gateway
+keeps SQLite as truth and treats WebSocket fanout as a bounded projection and
+command transport. The release hardening adds structured oversized-frame
+rejection, retryable lagged-client replay instructions, replay gap/idempotency
+tests, message command flood tests, and explicit docs evidence for the remaining
+transport and load risks.
+
 Deliverables:
 
 - Backpressure and bounded memory tests.
@@ -286,3 +294,12 @@ Exit criteria:
 
 - Full validation matrix passes.
 - Runtime behavior is documented in public architecture docs.
+
+Deferred release-hardening work:
+
+- broad many-client load tests and measured SLOs;
+- heartbeat timeout eviction for abandoned browser sockets;
+- distributed fanout or cross-process gateway coordination;
+- graph candidates (#102), attribution (#103), artifact noun work (#104),
+  surface brief jobs (#105), and ethical persuasion prompt-slot enforcement
+  (#107).

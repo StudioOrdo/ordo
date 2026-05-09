@@ -213,9 +213,13 @@ Provider abstraction:
 
 - adapter emits normalized start, delta, usage, completion, and failure events;
 - Anthropic-style SSE maps to Ordo stream events;
-- OpenAI-style response events map to Ordo stream events;
+- OpenAI-compatible non-streaming responses map to Ordo completion, usage, and
+  failure events through a no-network mocked transport in default tests;
 - DeepSeek/OpenAI-compatible SSE maps to Ordo stream events;
 - cancellation stops downstream work and emits canonical cancel state.
+- OpenAI-compatible request building receives privacy-transformed prompt/user
+  payloads, records usage through the token ledger, and omits raw secrets from
+  debug/error output, events, and eval artifacts.
 
 Prompt builder:
 

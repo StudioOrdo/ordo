@@ -236,6 +236,12 @@ when evidence supports those signals. It must not invent evidence, fake
 scarcity, exploit fear or dependency, hide limitations, present candidates as
 facts, or override consent, privacy, safety, or policy.
 
+Implemented v1 behavior keeps that slot daemon-owned. The builder rejects
+principles without evidence/source refs, records slot version/source refs/content
+hash/token estimates in `llm_prompt_slot_usage`, keeps staff reasoning
+inspectable, and emits only client-safe suggestion text to client/public
+surfaces. It does not add a public route or direct provider path.
+
 ## Privacy Egress Firewall
 
 Before any provider call, the daemon should run a privacy transform:

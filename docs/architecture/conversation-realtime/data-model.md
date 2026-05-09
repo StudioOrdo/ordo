@@ -974,6 +974,13 @@ other slots and must carry evidence/source refs when included. Staff-facing
 outputs may expose the reasoning and evidence; client-facing outputs should
 only show respectful, agency-preserving language.
 
+Status: implemented for v1 without new tables. The ethical persuasion builder
+creates a normal prompt slot with `slot_id = ethical_business_persuasion`,
+`slot_version = v1`, evidence-backed source refs, visibility ceiling, inclusion
+reason, content hash, and deterministic token estimate. It reuses
+`llm_prompt_slot_usage` and `llm.prompt.slot.accounted` rather than storing raw
+persuasion text or adding a dedicated prompt table.
+
 ### `llm_token_ledger_entries`
 
 Stores append-only token usage and cost evidence.

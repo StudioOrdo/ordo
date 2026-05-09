@@ -104,6 +104,17 @@ export interface ArtifactBriefCard {
   evidenceRefs: readonly string[];
 }
 
+export interface EthicalPersuasionGuidance {
+  slotId: "ethical_business_persuasion";
+  slotVersion: "v1";
+  useCase: string;
+  principles: readonly string[];
+  staffReasoning: string;
+  clientSafeSuggestion: string;
+  evidenceRefs: readonly string[];
+  sourceRefs: readonly string[];
+}
+
 export interface ConversationDetail {
   conversationId: string;
   participantId: string;
@@ -121,6 +132,7 @@ export interface ConversationDetail {
   };
   messages: readonly ConversationMessage[];
   artifactCards: readonly ArtifactBriefCard[];
+  persuasionGuidance: EthicalPersuasionGuidance | null;
   typing: readonly string[];
   presence: readonly string[];
   unreadFromSequence: number;
@@ -307,6 +319,16 @@ export const sampleConversationDetails: Record<string, ConversationDetail> = {
         evidenceRefs: ["offer_view_starter_3", "message_ava_14"],
       },
     ],
+    persuasionGuidance: {
+      slotId: "ethical_business_persuasion",
+      slotVersion: "v1",
+      useCase: "reply_draft",
+      principles: ["reciprocity"],
+      staffReasoning: "Use reciprocity because offer_view_starter_3 shows Ava already received value in the digital proof explanation.",
+      clientSafeSuggestion: "You can review the digital proof first, then decide whether the card add-on is useful.",
+      evidenceRefs: ["offer_view_starter_3", "message_ava_14"],
+      sourceRefs: ["artifact_qr_card_1"],
+    },
   },
   conv_marcus: {
     conversationId: "conv_marcus",
@@ -373,6 +395,16 @@ export const sampleConversationDetails: Record<string, ConversationDetail> = {
         evidenceRefs: ["ask_view_beta_2", "message_marcus_7"],
       },
     ],
+    persuasionGuidance: {
+      slotId: "ethical_business_persuasion",
+      slotVersion: "v1",
+      useCase: "reply_draft",
+      principles: ["commitment_consistency", "unity"],
+      staffReasoning: "Use commitment/consistency because message_marcus_7 shows Marcus offered a referral; use unity only around the shared local-business beta mission.",
+      clientSafeSuggestion: "Thanks for thinking of someone who may fit the beta. If you are comfortable, tell me the best way to make the introduction.",
+      evidenceRefs: ["message_marcus_7", "ask_view_beta_2"],
+      sourceRefs: ["conversation_conv_marcus"],
+    },
   },
 };
 

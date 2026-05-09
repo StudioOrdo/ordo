@@ -279,9 +279,11 @@ the source message/event evidence, carry provenance/generating job ids, and
 default to `proposed`. Lifecycle transitions emit
 `knowledge_graph.candidate.confirmed`, `knowledge_graph.candidate.rejected`, or
 `knowledge_graph.candidate.superseded`. These events are not product truth and
-do not create a graph database or public graph UI. Surface brief jobs and the
-full ethical persuasion prompt-slot contract remain owned by separate accepted
-issues.
+do not create a graph database or public graph UI. Surface brief jobs now emit
+their own refresh/completion/superseded events. The ethical persuasion v1
+foundation does not add a new public recommendation event; it records the
+evidence-backed prompt slot through `llm.prompt.slot.included` and
+`llm.prompt.slot.accounted` while keeping staff/client presentation separated.
 
 Business outcomes:
 

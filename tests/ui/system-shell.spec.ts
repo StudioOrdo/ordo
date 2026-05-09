@@ -156,6 +156,10 @@ test("Premium conversation UI supports edit, undo, retry, unread, reactions, and
   await expect(page.getByLabel("Artifact cards")).toContainText("Artifact: Starter QR card proof");
   await expect(page.getByLabel("Artifact cards")).toContainText("Producing job");
   await expect(page.getByLabel("Artifact cards")).toContainText("Storage health");
+  await expect(page.getByLabel("Ethical persuasion guidance")).toContainText("ethical_business_persuasion");
+  await expect(page.getByLabel("Ethical persuasion guidance")).toContainText("offer_view_starter_3");
+  await expect(page.getByLabel("Ethical persuasion guidance")).toContainText("artifact_qr_card_1");
+  await expect(page.getByLabel("Ethical persuasion guidance")).toContainText("You can review the digital proof first");
   await expect(page.getByLabel("Conversation timeline")).toContainText("Ava is typing");
   await expect(page.locator(".unread-divider")).toBeVisible();
 
@@ -212,6 +216,9 @@ test("Conversation core mobile layout avoids horizontal overflow", async ({ page
   await page.goto("/chat?role=client");
 
   await expect(page.getByLabel("Conversation workspace")).toBeVisible();
+  await expect(page.getByLabel("Ethical persuasion guidance")).toHaveCount(0);
+  await expect(page.locator("main")).not.toContainText("ethical_business_persuasion");
+  await expect(page.locator("main")).not.toContainText("Staff Guidance");
   await expect(page.getByLabel("Conversation composer")).toBeVisible();
   await page.getByLabel("Write a reply").fill("Mobile keyboard safe reply");
   const composerBox = await page.getByLabel("Conversation composer").boundingBox();

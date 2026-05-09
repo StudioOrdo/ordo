@@ -342,7 +342,9 @@ Delivery order:
 2. Add deterministic backend eval harness foundation. Implemented as
    `crates/ordo-daemon/src/eval_harness.rs` with deterministic case, step,
    actor-role, evidence snapshot, assertion, and scorecard summary types.
-3. Add transcript artifact packets and scorecards.
+3. Add transcript artifact packets and scorecards. Implemented with
+   `EvalArtifactWriter`, JSON packet/scorecard/manifest output, durable ledger
+   sections, redaction summaries, and artifact-review placeholders for #140.
 4. Implement role lifecycle workflow evals for anonymous, client/member,
    affiliate, staff, manager/admin, owner/system admin, Ordo agent, and
    LLM/tool/provider boundaries.

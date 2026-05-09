@@ -439,6 +439,21 @@ Phase 1 harness coverage now includes:
 - tests proving repeated harness runs are stable apart from durable ids owned by
   the underlying domain services.
 
+Phase 2 artifact packet coverage now includes:
+
+- JSON packet, JSON scorecard, and manifest writing under a caller-provided
+  output directory;
+- packet schema version, case metadata, actor roles, ordered steps, evidence
+  snapshots, assertion results, and scorecard summary;
+- transcript, timeline, conversation event, realtime replay, policy, prompt
+  slot, privacy transform, token ledger, analysis candidate, handoff, artifact,
+  and surface brief ledgers;
+- empty optional ledgers represented as explicit arrays/counts;
+- redaction of obvious emails, phone numbers, API-key-shaped values, bearer-like
+  tokens, and configured private terms before artifact serialization;
+- deterministic normalized packet generation for repeated runs;
+- no provider keys, browser timing, or network access.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

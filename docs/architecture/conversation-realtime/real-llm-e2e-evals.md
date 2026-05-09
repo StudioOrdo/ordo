@@ -1,15 +1,25 @@
-# Real LLM E2E Evals
+# Product Workflow Evals And Real LLM Readiness
 
-Status: Draft eval contract and current-code assessment
+Status: 0.1.4 eval contract and current-code assessment
 
-This document defines how Ordo should start validating business functionality
-with real LLM providers while keeping deterministic tests, privacy guarantees,
-token accounting, and local appliance governance intact.
+This document defines how Ordo should validate product functionality before the
+owner relies on it in real use. The arc starts with deterministic backend
+workflow evals and transcript artifacts, then adds replay-provider fixtures, and
+only later runs guarded live LLM provider evals. Real-provider evals remain part
+of the plan, but they are not the first proof loop.
 
 Real-provider evals must be opt-in. They spend money, touch live external
 systems, and exercise the privacy egress boundary. They should never run as part
 of the default local test matrix unless an explicit environment flag enables
 them.
+
+The product shape under test is a briefing-first relationship and business
+intelligence system for solopreneurs and small teams. Evals should validate the
+role lifecycle for anonymous visitors, authenticated clients/members,
+affiliates, staff, managers/admins, owner/system admins, the Ordo agent, and
+LLM/tool/provider boundaries. They should also validate Customer Feedback,
+reviews, Home/About billboards, Offers/Asks as business intent objects, and
+artifact/review/outcome evidence loops.
 
 ## Current Assessment
 
@@ -101,6 +111,25 @@ Reusable ideas:
 
 These map directly to Ordo's needs: deterministic CI remains stable, while
 opt-in live evals produce redacted artifacts for review and regression replay.
+
+## Eval Delivery Order
+
+Use this order so the system can be autonomously developed from durable
+evidence rather than live-model impressions:
+
+1. Deterministic backend workflow evals.
+2. Transcript artifact packets and scorecards.
+3. Product role lifecycle evals.
+4. Customer Feedback and Review workflow evals.
+5. Home/About and Offer/Ask product surface evals.
+6. Replay provider fixtures.
+7. Real provider adapter.
+8. Opt-in live eval runner with network and spend guards.
+9. Artifact review loop that classifies findings and drives follow-on issues.
+
+Every implementation phase should begin by re-reading the issue, current docs,
+and current code because earlier eval work may change the best implementation
+path.
 
 ## Backend-Only Early Proof Evals
 
@@ -331,6 +360,34 @@ initial runner can execute the backend-only portions with deterministic actors;
 later runs can swap customer/operator turns to LLM simulators and replay/live
 provider adapters.
 
+Role lifecycle workflows are first-class:
+
+- anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry
+  point, or Chat and receives a visitor-session-backed relationship
+  conversation;
+- authenticated client/member sees one relationship conversation and
+  client-safe account tools;
+- affiliate sees referral/account tools without unrelated customer data;
+- business staff defaults to `My Handoffs`;
+- manager/admin can inspect `Team Queue` and authorized `All Conversations`;
+- owner/system admin can operate appliance surfaces while ordinary staff remain
+  shielded from system internals;
+- Ordo agent stays silent publicly during human-led active mode unless tagged,
+  delegated, or policy requires intervention.
+
+Product surface workflows are also first-class:
+
+- Customer Feedback is captured as private business intelligence;
+- feedback tags are proposed candidates with evidence;
+- starred feedback influences feedback briefs without becoming a customer
+  rating;
+- review candidates require consent before publication;
+- Home/About billboards require linked evidence or clear aspirational language;
+- Offers/Asks remain human-readable and machine-readable business intent
+  objects;
+- ethical persuasion and brand profile guidance cannot invent scarcity,
+  reviews, metrics, authority, or social proof.
+
 1. `workflow_new_visitor_service_intake`
    - Customer simulator asks what the business does, shares a need, budget, and
      timing.
@@ -491,6 +548,45 @@ These workflows should be implemented gradually, but the inventory should stay
 larger than the immediate implementation. The suite is a map of where pressure
 belongs, not a promise that every product surface is already wired through one
 public route.
+
+Additional product workflow inventory from the product shape:
+
+33. `workflow_role_lifecycle_anonymous_to_client`
+    - Visitor enters through Home/About or Offer and later authenticates.
+    - Assert one relationship conversation survives identity attachment, staff
+      internals remain hidden, and account tools change only after authorization.
+34. `workflow_affiliate_referral_surface_boundary`
+    - Affiliate views referral tools and chat cards.
+    - Assert affiliate can see own referral/outcome evidence and cannot see
+      unrelated customer conversations or owner-only internals.
+35. `workflow_staff_manager_owner_navigation_boundaries`
+    - Staff, manager/admin, and owner/system admin open conversation/product
+      surfaces.
+    - Assert staff defaults to My Handoffs, manager can see Team Queue, owner can
+      inspect All Conversations/system areas, and ordinary staff cannot see
+      Logs/Backup/readiness/policy internals.
+36. `workflow_feedback_capture_and_tag_candidates`
+    - Conversation contains positive feedback, pricing confusion, and a feature
+      request.
+    - Assert feedback items cite message evidence, tags default to proposed, and
+      graph candidates stay private/proposed.
+37. `workflow_feedback_star_affects_brief`
+    - Staff stars high-signal feedback.
+    - Assert the feedback brief includes starred feedback as high-signal
+      business intelligence without treating it as a rating or public proof.
+38. `workflow_review_consent_publication_boundary`
+    - Positive feedback becomes review candidate, review requested, received,
+      consented, approved, published, featured, and retired.
+    - Assert no public review/testimonial appears before consent and approval.
+39. `workflow_home_about_billboard_evidence`
+    - Home/About refresh proposes billboards from offers, asks, reviews,
+      artifacts, latest activity, outcomes, and chat CTA.
+    - Assert each claim links to evidence or is marked aspirational; fake
+      scarcity, fake metrics, and fake reviews are rejected.
+40. `workflow_offer_ask_intent_matching`
+    - Seed offer/ask intent metadata and a conversation need.
+    - Assert matching remains proposed, humans/policy decide what becomes real,
+      and attribution links only when source ids exist.
 
 ### Simulator Design
 

@@ -12,6 +12,20 @@ defaults.
 
 Ordo is not a generic CRM, support inbox, SaaS dashboard, or admin console.
 
+The next product/eval arc should treat Ordo as:
+
+```text
+A local-first AI business appliance that turns conversations, relationships,
+offers, asks, jobs, artifacts, feedback, reviews, referrals, and outcomes into
+evidence-backed intelligence briefs for a small business owner.
+```
+
+The deeper product is a briefing-first relationship and business intelligence
+system. Chat, CRM-like records, public pages, analytics, and content management
+are components. The primary value proposition is that Ordo reads what is
+happening in the business, connects it to evidence, and tells the owner what
+matters and what to do next.
+
 The conversation product should preserve this model:
 
 ```text
@@ -77,7 +91,7 @@ appliance internals.
 Business staff rail:
 
 ```text
-Today | Conversations | Connections | Offers | Asks | Affiliates | Artifacts | Jobs | Reports
+Today | Conversations | Connections | Offers | Asks | Customer Feedback | Affiliates | Artifacts | Jobs | Reports
 ```
 
 Owner/admin system additions:
@@ -92,6 +106,32 @@ system internals should not appear as ordinary staff navigation.
 
 Conversations sit above Connections because active interaction comes before
 durable relationship memory.
+
+## Role-Aware Chat Presentation
+
+The same conversation substrate presents differently depending on actor,
+account role, resource grants, participant identity, conversation mode, handoff
+assignment, and allowed scope.
+
+- Anonymous visitors may start from Home/About, Offers, Asks, Latest, QR/link
+  entry points, or Chat. They should get a visitor-session-backed relationship
+  conversation without seeing staff internals.
+- Authenticated clients and members should see one relationship conversation,
+  available offers/asks, latest/member-visible activity, account tools, and
+  client-safe deliverables.
+- Affiliates use the client/member surface plus role-specific account tools
+  such as referral links, QR card, referred leads, outcome/commission status,
+  approved materials, and settings. They must not see unrelated customer
+  conversations or owner-only business details.
+- Business staff work from `Conversations -> My Handoffs` and business rails.
+  Their detail view starts with the handoff or surface brief before raw
+  transcript.
+- Managers can see `Team Queue`; owner/admin users can inspect `All
+  Conversations`, mode, grants, events, candidates, and provenance when
+  authorized.
+- System admins may operate appliance truth. System capability does not imply
+  ordinary staff should see logs, backup, readiness, prompt internals, privacy
+  placeholder maps, or token/cost internals by default.
 
 ## Client Conversation Model
 
@@ -257,6 +297,79 @@ Conversation analysis may produce:
 
 Tags are operational, not decorative. They should support routing, briefing,
 offer/ask measurement, staff next actions, and relationship memory.
+
+## Customer Feedback And Reviews
+
+Customer Feedback is a first-class business area. It follows the standard Ordo
+shape:
+
+```text
+Customer Feedback area -> feedback evidence list -> feedback brief/detail
+```
+
+Definitions:
+
+- Feedback is anything a customer says or does that teaches the business
+  something. It is private business intelligence by default.
+- Review is feedback the customer has explicitly allowed Ordo to publish.
+- Testimonial is a curated, published review used in Home/About, Offers, or
+  Latest.
+
+Every review is feedback. Not every feedback item is a review. No feedback
+becomes public proof without consent and owner/staff approval.
+
+Feedback records should link to the source conversation, segment, message,
+connection, offer, ask, artifact, referral, outcome, and generated brief where
+evidence exists. Feedback tags are candidates first: `proposed`, `confirmed`,
+`rejected`, or `superseded`. Starred feedback is staff-marked high-signal
+business intelligence; it is not a customer rating. Rating is customer-provided
+score evidence, if any. Featured means approved for public display.
+
+Review lifecycle:
+
+```text
+Feedback captured -> Review candidate -> Review requested -> Review received
+-> Consent confirmed -> Approved -> Published -> Featured -> Retired
+```
+
+## Home/About Narrative Brief
+
+Home/About should be the public narrative brief of the business, not a static
+biography page. It may use a scrollytelling sequence of evidence-backed
+billboards that summarize and link into Offers, Asks, Latest, Artifacts,
+Customer Feedback, Reviews, Outcomes, and Chat.
+
+Suggested billboard sequence:
+
+```text
+Identity -> Problem -> Transformation -> Featured Offer -> Current Ask
+-> Proof/Reviews -> Latest Activity -> Artifact/Outcome Proof -> Call To Action
+```
+
+Each billboard should have one message, one proof point or visual, one action,
+and one detail link. Billboard states are `pinned`, `dynamic`, `draft`,
+`published`, and `retired` so public narrative changes remain owner-governed.
+Motion should clarify state and must have reduced-motion fallbacks.
+
+Brand archetypes may guide copy, but claims must stay evidence-backed. For
+Studio Ordo the likely archetype mix is `Sage + Magician + Creator`: clarity,
+transformation, and tangible artifacts. Ethical persuasion may guide narrative
+structure only when the proof exists. No fake scarcity, fake reviews, fake
+metrics, unsupported authority, or invented social proof.
+
+## Offers And Asks As Business Intent
+
+Offers and Asks are human-readable pages and machine-readable business intent
+objects. This keeps them ready for future A2A discovery without implementing
+external A2A now.
+
+An Offer describes what this Ordo can provide, who it is for, required inputs,
+produced artifact/deliverable, terms, approval requirements, and how to start.
+An Ask describes what this Ordo wants from its network, what qualifies, how
+someone or another agent can respond, and what happens next.
+
+Agents may discover, propose, summarize, match, and prepare. Humans or policy
+decide what becomes real.
 
 Example tags:
 

@@ -417,6 +417,62 @@ Coverage:
 - malicious custom event type ignored by client;
 - sensitive content in logs or event payloads.
 
+## Product Workflow Eval Coverage
+
+0.1.4 evals should prove product lifecycle behavior through deterministic
+backend workflows before live providers are involved.
+
+Role lifecycle:
+
+- anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,
+  or Chat and receives a visitor-session-backed relationship conversation;
+- authenticated client/member sees one relationship conversation and client-safe
+  account tools;
+- affiliate sees own referral/account tools and cannot see unrelated customer
+  conversations;
+- business staff defaults to `My Handoffs`;
+- manager/admin can access `Team Queue` and authorized `All Conversations`;
+- owner/system admin can inspect system surfaces while ordinary staff cannot see
+  Logs, Backup, readiness, policy internals, prompt internals, token/cost
+  internals, or privacy placeholder maps by default;
+- Ordo does not post publicly during human-led active mode unless tagged,
+  delegated, or policy requires intervention.
+
+Customer Feedback and Reviews:
+
+- feedback records require durable source evidence;
+- feedback tags default to proposed and can be confirmed/rejected/superseded;
+- starred feedback affects feedback briefs but is not treated as a customer
+  rating;
+- review candidates cannot publish without consent and approval;
+- published/featured/retired review states are durable and reversible;
+- feedback and reviews can link to conversation, segment, message, connection,
+  offer, ask, artifact, referral, outcome, and brief where ids exist.
+
+Home/About and Offer/Ask surfaces:
+
+- Home/About billboard claims require linked evidence or explicit aspirational
+  labeling;
+- generated billboards support pinned, dynamic, draft, published, and retired
+  states;
+- reduced-motion fallback preserves billboard content and actions;
+- fake scarcity, fake reviews, fake metrics, unsupported authority, and
+  unsupported social proof are rejected;
+- Offers and Asks expose human-readable pages and machine-readable intent
+  metadata without implementing external A2A;
+- offer/ask outcome and feedback briefs cite referrals, conversations,
+  artifacts, entry points, and outcomes only when source ids exist.
+
+Artifact packet review:
+
+- eval packets include redacted transcript, timeline, event ledger, DB ledger,
+  prompt-slot ledger, privacy ledger, token ledger, analysis candidates, handoff
+  ledger, replay check, scorecard, and artifact review when the corresponding
+  data exists;
+- finding categories include `schema_gap`, `event_gap`, `policy_gap`,
+  `privacy_gap`, `prompt_gap`, `handoff_gap`, `analysis_gap`,
+  `accounting_gap`, `ux_contract_gap`, and `provider_gap`.
+
 ## Manual Acceptance Checklist
 
 - Message send feels instant.

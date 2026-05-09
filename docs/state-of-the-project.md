@@ -137,6 +137,13 @@ foundation before deeper product surfaces land.
 
 ## What Is Not Built Yet
 
+- Conversation realtime is planned but not implemented yet. The 0.1.3
+  conversation architecture packet now defines the intended product contract:
+  one client-visible relationship conversation, internal episodes/segments,
+  staff handoff queues, governed handoff objects, human-led agent etiquette,
+  role-aware navigation, brief-first surfaces, offer/ask outcome attribution,
+  artifacts/deliverables language, and an evidence-backed
+  `ethical_business_persuasion` prompt slot.
 - Full frontend product-depth surfaces such as Studio, Connections, Offers,
   About, Asks, Feed, Today, and Conversations are not built yet.
 - Authentication UI, hosted identity, OAuth/email login, public portals, and
@@ -216,6 +223,10 @@ search, Worker Ordos, and A2A are still future work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,
   Offers, Asks, Feed, Connections, availability, handoff, affiliate, and sales
   loop direction without claiming they are built.
+- [Conversation Realtime Architecture](architecture/conversation-realtime/README.md)
+  describes the planned 0.1.3 conversation realtime spine, including the
+  product doctrine that keeps the work from becoming a generic CRM, support
+  inbox, or dashboard.
 - [Ordo Core](business/ordo-core.md) describes the durable product doctrine and
   how future MCP tools and packs should customize the work without bypassing the
   trust boundary.

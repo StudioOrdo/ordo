@@ -44,7 +44,7 @@ daemon-token access.
 | `GET` | `/logs` | protected | `DiagnosticLogsResponse` | Local diagnostic log inspection. |
 | `GET` | `/policy-decisions` | protected | `PolicyDecisionAuditResponse` | Local policy/audit inspection. |
 | `GET` | `/ws` | public local | WebSocket `RealtimeEvent` stream | Live projection for system activity. |
-| `GET` | `/chat/ws` | protected | WebSocket `conversation.gateway.v1` envelopes | Bidirectional conversation gateway for subscribe, replay, message submit/edit/delete/undo, and ephemeral typing. |
+| `GET` | `/chat/ws` | protected | WebSocket `conversation.gateway.v1` envelopes | Bidirectional conversation gateway for subscribe, replay, message submit/edit/delete/undo, mark read/unread, reactions, ephemeral presence, and typing. |
 | `POST` | `/mcp` | local MCP JSON-RPC | `McpResponse` | Governed MCP projection only. |
 
 Core response signals:

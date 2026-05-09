@@ -83,6 +83,42 @@ export type ConversationReplayCursor = {
   limit: number;
 };
 
+export type ConversationReadStatePayload = {
+  conversationId: string;
+  participantId: string;
+  lastReadMessageId?: string;
+  lastReadEventCursor?: number;
+  lastReadAt?: string;
+  manualUnreadFromMessageId?: string;
+  unreadCount: number;
+  unreadMentionsCount: number;
+  unreadActionCount: number;
+  updatedAt: string;
+};
+
+export type ConversationReactionPayload = {
+  id: string;
+  messageId: string;
+  participantId: string;
+  reactionKey: string;
+  reactionKind: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  removedAt?: string;
+};
+
+export type ConversationPresencePayload = {
+  participantId: string;
+  conversationId: string;
+  status: string;
+  visibility: "public" | "participants" | "private";
+  statusMessage?: string;
+  deviceClass?: string;
+  metadata: Record<string, unknown>;
+  updatedAt: string;
+  expiresAt?: string;
+};
+
 export const conversationCommandCapabilities: Record<ConversationCommandType, string> = {
   "conversation.subscribe": "conversation.read",
   "conversation.replay_after_cursor": "conversation.read",
@@ -125,6 +161,39 @@ export const conversationProtocolFixtures = {
     durability: "durable",
     scope: "conversation",
     payload: { bodyMarkdown: "Hello", clientMessageId: "client_msg_1" },
+    occurredAt: "2026-05-09T00:00:00Z",
+  } satisfies ConversationGatewayEnvelope,
+  messageMarkRead: {
+    schemaVersion: CONVERSATION_GATEWAY_SCHEMA_VERSION,
+    op: "command",
+    type: "message.mark_read",
+    clientId: "client_read_1",
+    conversationId: "conversation_1",
+    durability: "durable",
+    scope: "conversation",
+    payload: { messageId: "message_1" },
+    occurredAt: "2026-05-09T00:00:00Z",
+  } satisfies ConversationGatewayEnvelope,
+  messageReact: {
+    schemaVersion: CONVERSATION_GATEWAY_SCHEMA_VERSION,
+    op: "command",
+    type: "message.react",
+    clientId: "client_react_1",
+    conversationId: "conversation_1",
+    durability: "durable",
+    scope: "conversation",
+    payload: { messageId: "message_1", reactionKey: "heart", reactionKind: "emoji", action: "add" },
+    occurredAt: "2026-05-09T00:00:00Z",
+  } satisfies ConversationGatewayEnvelope,
+  presenceUpdate: {
+    schemaVersion: CONVERSATION_GATEWAY_SCHEMA_VERSION,
+    op: "command",
+    type: "presence.update",
+    clientId: "client_presence_1",
+    conversationId: "conversation_1",
+    durability: "ephemeral",
+    scope: "conversation",
+    payload: { status: "online", visibility: "participants" },
     occurredAt: "2026-05-09T00:00:00Z",
   } satisfies ConversationGatewayEnvelope,
   policyDenied: {

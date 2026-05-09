@@ -37,8 +37,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | complete |
 | 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | complete |
 | 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | complete |
-| 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | ready for PR |
-| 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | not started |
+| 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | complete |
+| 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | ready for PR |
 | 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | not started |
 | 8 | Knowledge corpus and governed retrieval | #57 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Corpus ingestion, source/item provenance, SQLite FTS retrieval, visibility filtering, and retrieval evidence exist. | not started |
 | 9 | RAG answer draft spine | #58 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Provider-backed answer draft job uses governed retrieval, emits evidence, avoids unsupported claims, and preserves redaction guarantees. | not started |
@@ -172,6 +172,8 @@ Current implementation evidence:
 This phase creates scoped relationships for clients, affiliates, support,
 services, and future worker Ordos.
 
+GitHub issue: #54. Pull request: #66, merged.
+
 Done means:
 
 - connections have type, identity, status, scope, grants, and revocations;
@@ -200,6 +202,20 @@ Done means:
 - handoff inbox items include source, destination, evidence, required approval,
   delivery state, and receipt;
 - no live or external handoff can occur without policy approval.
+
+Current implementation evidence:
+
+- durable availability schedule, operator presence, eligibility decision,
+  handoff inbox, handoff event, and handoff receipt tables exist in schema
+  version 14;
+- protected local daemon routes exist for availability read/write, eligibility
+  evaluation, inbox list/create/resolve, and receipt inspection;
+- eligibility decisions persist evidence for schedule, presence, threshold,
+  intent, and connection trust;
+- inbox state transitions persist local handoff events, receipt rows, realtime
+  events, and protected policy audit decisions;
+- accepting an inbox item is `approved_local_only` and records no external
+  delivery.
 
 ### 7. Reports And Approved Support Packet Backend
 

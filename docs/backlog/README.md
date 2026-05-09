@@ -39,9 +39,9 @@ architecture doc together.
 | [Install And Provider Setup](install-provider-setup.md) | Turn backend install/provider/vault state into a minimal operator setup path. | backend foundation merged; UI not built |
 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md) | Capture local owner and business truth for future public surfaces. | backend foundation merged |
 | [Content Visibility And Publication](content-visibility-publication.md) | Define public/authenticated/staff/owner visibility and publication state for business truth. | backend foundation merged |
-| [Connections](connections.md) | Model trusted relationships with scope, grants, history, and revocation. | backend foundation ready for PR; UI not built |
-| [Availability And Presence](availability-presence.md) | Model handoff hours, operator status, and interruption thresholds. | not built |
-| [Handoff Inbox](handoff-inbox.md) | Create handoff envelopes and owner attention items with evidence and receipts. | not built |
+| [Connections](connections.md) | Model trusted relationships with scope, grants, history, and revocation. | backend foundation merged; UI not built |
+| [Availability And Presence](availability-presence.md) | Model handoff hours, operator status, and interruption thresholds. | backend foundation ready for PR; UI not built |
+| [Handoff Inbox](handoff-inbox.md) | Create handoff envelopes and owner attention items with evidence and receipts. | backend foundation ready for PR; UI not built |
 | [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Send reviewed diagnostic/support packets with explicit approval and receipt. | reports foundation exists; egress not built |
 | [Reports And QA Loop](reports-qa-loop.md) | Expand local reports into a practical developer/support feedback loop. | local reports exist |
 | [Public Surfaces](public-surfaces.md) | Build public About, Offers, Asks, and Feed read models without private leakage. | backend read models merged; UI not built |

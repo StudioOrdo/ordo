@@ -48,6 +48,11 @@ surfaces land.
   routes for connection records, grant creation/revocation, grant inspection,
   and event inspection; connection grants are scoped through the shared resource
   grant policy spine.
+- SQLite stores local availability schedules, operator presence, interruption
+  threshold, handoff eligibility decisions, handoff inbox items, handoff events,
+  and local handoff receipts. The daemon exposes protected local routes for
+  availability management, eligibility evaluation, inbox state, owner decisions,
+  and receipt inspection without external delivery.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
@@ -124,6 +129,10 @@ surfaces land.
   egress, mediated chat, external connection integrations, and affiliate payout
   automation are not implemented yet; current support is backend state, scoped
   policy, local events, and receipt evidence only.
+- Availability and handoff inbox UI, push notifications, calendar sync, voice
+  handoff, mediated handoff chat, and external handoff delivery are not
+  implemented yet; current support is backend state, policy audit, eligibility
+  evidence, local inbox events, and receipt evidence only.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
   integrations are not implemented yet.
 - Report submission transports to external systems are not implemented yet;
@@ -164,6 +173,9 @@ slices.
 - [Connections Foundation](architecture/connections.md) describes the
   implemented backend foundation for scoped connection records, grants,
   revocations, events, and receipts.
+- [Availability And Handoff Inbox](architecture/availability-and-handoff.md)
+  describes the implemented backend foundation for owner attention boundaries,
+  eligibility decisions, inbox state, and local receipts.
 - [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
   implemented retrieval safety foundation for future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,

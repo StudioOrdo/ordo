@@ -1,6 +1,6 @@
 # Connections MVP
 
-Status: backend foundation ready for PR; UI not built
+Status: backend foundation merged; UI not built
 
 ## Why It Matters
 

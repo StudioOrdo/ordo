@@ -1,6 +1,6 @@
 # Availability And Presence MVP
 
-Status: not built
+Status: backend foundation ready for PR; UI not built
 
 ## Why It Matters
 
@@ -16,6 +16,16 @@ availability and policy allow it.
 - Add a handoff eligibility function that considers schedule, presence,
   threshold, intent, and connection trust.
 - Show current handoff status to the owner.
+
+## Backend Foundation
+
+- SQLite schema version 14 stores availability schedules, operator presence,
+    interruption threshold, and handoff eligibility decisions.
+- Protected local daemon routes read and update schedule/presence state.
+- Handoff eligibility records evidence for allow/deny decisions based on
+    schedule, presence, threshold, intent, and connection trust.
+- Paused schedule, paused/offline/non-available presence, and restrictive
+    thresholds block live handoff decisions.
 
 ## Durable Product Nouns
 
@@ -36,9 +46,11 @@ availability and policy allow it.
 - Calendar sync.
 - Push notifications.
 - Voice calls.
+- UI, public promises of live access, push notifications, external calendars,
+  external integrations, payments, mediated chat, or any external egress.
 
 ## Validation
 
 - Unit tests for handoff eligibility cases.
-- Policy decision tests.
+- Protected route policy audit tests.
 - UI smoke once status is surfaced.

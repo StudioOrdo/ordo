@@ -113,8 +113,8 @@ Known gaps:
 
 - the smoke eval remains one provider call, while multi-persona live journey
   planning and journey execution remain deterministic by default;
-- no outbound email adapter exists; review-request email should start as a
-  redacted simulated artifact/link.
+- real outbound email remains deferred; review-request email stays a governed
+  simulated artifact/link for 0.1.5.
 
 ## Product Journey Contract
 
@@ -270,7 +270,53 @@ The case records:
 
 The review-return journey manifest is schema
 `ordo.review_return_journey_eval.v1`. It stores durable ids and evidence refs
-only. Real outbound email delivery remains owned by #170.
+only. The simulated email artifact is local evidence, not delivery.
+
+## Governed Email Simulation Decision
+
+Status: implemented by #170.
+
+0.1.5 keeps review-request email as a governed simulation artifact. The current
+codebase has durable artifacts, entry points, visitor sessions, feedback,
+reviews, reports, policy evidence, privacy egress, and live LLM guards, but it
+does not yet have a governed outbound email substrate. Adding real delivery now
+would introduce recipient consent, suppression, unsubscribe, deliverability,
+provider-secret, retry, bounce, abuse, audit, and rate/spend boundaries that are
+larger than the live journey eval arc.
+
+The accepted 0.1.5 contract is:
+
+- review-request outreach is represented by a
+  `simulated_review_request_email` artifact;
+- the artifact status is `simulated_not_delivered`;
+- the artifact is linked to return-entry-point and review-return evidence;
+- reports count the artifact as simulation evidence, not proof of delivery;
+- raw recipient email addresses are not required and must not appear in
+  committed fixtures, packets, scorecards, reports, logs, or UI-facing
+  protocol;
+- real outbound delivery remains absent from default tests and product claims.
+
+Future real outbound email work requires a later accepted issue with all of
+these gates:
+
+- explicit owner approval for live email execution;
+- recipient consent or documented lawful basis;
+- suppression and unsubscribe handling;
+- deliverability controls and sender identity policy;
+- provider secret handling through the daemon/vault boundary;
+- audit trail for request, approval, delivery attempt, provider response, and
+  suppression decisions;
+- rate and spend caps;
+- redaction of message bodies, provider payloads, and recipient identifiers in
+  artifacts and reports;
+- no raw fixture emails or private persona data;
+- opt-in live/email guards separate from normal deterministic eval runs;
+- bounce, failure, retry, and abuse-prevention policy before any automation.
+
+Future agents should continue to use simulated email artifacts in evals and
+reports until those gates are implemented and validated. The simulation path is
+not a marketing automation system and must not be used to imply real review
+requests were sent.
 
 ## Affiliate Referral Journey Contract
 
@@ -427,6 +473,10 @@ call GitHub, and does not automatically file issues.
    summaries, explicit gaps, and local-only issue drafts.
 9. #170 Decide whether simulated review-request email remains enough or a
    governed outbound email adapter should become follow-on work.
+   Implemented by keeping governed simulation as the 0.1.5 path and deferring
+   real outbound email until owner approval, consent/lawful-basis,
+   suppression/unsubscribe, deliverability, provider-secret, audit, rate/spend,
+   redaction, and opt-in email guard contracts exist.
 
 Real outbound email, broad provider comparison, and UI-heavy browser journeys
 remain future work unless a later issue proves they are the smallest useful

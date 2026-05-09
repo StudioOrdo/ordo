@@ -252,7 +252,12 @@ QR scans, visitor sessions, offer acceptance, trials, referrals, feedback,
 reviews, handoffs, LLM runs, privacy transforms, and token usage should
 normalize through their existing durable events. Simulated review-request email
 links should begin as local eval artifacts unless a later accepted slice adds a
-governed outbound email event contract.
+governed outbound email event contract. For 0.1.5, simulated email artifacts
+are explicitly non-delivery evidence and do not emit outbound-delivery events.
+A future real email adapter would need durable request, owner approval,
+recipient consent/lawful-basis, suppression/unsubscribe, provider attempt,
+provider response, failure/retry, and audit events before any delivery claims
+are valid.
 
 Implemented tool governance behavior: LLM tool requests are durable
 conversation events with `toolRequestId`, `runId`, requested capability, reason,

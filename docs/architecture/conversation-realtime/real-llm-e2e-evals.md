@@ -66,6 +66,12 @@ journeys, then write deterministic JSON and Markdown reports with aggregate
 conversion, review, referral, handoff, privacy, accounting, persuasion,
 artifact-finding, explicit-gap, and local-only issue-draft summaries without
 provider, network, or GitHub calls.
+The 0.1.5 Phase 8 email path decision keeps review-request email as a governed
+simulation artifact for this arc. Real outbound email is deferred until a later
+accepted issue adds owner approval, recipient consent or lawful-basis,
+suppression/unsubscribe, deliverability, provider-secret handling, audit,
+rate/spend caps, redaction, no raw fixture emails, and explicit live/email
+guards.
 
 ## Current Assessment
 
@@ -190,8 +196,9 @@ evidence rather than live-model impressions:
     explicit live-provider guards. Phases 1-7 now provide the committed
     synthetic persona library, deterministic validator, multi-case guard/cap
     planner, QR-to-trial execution, review-return execution,
-    affiliate-referral execution, admin/staff moderation execution, and
-    cross-persona analyzed reporting.
+    affiliate-referral execution, admin/staff moderation execution,
+    cross-persona analyzed reporting, and a governed simulated-email decision
+    that defers real outbound delivery.
 
 Every implementation phase should begin by re-reading the issue, current docs,
 and current code because earlier eval work may change the best implementation
@@ -1419,5 +1426,10 @@ compare quality across providers and prompt revisions.
    connection/grant, referral entry/session, referred conversation,
    offer/trial, referral record, referral-linked outcome, attribution, and
    scoped visibility boundaries.
-14. Add Anthropic and DeepSeek provider coverage.
-15. Add SSE streaming normalization once non-streaming passes.
+14. Keep review-request email as a governed simulation artifact for 0.1.5.
+   Real outbound email remains a future accepted slice because the current
+   codebase does not yet implement the required approval, consent,
+   suppression/unsubscribe, deliverability, provider-secret, audit, rate/spend,
+   redaction, and opt-in email guard contracts.
+15. Add Anthropic and DeepSeek provider coverage.
+16. Add SSE streaming normalization once non-streaming passes.

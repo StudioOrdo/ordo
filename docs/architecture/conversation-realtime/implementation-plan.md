@@ -413,8 +413,9 @@ Status: accepted planning arc for 0.1.5. Phase 1 persona library/validator,
 Phase 2 multi-case runner planning foundation, Phase 3 QR-to-trial journey
 eval, Phase 4 review-return journey eval, Phase 5 affiliate-referral journey
 eval, Phase 6 admin/staff handoff and moderation journey eval, and Phase 7
-cross-persona analyzed journey report are implemented. The full contract is
-documented in
+cross-persona analyzed journey report are implemented. Phase 8 keeps
+review-request email as a governed simulation artifact and defers real outbound
+email delivery. The full contract is documented in
 `docs/architecture/conversation-realtime/live-product-journey-evals.md`.
 
 Delivery order:
@@ -452,7 +453,12 @@ Delivery order:
    scorecards, and artifact-review outputs with aggregate conversion, review,
    referral, handoff, privacy, accounting, persuasion, artifact-finding,
    explicit-gap, and local-only issue-draft summaries.
-9. #170 Decide the governed email simulation or adapter path.
+9. #170 Decide the governed email simulation or adapter path. Implemented by
+   keeping simulated review-request email artifacts as the 0.1.5 path and
+   deferring real outbound email until owner approval, recipient consent or
+   lawful basis, suppression/unsubscribe, deliverability, provider-secret,
+   audit, rate/spend, redaction, no-raw-fixture-email, and opt-in email guard
+   contracts exist.
 
 Phase boundaries:
 
@@ -463,7 +469,8 @@ Phase boundaries:
   pass/fail authority.
 - The eval may test whether Ordo helps someone decide to try OrdoStudio, but it
   must not test manipulation or unsupported persuasion.
-- Review-request email starts as a simulated redacted artifact/link unless a
-  later accepted issue adds a governed outbound email adapter.
+- Review-request email remains a simulated redacted artifact/link for 0.1.5.
+  A later accepted issue must add the governed outbound email adapter gates
+  before any real delivery path exists.
 - Cross-run report issue drafts remain local artifacts until governed GitHub
   filing is implemented.

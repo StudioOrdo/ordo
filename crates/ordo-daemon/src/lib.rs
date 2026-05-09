@@ -17,6 +17,7 @@ pub mod events;
 pub mod health;
 pub mod install;
 pub mod kernel;
+pub mod knowledge_graph;
 pub mod llm_accounting;
 pub mod llm_gateway;
 pub mod mcp;

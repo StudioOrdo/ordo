@@ -239,7 +239,11 @@ Analysis and briefs:
 - `conversation.analysis.started`
 - `conversation.analysis.completed`
 - `conversation.analysis.failed`
-- `knowledge.candidate.created`
+- `knowledge_graph.node_candidate.created`
+- `knowledge_graph.edge_candidate.created`
+- `knowledge_graph.candidate.confirmed`
+- `knowledge_graph.candidate.rejected`
+- `knowledge_graph.candidate.superseded`
 - `brief.candidate.created`
 - `memory.candidate.created`
 - `surface.brief.generated`
@@ -262,9 +266,19 @@ emits `conversation.analysis.queued`. Running the local analyzer emits
 `conversation.tags.updated`, and `conversation.analysis.completed`. Failed jobs
 store an error hash and emit `conversation.analysis.failed`. Candidates cite
 durable message evidence and provenance and remain proposed until a governed
-confirmation path promotes, rejects, or supersedes them. Knowledge graph
-candidates, surface brief jobs, and the full ethical persuasion prompt-slot
-contract remain owned by their separate accepted issues.
+confirmation path promotes, rejects, or supersedes them.
+
+Implemented knowledge graph candidate behavior: deterministic extraction from a
+completed analysis job can create staff-private
+`knowledge_graph.node_candidate.created` and
+`knowledge_graph.edge_candidate.created` events. Node and edge candidates cite
+the source message/event evidence, carry provenance/generating job ids, and
+default to `proposed`. Lifecycle transitions emit
+`knowledge_graph.candidate.confirmed`, `knowledge_graph.candidate.rejected`, or
+`knowledge_graph.candidate.superseded`. These events are not product truth and
+do not create a graph database or public graph UI. Surface brief jobs and the
+full ethical persuasion prompt-slot contract remain owned by separate accepted
+issues.
 
 Business outcomes:
 

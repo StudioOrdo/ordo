@@ -1,7 +1,7 @@
 # Conversation Realtime Data Model
 
 Status: Draft schema plan with backend foundation implemented through daemon
-schema versions 19 through 22
+schema versions 19 through 23
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -30,14 +30,15 @@ The first backend foundation implements the canonical conversation, internal
 segment/episode candidate, governed handoff, current mode, and replayable
 conversation event tables in schema version 19. Schema version 20 adds
 participants, messages, revisions, message artifact links, reactions, receipts,
-read states, and presence snapshots for the protocol layer. Tags, analysis,
-graph candidates and business outcome tables remain planned for later gateway
-and LLM work. Schema version 21 adds the first dedicated LLM accounting tables
-for invocation metadata, prompt slot usage, and append-only token ledger
-entries. Schema version 22 adds the first continuous conversation analysis,
-brief candidate, and memory candidate foundation. Dedicated privacy transform
-tables remain deferred; privacy transform run ids are recorded on invocations,
-while placeholder mappings stay behind the encrypted local vault boundary.
+read states, and presence snapshots for the protocol layer. Tags and business
+outcome tables remain planned for later product work. Schema version 21 adds
+the first dedicated LLM accounting tables for invocation metadata, prompt slot
+usage, and append-only token ledger entries. Schema version 22 adds the first
+continuous conversation analysis, brief candidate, and memory candidate
+foundation. Schema version 23 adds dedicated knowledge graph node and edge
+candidate tables. Dedicated privacy transform tables remain deferred; privacy
+transform run ids are recorded on invocations, while placeholder mappings stay
+behind the encrypted local vault boundary.
 
 ### `conversations`
 
@@ -538,34 +539,74 @@ Indexes:
 - `(conversation_id, candidate_state, created_at DESC)`;
 - `(job_id, created_at ASC)`.
 
-### `knowledge_graph_candidates`
+### `knowledge_graph_node_candidates`
 
-Stores graph-shaped relationship candidates from conversation analysis. These
-are not truth until confirmed through a governed path.
+Stores proposed graph node candidates from conversation analysis evidence.
+These are staff/admin-facing candidate records, not business truth. A candidate
+may be confirmed, rejected, or superseded later without mutating the source
+message, analysis job, or conversation event evidence.
 
 Columns:
 
 - `id TEXT PRIMARY KEY`
-- `candidate_kind TEXT NOT NULL`
-- `source_node_kind TEXT NOT NULL`
-- `source_node_id TEXT NOT NULL`
-- `edge_kind TEXT`
-- `target_node_kind TEXT`
-- `target_node_id TEXT`
+- `job_id TEXT NOT NULL`
+- `conversation_id TEXT NOT NULL`
+- `segment_id TEXT`
+- `source_analysis_candidate_id TEXT`
+- `node_kind TEXT NOT NULL`
+- `label TEXT NOT NULL`
 - `candidate_state TEXT NOT NULL`
-- `confidence REAL`
+- `confidence REAL NOT NULL`
 - `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
-- `created_by_job_id TEXT`
-- `policy_decision_id TEXT`
-- `metadata_json TEXT NOT NULL DEFAULT '{}'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `source_event_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `content_hash TEXT NOT NULL`
+- `visibility TEXT NOT NULL`
 - `created_at TEXT NOT NULL`
 - `updated_at TEXT NOT NULL`
+- `state_changed_at TEXT`
+- `state_reason TEXT`
 
 Indexes:
 
-- `(candidate_state, created_at DESC)`;
-- `(source_node_kind, source_node_id)`;
-- `(target_node_kind, target_node_id)`.
+- `(conversation_id, candidate_state, node_kind, created_at DESC)`;
+- `(job_id, created_at ASC)`.
+
+### `knowledge_graph_edge_candidates`
+
+Stores proposed graph relationship candidates between node candidates. Edge
+candidates require source/target node candidates, durable evidence refs, and
+provenance. They remain candidates until governed confirmation; they do not
+write to business facts, corpus memory, offer/ask attribution, or relationship
+truth automatically.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `job_id TEXT NOT NULL`
+- `conversation_id TEXT NOT NULL`
+- `segment_id TEXT`
+- `source_analysis_candidate_id TEXT`
+- `source_node_candidate_id TEXT NOT NULL`
+- `target_node_candidate_id TEXT NOT NULL`
+- `relationship_kind TEXT NOT NULL`
+- `label TEXT NOT NULL`
+- `candidate_state TEXT NOT NULL`
+- `confidence REAL NOT NULL`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `source_event_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `content_hash TEXT NOT NULL`
+- `visibility TEXT NOT NULL`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+- `state_changed_at TEXT`
+- `state_reason TEXT`
+
+Indexes:
+
+- `(conversation_id, candidate_state, relationship_kind, created_at DESC)`;
+- `(job_id, created_at ASC)`.
 
 ### `business_outcomes`
 
@@ -829,7 +870,8 @@ Recommended migration stages:
 7. privacy transform runs and placeholders when vault-backed events are not
    enough for inspection;
 8. analysis jobs, analysis candidates, brief candidates, and memory candidates;
-9. offer/ask/referral/outcome attribution tables.
+9. knowledge graph node and edge candidates;
+10. offer/ask/referral/outcome attribution tables.
 
 Each stage should include schema tests, migration tests from an older database,
 and route tests for the domain behavior introduced in that stage.

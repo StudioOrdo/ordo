@@ -277,7 +277,14 @@ Coverage:
 - tag candidates can be confirmed, rejected, or superseded;
 - rolling summary updates without losing previous summary evidence;
 - action-needed detection updates unread action count;
-- knowledge graph candidates reference source message ids;
+- knowledge graph node candidates require evidence refs and provenance;
+- knowledge graph edge candidates require source/target node candidates,
+  evidence refs, and provenance;
+- knowledge graph candidate extraction is idempotent for the same analysis job;
+- knowledge graph lifecycle transitions are durable for confirmed, rejected,
+  and superseded states;
+- knowledge graph candidates reference source message and event ids without
+  becoming automatic business truth;
 - offer/ask/referral/outcome attribution candidates reference source entry
   points, conversations, artifacts, and events where available;
 - brief candidates cite durable conversation evidence;

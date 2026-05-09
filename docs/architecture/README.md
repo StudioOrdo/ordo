@@ -21,7 +21,7 @@ These docs turn the product thesis into system shape.
 - [Availability And Handoff Inbox](availability-and-handoff.md)
 - [Resource, Provenance, And Policy Spine](resource-provenance-policy.md)
 - [Access And Local RBAC](access-rbac.md)
-- [Knowledge Corpus Skeleton](knowledge-corpus.md)
+- [Knowledge Corpus And Governed Retrieval](knowledge-corpus.md)
 - [Scaling With Worker Ordos](scaling-worker-ordos.md)
 - [Sovereign Appliance](sovereign-appliance.md)
 

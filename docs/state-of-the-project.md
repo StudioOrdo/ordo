@@ -65,9 +65,12 @@ surfaces land.
 - Policy decisions can consult durable resource grants for public,
   owner/system, and per-actor private resources, while the current System shell
   remains a local owner/operator surface.
-- SQLite stores an access-aware knowledge corpus skeleton with source and item
-  records that carry resource identity, classification metadata, provenance
-  metadata, status, and timestamps for future retrieval.
+- SQLite stores an access-aware knowledge corpus with source and item records
+  that carry resource identity, classification metadata, provenance metadata,
+  status, timestamps, item content hashes, and a local SQLite FTS index. The
+  daemon exposes protected local corpus source/item management and governed
+  retrieval routes that filter by approval status, visibility, viewer context,
+  and durable resource access before returning evidence.
 - The capability catalog distinguishes MCP export policy tiers, side effects,
   and approval requirements for read-only, local mutation, operator-confirmed,
   and non-exported dangerous operations.
@@ -140,8 +143,8 @@ surfaces land.
   handoff, mediated handoff chat, and external handoff delivery are not
   implemented yet; current support is backend state, policy audit, eligibility
   evidence, local inbox events, and receipt evidence only.
-- Embeddings, vector search, RAG answer generation, chat retrieval, and external
-  integrations are not implemented yet.
+- Embeddings, vector search, RAG answer generation, chat retrieval UI, provider
+  calls for answers, and external integrations are not implemented yet.
 - Report submission and support packet transport to external systems are not
   implemented yet; Reports 1.0 and support packet approval remain local evidence
   and approval records only.
@@ -184,8 +187,9 @@ slices.
 - [Availability And Handoff Inbox](architecture/availability-and-handoff.md)
   describes the implemented backend foundation for owner attention boundaries,
   eligibility decisions, inbox state, and local receipts.
-- [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
-  implemented retrieval safety foundation for future knowledge/RAG work.
+- [Knowledge Corpus And Governed Retrieval](architecture/knowledge-corpus.md)
+  describes the implemented local FTS retrieval foundation for future
+  knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,
   Offers, Asks, Feed, Connections, availability, handoff, affiliate, and sales
   loop direction without claiming they are built.

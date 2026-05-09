@@ -40,17 +40,17 @@ architecture doc together.
 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md) | Capture local owner and business truth for future public surfaces. | backend foundation merged |
 | [Content Visibility And Publication](content-visibility-publication.md) | Define public/authenticated/staff/owner visibility and publication state for business truth. | backend foundation merged |
 | [Connections](connections.md) | Model trusted relationships with scope, grants, history, and revocation. | backend foundation merged; UI not built |
-| [Availability And Presence](availability-presence.md) | Model handoff hours, operator status, and interruption thresholds. | backend foundation ready for PR; UI not built |
-| [Handoff Inbox](handoff-inbox.md) | Create handoff envelopes and owner attention items with evidence and receipts. | backend foundation ready for PR; UI not built |
-| [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Send reviewed diagnostic/support packets with explicit approval and receipt. | reports foundation exists; egress not built |
-| [Reports And QA Loop](reports-qa-loop.md) | Expand local reports into a practical developer/support feedback loop. | local reports exist |
+| [Availability And Presence](availability-presence.md) | Model handoff hours, operator status, and interruption thresholds. | backend foundation merged; UI not built |
+| [Handoff Inbox](handoff-inbox.md) | Create handoff envelopes and owner attention items with evidence and receipts. | backend foundation merged; UI not built |
+| [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Send reviewed diagnostic/support packets with explicit approval and receipt. | backend foundation merged; egress transport not built |
+| [Reports And QA Loop](reports-qa-loop.md) | Expand local reports into a practical developer/support feedback loop. | backend foundation merged |
 | [Public Surfaces](public-surfaces.md) | Build public About, Offers, Asks, and Feed read models without private leakage. | backend read models merged; UI not built |
 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Track QR/link/campaign entry and visitor conversations. | backend foundation implemented; UI not built |
 | [Offer Acceptance And Trial State](offer-trial-state.md) | Record offer acceptance, 30-day trial state, and follow-up evidence. | backend foundation implemented; UI not built |
 | [Affiliate Attribution](affiliate-attribution.md) | Connect affiliates, referral assets, attribution, and credit review. | not built |
 | [Mediated Chat](mediated-chat.md) | Let owners and visitors communicate through Ordo with context and policy intact. | not built |
 | [Job Kernel V2](job-kernel-v2.md) | Add leases, ownership, cancel, retry, and resume semantics for longer work. | not built |
-| [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Move from corpus skeleton to governed retrieval and answer evidence. | skeleton exists |
+| [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Move from corpus skeleton to governed retrieval and answer evidence. | governed retrieval backend ready for PR; RAG generation not built |
 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Let domain tools and packs customize work without bypassing the trust boundary. | local MCP foundation exists |
 | [Worker Ordos And A2A](worker-ordos-a2a.md) | Define worker Ordos, artifact return, and peer support envelopes. | future direction |
 

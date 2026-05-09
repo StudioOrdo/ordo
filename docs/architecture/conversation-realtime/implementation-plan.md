@@ -330,14 +330,18 @@ Deferred release-hardening work:
 
 ## Phase 10: Product Workflow Evals And Real LLM Readiness
 
-Status: accepted 0.1.4 milestone. This is an eval/manufacturing arc, not a
-feature-expansion sprint. The purpose is to prove the product shape through
-deterministic workflow evidence before relying on live providers or owner usage.
+Status: accepted 0.1.4 milestone. Phase 0 product/eval alignment is complete,
+and the Phase 1 deterministic backend eval harness foundation is implemented.
+This is an eval/manufacturing arc, not a feature-expansion sprint. The purpose
+is to prove the product shape through deterministic workflow evidence before
+relying on live providers or owner usage.
 
 Delivery order:
 
 1. Align the product workflow eval canon with `product_ux2`.
-2. Add deterministic backend eval harness foundation.
+2. Add deterministic backend eval harness foundation. Implemented as
+   `crates/ordo-daemon/src/eval_harness.rs` with deterministic case, step,
+   actor-role, evidence snapshot, assertion, and scorecard summary types.
 3. Add transcript artifact packets and scorecards.
 4. Implement role lifecycle workflow evals for anonymous, client/member,
    affiliate, staff, manager/admin, owner/system admin, Ordo agent, and

@@ -236,9 +236,12 @@ UI-facing protocol payloads.
 Analysis and briefs:
 
 - `conversation.analysis.queued`
+- `conversation.analysis.started`
 - `conversation.analysis.completed`
+- `conversation.analysis.failed`
 - `knowledge.candidate.created`
 - `brief.candidate.created`
+- `memory.candidate.created`
 - `surface.brief.generated`
 - `ethical.recommendation.candidate.created`
 - `handoff.eligibility.recorded`
@@ -250,6 +253,18 @@ Analysis and briefs:
 - `handoff.item.closed`
 - `handoff.brief.generated`
 - `agent.delegation.changed`
+
+Implemented analysis foundation behavior: eligible visible durable message
+creation queues a deterministic local `conversation_analysis_jobs` row and
+emits `conversation.analysis.queued`. Running the local analyzer emits
+`conversation.analysis.started`, proposed operational candidates,
+`brief.candidate.created`, `memory.candidate.created`,
+`conversation.tags.updated`, and `conversation.analysis.completed`. Failed jobs
+store an error hash and emit `conversation.analysis.failed`. Candidates cite
+durable message evidence and provenance and remain proposed until a governed
+confirmation path promotes, rejects, or supersedes them. Knowledge graph
+candidates, surface brief jobs, and the full ethical persuasion prompt-slot
+contract remain owned by their separate accepted issues.
 
 Business outcomes:
 

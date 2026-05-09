@@ -238,22 +238,37 @@ Exit criteria:
 
 ## Phase 8: Continuous Analysis And Briefs
 
+Status: foundation implemented in the #95 slice. Schema version 22 adds
+`conversation_analysis_jobs`, `conversation_analysis_candidates`,
+`conversation_brief_candidates`, and `conversation_memory_candidates`.
+Eligible visible durable messages queue idempotent local analysis jobs. The
+deterministic analyzer creates proposed operational candidates, a narrative
+brief candidate, and a relationship-memory candidate with evidence refs,
+provenance, safe summaries, content hashes, and no automatic truth promotion.
+Provider-backed analysis, knowledge graph candidates, surface brief jobs, and
+the full ethical persuasion prompt-slot contract remain owned by later accepted
+issues.
+
 Deliverables:
 
-- Queue analysis after durable message creation.
-- Update rolling summary, episodes, tags, open questions, action items, handoff
-  signals, ethical recommendation candidates, and brief candidates.
-- Add knowledge graph candidate records.
-- Add offer/ask/referral/outcome attribution candidates where evidence exists.
-- Add surface brief jobs for business, conversations, connections, offers,
-  asks, artifacts, jobs, affiliates, and customers.
-- Add approval path for memory/corpus promotion.
+- Queue analysis after eligible durable message creation.
+- Update rolling summary and action counts from deterministic local signals.
+- Create proposed open question, action-needed, handoff signal, brief, and
+  memory candidates.
+- Defer knowledge graph candidate records to #102.
+- Defer offer/ask/referral/outcome attribution candidates to #103.
+- Defer surface brief jobs for business, conversations, connections, offers,
+  asks, artifacts, jobs, affiliates, and customers to #105.
+- Defer full ethical persuasion prompt-slot behavior to #107.
+- Keep memory/corpus promotion behind a later governed approval path.
 
 Exit criteria:
 
 - Analysis is bounded, policy-aware, and resilient to provider unavailability.
 - Brief candidates cite durable conversation evidence.
-- Graph, memory, persuasion, and attribution outputs remain candidates until
+- Memory candidates require approval and do not auto-promote to corpus or
+  business truth.
+- Graph, persuasion, and attribution outputs remain later candidates until
   confirmed through governed paths.
 
 ## Phase 9: Hardening

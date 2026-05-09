@@ -1,11 +1,16 @@
 use anyhow::{bail, ensure, Result};
-use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::events::{append_realtime_event, RealtimeEvent};
+use crate::events::{append_realtime_event, append_realtime_event_tx, RealtimeEvent};
+use crate::policy::{
+    record_policy_decision, ActorContext, ActorKind, PolicyAction, PolicyDecision,
+    PolicyDecisionCorrelation, PolicyOutcome, ResourceKind, ResourceRef, LOCAL_OWNER_ACTOR_ID,
+    SYSTEM_ACTOR_ID,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -377,6 +382,144 @@ pub struct ConversationMessageRevisionView {
     pub edited_by_participant_id: String,
     pub reason: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationMutationActor {
+    pub actor: ActorContext,
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMutationReceipt<T> {
+    pub value: T,
+    pub policy_decision_id: String,
+}
+
+pub struct ConversationService;
+
+struct ConversationMutationPolicyTarget<'a> {
+    conversation_id: &'a str,
+    participant_id: &'a str,
+    action: PolicyAction,
+    capability_id: &'a str,
+    resource_kind: ResourceKind,
+    resource_id: &'a str,
+}
+
+impl ConversationService {
+    pub fn submit_message(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        request: &ConversationMessageCreateRequest,
+    ) -> Result<ConversationMutationReceipt<ConversationMessageView>> {
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id: &request.conversation_id,
+                participant_id: &request.participant_id,
+                action: PolicyAction::Create,
+                capability_id: "conversation.message.create",
+                resource_kind: ResourceKind::Conversation,
+                resource_id: &request.conversation_id,
+            },
+        )?;
+        let value = create_conversation_message(connection, request)?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
+
+    pub fn edit_message(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        message_id: &str,
+        edited_by_participant_id: &str,
+        body_markdown: &str,
+        reason: Option<&str>,
+    ) -> Result<ConversationMutationReceipt<ConversationMessageView>> {
+        let current = load_message(connection, message_id)?;
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id: &current.conversation_id,
+                participant_id: edited_by_participant_id,
+                action: PolicyAction::Update,
+                capability_id: "conversation.message.edit",
+                resource_kind: ResourceKind::ConversationMessage,
+                resource_id: message_id,
+            },
+        )?;
+        let value = edit_conversation_message(
+            connection,
+            message_id,
+            edited_by_participant_id,
+            body_markdown,
+            reason,
+        )?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
+
+    pub fn delete_message(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        message_id: &str,
+        deleted_by_participant_id: &str,
+        reason: &str,
+    ) -> Result<ConversationMutationReceipt<ConversationMessageView>> {
+        let current = load_message(connection, message_id)?;
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id: &current.conversation_id,
+                participant_id: deleted_by_participant_id,
+                action: PolicyAction::Update,
+                capability_id: "conversation.message.delete",
+                resource_kind: ResourceKind::ConversationMessage,
+                resource_id: message_id,
+            },
+        )?;
+        let value =
+            delete_conversation_message(connection, message_id, deleted_by_participant_id, reason)?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
+
+    pub fn undo_message(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        message_id: &str,
+        participant_id: &str,
+    ) -> Result<ConversationMutationReceipt<ConversationMessageView>> {
+        let current = load_message(connection, message_id)?;
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id: &current.conversation_id,
+                participant_id,
+                action: PolicyAction::Update,
+                capability_id: "conversation.message.delete",
+                resource_kind: ResourceKind::ConversationMessage,
+                resource_id: message_id,
+            },
+        )?;
+        let value = undo_conversation_message(connection, message_id, participant_id)?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
 }
 
 pub fn find_or_create_canonical_conversation(
@@ -1005,8 +1148,9 @@ pub fn create_conversation_message(
     let sequence = next_conversation_sequence(connection, &request.conversation_id)?;
     let now = Utc::now().to_rfc3339();
     let message_id = format!("message_{}", Uuid::new_v4());
-    let realtime = append_realtime_event(
-        connection,
+    let transaction = connection.unchecked_transaction()?;
+    let realtime = append_realtime_event_tx(
+        &transaction,
         &RealtimeEvent {
             cursor: None,
             schema_version: "conversation.gateway.v1".to_string(),
@@ -1024,7 +1168,7 @@ pub fn create_conversation_message(
             occurred_at: now.clone(),
         },
     )?;
-    connection.execute(
+    transaction.execute(
         "INSERT INTO conversation_messages (
             id, conversation_id, segment_id, participant_id, message_kind, status,
             body_markdown, redaction_state, visibility, reply_to_message_id,
@@ -1046,7 +1190,7 @@ pub fn create_conversation_message(
             now
         ],
     )?;
-    connection.execute(
+    transaction.execute(
         "INSERT INTO conversation_receipts (
             id, conversation_id, message_id, participant_id, receipt_kind, event_cursor, sequence, created_at
          ) VALUES (?1, ?2, ?3, ?4, 'persisted', ?5, ?6, ?7)",
@@ -1060,7 +1204,7 @@ pub fn create_conversation_message(
             now
         ],
     )?;
-    connection.execute(
+    transaction.execute(
         "INSERT INTO conversation_events (
             id, conversation_id, segment_id, sequence, event_type, payload_json, realtime_cursor, occurred_at
          ) VALUES (?1, ?2, ?3, ?4, 'message.created', ?5, ?6, ?7)",
@@ -1079,12 +1223,13 @@ pub fn create_conversation_message(
             now
         ],
     )?;
-    connection.execute(
+    transaction.execute(
         "UPDATE conversations
          SET last_meaningful_change = 'message.created', updated_at = ?1
          WHERE id = ?2",
         params![now, request.conversation_id],
     )?;
+    transaction.commit()?;
 
     load_message(connection, &message_id)
 }
@@ -1108,7 +1253,8 @@ pub fn edit_conversation_message(
         |row| row.get(0),
     )?;
     let now = Utc::now().to_rfc3339();
-    connection.execute(
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
         "INSERT INTO conversation_message_revisions (
             id, message_id, revision_number, body_markdown, edited_by_participant_id, reason, created_at
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -1122,14 +1268,14 @@ pub fn edit_conversation_message(
             now
         ],
     )?;
-    connection.execute(
+    transaction.execute(
         "UPDATE conversation_messages
          SET body_markdown = ?1, edited_at = ?2
          WHERE id = ?3",
         params![body_markdown, now, message_id],
     )?;
-    append_conversation_event(
-        connection,
+    append_conversation_event_tx(
+        &transaction,
         &current.conversation_id,
         current.segment_id.as_deref(),
         None,
@@ -1141,6 +1287,7 @@ pub fn edit_conversation_message(
         }),
         None,
     )?;
+    transaction.commit()?;
 
     load_message(connection, message_id)
 }
@@ -1149,6 +1296,15 @@ pub fn undo_conversation_message(
     connection: &Connection,
     message_id: &str,
     participant_id: &str,
+) -> Result<ConversationMessageView> {
+    undo_conversation_message_at(connection, message_id, participant_id, Utc::now())
+}
+
+pub fn undo_conversation_message_at(
+    connection: &Connection,
+    message_id: &str,
+    participant_id: &str,
+    now: DateTime<Utc>,
 ) -> Result<ConversationMessageView> {
     require_text("message_id", message_id)?;
     require_text("participant_id", participant_id)?;
@@ -1161,16 +1317,22 @@ pub fn undo_conversation_message(
         current.deleted_at.is_none(),
         "message is already deleted or cancelled"
     );
+    let Some(undo_expires_at) = current.undo_expires_at.as_deref() else {
+        bail!("message does not have an undo grace window");
+    };
+    let undo_expires_at = DateTime::parse_from_rfc3339(undo_expires_at)?.with_timezone(&Utc);
+    ensure!(now <= undo_expires_at, "message undo grace window expired");
 
-    let now = Utc::now().to_rfc3339();
-    connection.execute(
+    let now = now.to_rfc3339();
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
         "UPDATE conversation_messages
          SET status = 'cancelled', body_markdown = '', undo_cancelled_at = ?1, deleted_at = ?1
          WHERE id = ?2",
         params![now, message_id],
     )?;
-    append_conversation_event(
-        connection,
+    append_conversation_event_tx(
+        &transaction,
         &current.conversation_id,
         current.segment_id.as_deref(),
         None,
@@ -1181,6 +1343,70 @@ pub fn undo_conversation_message(
         }),
         None,
     )?;
+    transaction.commit()?;
+
+    load_message(connection, message_id)
+}
+
+pub fn delete_conversation_message(
+    connection: &Connection,
+    message_id: &str,
+    participant_id: &str,
+    reason: &str,
+) -> Result<ConversationMessageView> {
+    require_text("message_id", message_id)?;
+    require_text("participant_id", participant_id)?;
+    require_text("reason", reason)?;
+    let current = load_message(connection, message_id)?;
+    ensure!(
+        current.deleted_at.is_none(),
+        "message is already deleted or cancelled"
+    );
+
+    let revision_number: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(revision_number), 0) + 1
+         FROM conversation_message_revisions
+         WHERE message_id = ?1",
+        [message_id],
+        |row| row.get(0),
+    )?;
+    let now = Utc::now().to_rfc3339();
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
+        "INSERT INTO conversation_message_revisions (
+            id, message_id, revision_number, body_markdown, edited_by_participant_id, reason, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            format!("revision_{}", Uuid::new_v4()),
+            message_id,
+            revision_number,
+            current.body_markdown,
+            participant_id,
+            reason,
+            now
+        ],
+    )?;
+    transaction.execute(
+        "UPDATE conversation_messages
+         SET status = 'tombstoned', body_markdown = '', deleted_at = ?1
+         WHERE id = ?2",
+        params![now, message_id],
+    )?;
+    append_conversation_event_tx(
+        &transaction,
+        &current.conversation_id,
+        current.segment_id.as_deref(),
+        None,
+        "message.tombstoned",
+        json!({
+            "messageId": message_id,
+            "participantId": participant_id,
+            "reason": reason,
+            "revisionNumber": revision_number,
+        }),
+        None,
+    )?;
+    transaction.commit()?;
 
     load_message(connection, message_id)
 }
@@ -1322,8 +1548,66 @@ fn append_conversation_event(
     Ok(())
 }
 
+fn append_conversation_event_tx(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    segment_id: Option<&str>,
+    handoff_id: Option<&str>,
+    event_type: &str,
+    payload: Value,
+    policy_decision_id: Option<&str>,
+) -> Result<()> {
+    let sequence = next_conversation_sequence_tx(transaction, conversation_id)?;
+    let occurred_at = Utc::now().to_rfc3339();
+    let realtime = append_realtime_event_tx(
+        transaction,
+        &RealtimeEvent {
+            cursor: None,
+            schema_version: "conversation.product.v1".to_string(),
+            family: "conversation".to_string(),
+            event_type: event_type.to_string(),
+            job_id: None,
+            task_key: None,
+            sequence: Some(sequence),
+            payload: payload.clone(),
+            occurred_at: occurred_at.clone(),
+        },
+    )?;
+    transaction.execute(
+        "INSERT INTO conversation_events (
+            id, conversation_id, segment_id, handoff_id, sequence, event_type, payload_json,
+            policy_decision_id, realtime_cursor, occurred_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            format!("conversation_event_{}", Uuid::new_v4()),
+            conversation_id,
+            segment_id,
+            handoff_id,
+            sequence,
+            event_type,
+            payload.to_string(),
+            policy_decision_id,
+            realtime.cursor,
+            occurred_at
+        ],
+    )?;
+    Ok(())
+}
+
 fn next_conversation_sequence(connection: &Connection, conversation_id: &str) -> Result<i64> {
     let current: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(sequence), 0) FROM conversation_events WHERE conversation_id = ?1",
+        [conversation_id],
+        |row| row.get(0),
+    )?;
+    Ok(current + 1)
+}
+
+fn next_conversation_sequence_tx(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+) -> Result<i64> {
+    let current: i64 = transaction.query_row(
         "SELECT COALESCE(MAX(sequence), 0) FROM conversation_events WHERE conversation_id = ?1",
         [conversation_id],
         |row| row.get(0),
@@ -1428,6 +1712,60 @@ fn queue_row_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationQueueRow> {
         action_count: row.get(9)?,
         evidence_summary: row.get(10)?,
     })
+}
+
+fn authorize_participant_mutation(
+    connection: &Connection,
+    actor: &ConversationMutationActor,
+    target: ConversationMutationPolicyTarget<'_>,
+) -> Result<String> {
+    let participant = load_participant(connection, target.participant_id)?;
+    let allowed = participant.conversation_id == target.conversation_id
+        && actor_can_act_for_participant(&actor.actor, &participant);
+    let decision = PolicyDecision {
+        outcome: if allowed {
+            PolicyOutcome::Allowed
+        } else {
+            PolicyOutcome::Denied
+        },
+        actor: actor.actor.clone(),
+        action: target.action,
+        resource: ResourceRef::new(target.resource_kind, target.resource_id),
+        capability_id: Some(target.capability_id.to_string()),
+        reason: if allowed {
+            "Conversation participant and actor context allow this mutation.".to_string()
+        } else {
+            "Conversation mutation requires an actor bound to the participant, local owner, or system."
+                .to_string()
+        },
+    };
+    let policy_decision_id = record_policy_decision(
+        connection,
+        &decision,
+        PolicyDecisionCorrelation {
+            request_id: actor.request_id.clone(),
+            ..PolicyDecisionCorrelation::default()
+        },
+    )?;
+    ensure!(
+        allowed,
+        "conversation mutation denied by policy decision {policy_decision_id}"
+    );
+    Ok(policy_decision_id)
+}
+
+fn actor_can_act_for_participant(
+    actor: &ActorContext,
+    participant: &ConversationParticipantView,
+) -> bool {
+    if matches!(actor.kind, ActorKind::System) && actor.id.as_deref() == Some(SYSTEM_ACTOR_ID) {
+        return true;
+    }
+    if actor.id.as_deref() == Some(LOCAL_OWNER_ACTOR_ID) {
+        return true;
+    }
+    participant.actor_id.as_deref().is_some()
+        && participant.actor_id.as_deref() == actor.id.as_deref()
 }
 
 fn participant_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationParticipantView> {
@@ -1578,6 +1916,17 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    fn staff_mutation_actor() -> ConversationMutationActor {
+        ConversationMutationActor {
+            actor: ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_staff".to_string()),
+            ),
+            request_id: Some("request_1".to_string()),
+        }
     }
 
     #[test]
@@ -1857,7 +2206,7 @@ mod tests {
             visibility: "participants".to_string(),
             client_message_id: "client_msg_1".to_string(),
             reply_to_message_id: None,
-            undo_expires_at: Some("2026-05-09T00:00:30Z".to_string()),
+            undo_expires_at: Some("2099-05-09T00:00:30Z".to_string()),
         };
 
         let first = create_conversation_message(&connection, &request).unwrap();
@@ -1868,7 +2217,7 @@ mod tests {
         assert!(first.event_cursor.is_some());
         assert_eq!(
             first.undo_expires_at.as_deref(),
-            Some("2026-05-09T00:00:30Z")
+            Some("2099-05-09T00:00:30Z")
         );
 
         let receipt_count: i64 = connection
@@ -1939,7 +2288,7 @@ mod tests {
                 visibility: "participants".to_string(),
                 client_message_id: "client_msg_undo".to_string(),
                 reply_to_message_id: None,
-                undo_expires_at: Some("2026-05-09T00:00:30Z".to_string()),
+                undo_expires_at: Some("2099-05-09T00:00:30Z".to_string()),
             },
         )
         .unwrap();
@@ -1959,5 +2308,174 @@ mod tests {
             )
             .unwrap();
         assert!(event_count >= 4);
+    }
+
+    #[test]
+    fn service_submit_records_policy_and_preserves_message_event_atomicity() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let participant = create_participant(&connection, &conversation.id);
+
+        let result = ConversationService::submit_message(
+            &connection,
+            &staff_mutation_actor(),
+            &ConversationMessageCreateRequest {
+                conversation_id: conversation.id.clone(),
+                segment_id: None,
+                participant_id: participant.id,
+                message_kind: "human".to_string(),
+                body_markdown: "Service message".to_string(),
+                visibility: "participants".to_string(),
+                client_message_id: "client_msg_service".to_string(),
+                reply_to_message_id: None,
+                undo_expires_at: Some("2099-05-09T00:00:30Z".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert!(result.policy_decision_id.starts_with("policy_decision_"));
+        let message_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages WHERE id = ?1",
+                [&result.value.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_events WHERE event_type = 'message.created' AND payload_json LIKE ?1",
+                [format!("%{}%", result.value.id)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(message_count, 1);
+        assert_eq!(event_count, 1);
+    }
+
+    #[test]
+    fn service_denial_records_policy_without_mutating_message() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let participant = create_participant(&connection, &conversation.id);
+        let denied_actor = ConversationMutationActor {
+            actor: ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_client".to_string()),
+            ),
+            request_id: Some("request_denied".to_string()),
+        };
+
+        let denied = ConversationService::submit_message(
+            &connection,
+            &denied_actor,
+            &ConversationMessageCreateRequest {
+                conversation_id: conversation.id,
+                segment_id: None,
+                participant_id: participant.id,
+                message_kind: "human".to_string(),
+                body_markdown: "Should not persist".to_string(),
+                visibility: "participants".to_string(),
+                client_message_id: "client_msg_denied".to_string(),
+                reply_to_message_id: None,
+                undo_expires_at: None,
+            },
+        );
+
+        assert!(denied.is_err());
+        let message_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages WHERE client_message_id = 'client_msg_denied'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let denied_decisions: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions WHERE outcome = 'denied' AND request_id = 'request_denied'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(message_count, 0);
+        assert_eq!(denied_decisions, 1);
+    }
+
+    #[test]
+    fn message_delete_tombstones_and_preserves_prior_body_in_revision() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let participant = create_participant(&connection, &conversation.id);
+        let message = create_conversation_message(
+            &connection,
+            &ConversationMessageCreateRequest {
+                conversation_id: conversation.id,
+                segment_id: None,
+                participant_id: participant.id.clone(),
+                message_kind: "human".to_string(),
+                body_markdown: "Remove me".to_string(),
+                visibility: "participants".to_string(),
+                client_message_id: "client_msg_delete".to_string(),
+                reply_to_message_id: None,
+                undo_expires_at: None,
+            },
+        )
+        .unwrap();
+
+        let deleted = ConversationService::delete_message(
+            &connection,
+            &staff_mutation_actor(),
+            &message.id,
+            &participant.id,
+            "moderation",
+        )
+        .unwrap();
+
+        assert_eq!(deleted.value.status, "tombstoned");
+        assert_eq!(deleted.value.body_markdown, "");
+        let revision_body: String = connection
+            .query_row(
+                "SELECT body_markdown FROM conversation_message_revisions WHERE message_id = ?1",
+                [&message.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(revision_body, "Remove me");
+    }
+
+    #[test]
+    fn undo_outside_grace_window_fails_with_structured_reason() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let participant = create_participant(&connection, &conversation.id);
+        let message = create_conversation_message(
+            &connection,
+            &ConversationMessageCreateRequest {
+                conversation_id: conversation.id,
+                segment_id: None,
+                participant_id: participant.id.clone(),
+                message_kind: "human".to_string(),
+                body_markdown: "Too late".to_string(),
+                visibility: "participants".to_string(),
+                client_message_id: "client_msg_undo_expired".to_string(),
+                reply_to_message_id: None,
+                undo_expires_at: Some("2026-05-09T00:00:30Z".to_string()),
+            },
+        )
+        .unwrap();
+
+        let expired = undo_conversation_message_at(
+            &connection,
+            &message.id,
+            &participant.id,
+            DateTime::parse_from_rfc3339("2026-05-09T00:00:31Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+
+        assert!(expired
+            .unwrap_err()
+            .to_string()
+            .contains("undo grace window expired"));
     }
 }

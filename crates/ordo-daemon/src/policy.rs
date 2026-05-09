@@ -100,6 +100,9 @@ pub enum ResourceKind {
     AnswerDraft,
     McpPack,
     Connection,
+    Conversation,
+    ConversationMessage,
+    ConversationParticipant,
 }
 
 impl ResourceKind {
@@ -121,6 +124,9 @@ impl ResourceKind {
             Self::AnswerDraft => "answer_draft",
             Self::McpPack => "mcp_pack",
             Self::Connection => "connection",
+            Self::Conversation => "conversation",
+            Self::ConversationMessage => "conversation_message",
+            Self::ConversationParticipant => "conversation_participant",
         }
     }
 }

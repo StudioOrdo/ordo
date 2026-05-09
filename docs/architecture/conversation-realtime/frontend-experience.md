@@ -2,7 +2,10 @@
 
 Status: Product and interaction contract with the first premium UI core and
 recovery/accessibility hardening implemented for the local conversation gateway
-slice.
+slice. The next accepted frontend/product arc is 0.1.6 Product Onboarding
+Surfaces, which turns the completed journey eval evidence into usable QR,
+offer/trial, client conversation, review-return, referral, and staff review
+surfaces.
 
 The conversation UI should feel fast, polished, and emotionally legible while
 remaining operational. It should be the primary working surface, not a landing
@@ -67,6 +70,33 @@ should not see Logs, Backup, Events, readiness, or low-level appliance internals
 as primary navigation.
 
 ## Primary Surfaces
+
+### Product Onboarding Surfaces
+
+0.1.6 should make the public/client onboarding loop usable before broadening the
+dashboard surface area. The route sequence is:
+
+```text
+QR/event landing -> public Home/About or Offer context -> trial acceptance ->
+relationship conversation -> review-return link -> feedback/review consent ->
+affiliate/referral attribution -> staff/admin review cockpit
+```
+
+The canonical implementation plan lives in
+`product-onboarding-surfaces.md`. Each surface should consume real backend
+contracts where available and remain client-safe:
+
+- QR/event landing resolves a tracked entry point and creates a visitor session.
+- Offers render evidence-backed public copy and accept the OrdoStudio 30-day
+  trial without fake urgency, scarcity, metrics, reviews, or social proof.
+- Chat starts or resumes one relationship conversation for the visitor/client.
+- Review-return links are simulated/governed unless a later email issue adds
+  real delivery.
+- Affiliate/referral landing preserves scoped attribution without exposing
+  unrelated customer data.
+- Staff/admin review surfaces inspect handoffs, review moderation, affiliate
+  state, and journey reports without making ordinary staff operate the
+  appliance.
 
 ### Client Relationship Conversation
 

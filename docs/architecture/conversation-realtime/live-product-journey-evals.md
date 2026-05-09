@@ -1,6 +1,6 @@
 # Live Product Journey Evals
 
-Status: 0.1.5 planning contract
+Status: completed 0.1.5 eval contract
 
 This arc extends the completed 0.1.4 eval foundation into realistic,
 persona-driven product journeys. The goal is to exercise the business loop a
@@ -481,3 +481,29 @@ call GitHub, and does not automatically file issues.
 Real outbound email, broad provider comparison, and UI-heavy browser journeys
 remain future work unless a later issue proves they are the smallest useful
 next slice.
+
+## Follow-On Product Surface Arc
+
+Status: prepared as 0.1.6 Product Onboarding Surfaces.
+
+The immediate follow-on milestone is not deeper live LLM orchestration or real
+outbound email. The completed journey evals should first become usable product
+surfaces:
+
+- QR/event landing backed by tracked entry points and visitor sessions;
+- public Home/About or Offer context backed by public-safe read models;
+- OrdoStudio 30-day trial acceptance backed by offer, trial, outcome, and
+  attribution records;
+- client-safe relationship conversation onboarding backed by the conversation
+  gateway and durable replay;
+- review-return links backed by governed simulated email/link artifacts,
+  private feedback, review candidates, and consent/approval boundaries;
+- affiliate/referral landing backed by scoped connection grants and attribution
+  evidence;
+- staff/admin review cockpit backed by handoff, review moderation, affiliate,
+  and journey report evidence.
+
+The 0.1.6 contract is documented in
+`product-onboarding-surfaces.md`. Live journey artifacts remain acceptance
+evidence for those surfaces, while route tests, browser smoke coverage, and
+trust-boundary assertions own product closeout.

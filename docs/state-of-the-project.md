@@ -3,9 +3,11 @@
 Date: 2026-05-09
 
 Ordo has completed the 0.1.0 Appliance Specimen implementation pass, the 0.1.1
-appliance trust-boundary stabilization pass, and the 0.1.2 backend readiness
-foundation. The 0.1.3 Conversation Realtime Spine is now complete as an
-inspectable local product foundation, not yet production business automation.
+appliance trust-boundary stabilization pass, the 0.1.2 backend readiness
+foundation, the 0.1.3 Conversation Realtime Spine, the 0.1.4 Product Workflow
+Evals And Real LLM Readiness arc, and the 0.1.5 Live Product Journey Evals arc.
+It is now an inspectable local product foundation with deterministic and
+guarded-live journey evidence, not yet production business automation.
 
 ## What Is Real Now
 
@@ -165,12 +167,21 @@ inspectable local product foundation, not yet production business automation.
   accounting, governed tool request approval, analysis candidates, and
   ethical-business-persuasion guardrails are implemented without requiring live
   provider calls.
+- The 0.1.4 eval foundation is implemented: deterministic workflow evals,
+  transcript artifact packets, scorecards, replay-provider fixtures,
+  OpenAI-compatible non-streaming provider adapter, opt-in live runner with
+  spend/network guards, artifact review classifier, and simulator contracts.
+- The 0.1.5 live product journey eval arc is implemented: persona library,
+  multi-case planning, QR-to-trial eval, review-return eval with governed
+  simulated email/link artifacts, affiliate referral eval, admin/staff eval,
+  cross-persona analyzed reports, and the decision to defer real outbound
+  email until governed delivery gates exist.
 
 ## What Is Not Built Yet
 
-- Real network LLM provider adapters and live-provider evals are not built yet.
-  The current LLM gateway uses deterministic/local provider behavior for tests
-  and product-spine validation.
+- Broad live-provider orchestration is not built yet. The current LLM gateway
+  has an OpenAI-compatible non-streaming adapter and guarded live eval smoke
+  path, but default tests remain deterministic and network-free.
 - Full frontend product-depth surfaces such as Studio, Connections, About,
   Today, full public offer/ask/feed portals, and staff candidate review
   workbenches are not built yet.
@@ -208,15 +219,15 @@ inspectable local product foundation, not yet production business automation.
 
 ## Current Goal
 
-Use the completed local appliance foundation, 0.1.2 backend readiness package,
-and 0.1.3 conversation realtime spine as the contract for the next validation
-phase. The next highest-leverage work is real-LLM/backend workflow evaluation:
-prove deterministic backend workflows, transcript artifacts, privacy/accounting
-ledgers, replay fixtures, and then opt-in live provider adapters under explicit
-network and spend guards. The product remains explicitly pre-production:
-hosted identity, public portals, external transports, provider-backed answer
-generation, embeddings/vector search, Worker Ordos, and A2A are still future
-work.
+Use the completed eval foundation and live journey evidence as the contract for
+the next product layer. The next highest-leverage work is 0.1.6 Product
+Onboarding Surfaces: QR/event landing, public Home/About and Offer context,
+OrdoStudio 30-day trial acceptance, client-safe relationship conversation
+onboarding, review-return links, affiliate/referral landing, and the first
+staff/admin review cockpit. The product remains explicitly pre-production:
+hosted identity, real outbound email, payments, external transports, broad live
+provider orchestration, embeddings/vector search, Worker Ordos, and A2A are
+still future work.
 
 ## Useful Current References
 
@@ -259,10 +270,14 @@ work.
   product doctrine that keeps the work from becoming a generic CRM, support
   inbox, or dashboard.
 - [Product Workflow Evals And Real LLM Readiness](architecture/conversation-realtime/real-llm-e2e-evals.md)
-  defines the next validation phase: deterministic product workflow evals,
-  transcript artifact packets, role lifecycle coverage, Customer Feedback and
-  Review workflow pressure tests, replay fixtures, opt-in live-provider evals,
-  and provider adapter sequencing.
+  records the completed 0.1.4 validation phase: deterministic product workflow
+  evals, transcript artifact packets, role lifecycle coverage, Customer
+  Feedback and Review workflow pressure tests, replay fixtures, opt-in
+  live-provider evals, and provider adapter sequencing.
+- [Live Product Journey Evals](architecture/conversation-realtime/live-product-journey-evals.md)
+  records the completed 0.1.5 persona-backed journey eval arc.
+- [Product Onboarding Surfaces](architecture/conversation-realtime/product-onboarding-surfaces.md)
+  defines the accepted 0.1.6 product surface arc.
 - [Ordo Core](business/ordo-core.md) describes the durable product doctrine and
   how future MCP tools and packs should customize the work without bypassing the
   trust boundary.

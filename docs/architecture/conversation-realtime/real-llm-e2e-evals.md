@@ -21,9 +21,9 @@ LLM/tool/provider boundaries. They should also validate Customer Feedback,
 reviews, Home/About billboards, Offers/Asks as business intent objects, and
 artifact/review/outcome evidence loops.
 
-The next eval arc is documented in
+The 0.1.5 live journey eval arc is documented in
 `docs/architecture/conversation-realtime/live-product-journey-evals.md`.
-0.1.5 should use the 0.1.4 harness, packet, live-runner, simulator, and
+0.1.5 used the 0.1.4 harness, packet, live-runner, simulator, and
 artifact-review foundations to validate persona-driven QR/event journeys,
 30-day trials, review-return loops, affiliate referrals, staff handoffs, and
 cross-persona analyzed reports.
@@ -72,6 +72,11 @@ accepted issue adds owner approval, recipient consent or lawful-basis,
 suppression/unsubscribe, deliverability, provider-secret handling, audit,
 rate/spend caps, redaction, no raw fixture emails, and explicit live/email
 guards.
+The follow-on product surface arc is documented in
+`docs/architecture/conversation-realtime/product-onboarding-surfaces.md`.
+0.1.6 should turn the completed eval evidence into real QR/event landing,
+offer/trial, client conversation, review-return, affiliate/referral, and
+staff/admin review surfaces.
 
 ## Current Assessment
 
@@ -102,7 +107,8 @@ live model:
 - `crates/ordo-daemon/src/install.rs` recognizes provider secret env keys for
   Anthropic, OpenAI, and DeepSeek and exposes redacted provider configuration.
 
-The current codebase now has the first real-provider adapter foundation:
+The current codebase now has the real-provider adapter and guarded live-runner
+foundation:
 
 - `LlmProviderAdapter` supports deterministic, replay fixture, and
   OpenAI-compatible non-streaming provider paths.
@@ -110,11 +116,13 @@ The current codebase now has the first real-provider adapter foundation:
   and does not call providers.
 - The Rust workspace uses `reqwest` for the OpenAI-compatible HTTPS transport.
   SSE streaming and provider SDK crates remain out of scope.
-- There is no opt-in live-provider eval runner or spend guard yet.
+- `live_eval_runner.rs` includes opt-in live eval guards for network, provider,
+  model, key, max-case, and budget settings. Default tests remain deterministic
+  and network-free.
 
-That means Ordo can run high-value deterministic E2E tests today, but real LLM
-E2E still requires the #134 implementation slice: an opt-in runner with network
-and spend guards.
+That means Ordo can run high-value deterministic E2E tests and guarded live
+smoke tests today, but production product surfaces still need the 0.1.6 route,
+UI, and trust-boundary work before owner use.
 
 ## Environment Readiness
 

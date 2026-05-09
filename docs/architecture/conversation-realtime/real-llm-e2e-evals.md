@@ -1023,11 +1023,11 @@ Start small and high-signal:
 9. `workflow_tool_request_requires_approval`
 10. `workflow_public_client_boundary`
 
-The first ten workflows should run backend-only where possible. For handoff
-acceptance, operator delegation, and queue behavior, the first version may call
-domain functions directly because gateway commands are not fully wired yet.
-Those same workflows should later be re-run through `/chat/ws` once the command
-surface catches up.
+The first ten workflows should run backend-only where possible. Handoff
+creation, handoff lifecycle transitions, conversation mode changes, and scoped
+agent delegation now have `/chat/ws` command coverage for the accepted Phase 3D
+surface. Remaining eval shortcuts should be treated as finding evidence only
+when a workflow needs a command outside that supported set.
 
 Implemented first slice:
 
@@ -1048,8 +1048,7 @@ Implemented first slice:
 This slice deliberately stays backend-only and provider-free. It does not claim
 full role lifecycle coverage, Customer Feedback/Review coverage, Home/About or
 Offer/Ask product-surface coverage, replay-provider fixtures, or live-provider
-readiness. Handoff, mode, and delegation workflows may continue to use direct
-domain helpers until #141 wires the corresponding gateway command coverage.
+readiness.
 
 Implemented role lifecycle slice:
 
@@ -1126,6 +1125,30 @@ facts, offers, and outcomes. It intentionally does not add dedicated Home/About
 billboard, offer intent, or ask intent tables yet; existing public business
 facts are sufficient for this first deterministic eval proof.
 
+Implemented Phase 3D gateway command coverage:
+
+- `conversation.handoff.create` creates a durable handoff request from
+  conversation evidence and broadcasts `conversation.handoff.requested`.
+- `conversation.handoff.accept`, `conversation.handoff.decline`,
+  `conversation.handoff.assign`, `conversation.handoff.return_to_agent`, and
+  `conversation.handoff.close` drive the existing durable handoff lifecycle and
+  replay as `conversation.handoff.*` events. Existing short aliases such as
+  `handoff.accept` remain accepted for the current protocol fixtures.
+- `conversation.mode.set`, `conversation.mode.human_led_active`, and
+  `conversation.mode.return_to_agent` update the durable conversation mode and
+  replay as `conversation.mode.changed`.
+- `conversation.agent.delegate` and `conversation.agent.delegation_revoke`
+  update scoped agent delegation through the same durable mode record. The
+  delegate command requires a non-empty `delegationScope`.
+- Unsupported or invalid command attempts continue to return structured
+  gateway errors rather than pretending unsupported workflows succeeded.
+
+The Phase 3D tests prove ack/client-id preservation, durable replay order, and
+non-leakage of provider, privacy-transform, and policy internals in mode
+dispatch payloads. Product workflow evals can now move covered handoff, mode,
+and delegation paths through `/chat/ws` instead of direct-domain shortcuts as
+each eval is revisited.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`
@@ -1171,11 +1194,13 @@ compare quality across providers and prompt revisions.
 5. Add Customer Feedback and Review workflow evals. The initial implemented
    cases are `feedback_capture_private_business_intelligence` and
    `review_candidate_consent_publication_boundary`.
-6. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
+6. Wire currently direct-domain handoff/mode workflows through gateway commands.
+   The accepted Phase 3D gateway slice now covers handoff create/lifecycle,
+   mode set/human-led/return-to-agent, and scoped agent delegate/revoke
+   commands through durable events and replay.
+7. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
    `policy_gap`, `privacy_gap`, `prompt_gap`, `handoff_gap`, `analysis_gap`,
    `accounting_gap`, `ux_contract_gap`, and `provider_gap`.
-7. Wire currently direct-domain handoff/mode workflows through gateway commands
-   as those commands are implemented.
 8. Add customer and operator simulator prompts with redacted transcript turn
    capture.
 9. Add replay fixture support for provider-shaped responses.

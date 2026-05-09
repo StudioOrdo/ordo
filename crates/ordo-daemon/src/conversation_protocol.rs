@@ -56,12 +56,18 @@ pub enum ConversationCommandType {
     TypingStart,
     TypingStop,
     PresenceUpdate,
+    HandoffCreate,
     HandoffAccept,
     HandoffDecline,
     HandoffAssign,
     HandoffReturnToAgent,
+    HandoffClose,
+    ConversationModeSet,
+    ConversationModeHumanLedActive,
+    ConversationModeReturnToAgent,
     AgentDelegate,
     AgentTakeover,
+    AgentDelegationRevoke,
     LlmRunRequest,
     LlmRunCancel,
     LlmToolApprove,
@@ -86,12 +92,24 @@ impl ConversationCommandType {
             ConversationCommandType::TypingStart => "typing.start",
             ConversationCommandType::TypingStop => "typing.stop",
             ConversationCommandType::PresenceUpdate => "presence.update",
+            ConversationCommandType::HandoffCreate => "conversation.handoff.create",
             ConversationCommandType::HandoffAccept => "handoff.accept",
             ConversationCommandType::HandoffDecline => "handoff.decline",
             ConversationCommandType::HandoffAssign => "handoff.assign",
             ConversationCommandType::HandoffReturnToAgent => "handoff.return_to_agent",
+            ConversationCommandType::HandoffClose => "conversation.handoff.close",
+            ConversationCommandType::ConversationModeSet => "conversation.mode.set",
+            ConversationCommandType::ConversationModeHumanLedActive => {
+                "conversation.mode.human_led_active"
+            }
+            ConversationCommandType::ConversationModeReturnToAgent => {
+                "conversation.mode.return_to_agent"
+            }
             ConversationCommandType::AgentDelegate => "agent.delegate",
             ConversationCommandType::AgentTakeover => "agent.takeover",
+            ConversationCommandType::AgentDelegationRevoke => {
+                "conversation.agent.delegation_revoke"
+            }
             ConversationCommandType::LlmRunRequest => "llm.run.request",
             ConversationCommandType::LlmRunCancel => "llm.run.cancel",
             ConversationCommandType::LlmToolApprove => "tool.approve",
@@ -115,13 +133,18 @@ impl ConversationCommandType {
             ConversationCommandType::TypingStart
             | ConversationCommandType::TypingStop
             | ConversationCommandType::PresenceUpdate => "conversation.presence.write",
-            ConversationCommandType::HandoffAccept
+            ConversationCommandType::HandoffCreate
+            | ConversationCommandType::HandoffClose
+            | ConversationCommandType::HandoffAccept
             | ConversationCommandType::HandoffDecline
             | ConversationCommandType::HandoffAssign
             | ConversationCommandType::HandoffReturnToAgent => "conversation.handoff.manage",
-            ConversationCommandType::AgentDelegate | ConversationCommandType::AgentTakeover => {
-                "conversation.agent.delegate"
-            }
+            ConversationCommandType::ConversationModeSet
+            | ConversationCommandType::ConversationModeHumanLedActive
+            | ConversationCommandType::ConversationModeReturnToAgent
+            | ConversationCommandType::AgentDelegate
+            | ConversationCommandType::AgentTakeover
+            | ConversationCommandType::AgentDelegationRevoke => "conversation.agent.delegate",
             ConversationCommandType::LlmRunRequest => "llm.invoke",
             ConversationCommandType::LlmRunCancel => "llm.cancel",
             ConversationCommandType::LlmToolApprove => "llm.tool.approve",

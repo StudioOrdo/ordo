@@ -220,6 +220,14 @@ must normalize through the same `llm.provider.started`, ephemeral
 Unknown replay fingerprints fail as provider failures without final assistant
 messages.
 
+OpenAI-compatible non-streaming provider calls also add no new runtime event
+types. Successful responses normalize into durable `llm.text.completed`,
+`llm.usage.recorded`, and `llm.run.completed` events, followed by the normal
+assistant message persistence path. Provider status errors, transport failures,
+missing config, and unsupported response shapes normalize into durable
+`llm.run.failed` evidence with safe code/message metadata. Raw provider request
+or response bodies and provider secrets are not protocol payloads.
+
 Implemented tool governance behavior: LLM tool requests are durable
 conversation events with `toolRequestId`, `runId`, requested capability, reason,
 evidence refs, redacted input summary, visibility ceiling, status, and policy

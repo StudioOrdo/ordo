@@ -37,8 +37,10 @@ live model:
   deterministic local analysis for summaries, open questions, action-needed
   signals, handoff signals, brief candidates, and memory candidates.
 - `crates/ordo-daemon/src/llm_gateway.rs` owns prompt slots, LLM policy
-  decisions, privacy egress, deterministic provider streaming, final assistant
-  message persistence, tool request lifecycle, and token accounting hooks.
+  decisions, privacy egress, deterministic provider streaming, replay-provider
+  fixtures, OpenAI-compatible non-streaming provider normalization, final
+  assistant message persistence, tool request lifecycle, and token accounting
+  hooks.
 - `crates/ordo-daemon/src/privacy_egress.rs` transforms emails, phone numbers,
   API-key-shaped values, bearer tokens, and configured private terms into
   placeholders, then reconstructs only in scope.
@@ -48,20 +50,19 @@ live model:
 - `crates/ordo-daemon/src/install.rs` recognizes provider secret env keys for
   Anthropic, OpenAI, and DeepSeek and exposes redacted provider configuration.
 
-The current codebase does not yet have a real network provider adapter:
+The current codebase now has the first real-provider adapter foundation:
 
-- `LlmProviderAdapter` exists, but the implemented adapter is
-  `DeterministicLlmProvider`.
+- `LlmProviderAdapter` supports deterministic, replay fixture, and
+  OpenAI-compatible non-streaming provider paths.
 - `answer_drafts.rs` still records local scaffold behavior for answer drafts
   and does not call providers.
-- The Rust workspace currently has no HTTP/SSE provider dependency such as
-  `reqwest`, `reqwest-eventsource`, or provider SDK crates.
-- There is no dedicated eval script, eval dataset, live-provider test harness,
-  or scorecard writer in `package.json`, `scripts/`, or `tests/`.
+- The Rust workspace uses `reqwest` for the OpenAI-compatible HTTPS transport.
+  SSE streaming and provider SDK crates remain out of scope.
+- There is no opt-in live-provider eval runner or spend guard yet.
 
 That means Ordo can run high-value deterministic E2E tests today, but real LLM
-E2E requires one implementation slice first: a live provider adapter and an
-explicit eval harness.
+E2E still requires the #134 implementation slice: an opt-in runner with network
+and spend guards.
 
 ## Environment Readiness
 
@@ -667,8 +668,8 @@ Before true real-LLM E2E can run, add a Rust adapter behind
 
 Minimum adapter contract:
 
-1. Load provider config from the existing provider catalog and vault/env secret
-   resolution path.
+1. Accept provider id, model id, base URL, redacted secret/config input, and a
+   timeout boundary.
 2. Compile Ordo prompt slots through `LlmGateway`, not inside the adapter.
 3. Receive privacy-transformed prompt and user message only.
 4. Call provider APIs over HTTPS.
@@ -684,14 +685,16 @@ Minimum adapter contract:
 Recommended order:
 
 1. Implement OpenAI-compatible non-streaming adapter first because DeepSeek can
-   be made OpenAI-compatible and the shape is easiest to validate.
+   be made OpenAI-compatible and the shape is easiest to validate. Implemented
+   in Phase 5 for request/response normalization and mocked-transport gateway
+   tests.
 2. Add SSE streaming once non-streaming evals pass.
 3. Add Anthropic adapter with native event normalization.
 4. Add provider fallback and per-provider response contract validation.
 
 Dependencies to evaluate for Rust:
 
-- `reqwest` for HTTPS;
+- `reqwest` for HTTPS; implemented for the first OpenAI-compatible transport;
 - `reqwest-eventsource` or `eventsource-stream` for SSE;
 - provider SDKs only if they simplify usage without hiding important event and
   accounting details.
@@ -1178,6 +1181,28 @@ Implemented Phase 4 replay-provider fixture slice:
    - Keeps packet output redacted and deterministic while preserving provider
      id/model id and usage metadata.
 
+Implemented Phase 5 OpenAI-compatible provider adapter slice:
+
+1. `OpenAiCompatibleProvider`
+   - Implements the existing Rust-owned `LlmProviderAdapter` boundary for
+     non-streaming Chat Completions-style responses.
+   - Accepts provider id, model id, base URL, API key, and timeout config.
+   - Builds provider requests only from `LlmGateway` prompt slots and
+     privacy-transformed user content.
+   - Uses a transport seam so default tests use a deterministic mock transport
+     and never require provider keys or network.
+   - Normalizes successful assistant text and provider usage metadata into the
+     same completion path used by deterministic and replay providers.
+   - Normalizes provider errors, transport failures, missing config, and
+     unsupported response shapes into safe provider failures without raw
+     request/response persistence.
+2. Gateway integration evidence
+   - Mocked adapter runs through policy, privacy egress, token ledger,
+     conversation events, final assistant message persistence, and durable
+     failure behavior.
+   - Tests prove sensitive fixture text is transformed before the adapter sees
+     it and does not appear in event payloads.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`
@@ -1236,7 +1261,8 @@ compare quality across providers and prompt revisions.
 9. Add customer and operator simulator prompts with redacted transcript turn
    capture.
 10. Add real provider adapter behind `LlmProviderAdapter` with
-   OpenAI-compatible non-streaming support.
+   OpenAI-compatible non-streaming support. Implemented for the adapter and
+   mocked gateway integration path.
 11. Add opt-in live eval runner with env guards and spend caps.
 12. Add Anthropic and DeepSeek provider coverage.
 13. Add SSE streaming normalization once non-streaming passes.

@@ -4,8 +4,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::capabilities::{
@@ -429,6 +431,276 @@ pub fn replay_request_fingerprint(request: &LlmProviderRequest) -> String {
         request.prompt.prompt_hash,
         stable_content_hash(&request.user_message)
     ))
+}
+
+#[derive(Clone)]
+pub struct OpenAiCompatibleConfig {
+    pub provider_id: String,
+    pub model_id: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub timeout_ms: u64,
+}
+
+impl OpenAiCompatibleConfig {
+    pub fn new(
+        provider_id: impl Into<String>,
+        model_id: impl Into<String>,
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+    ) -> Result<Self> {
+        let config = Self {
+            provider_id: provider_id.into(),
+            model_id: model_id.into(),
+            base_url: base_url.into(),
+            api_key: api_key.into(),
+            timeout_ms: 30_000,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn openai(model_id: impl Into<String>, api_key: impl Into<String>) -> Result<Self> {
+        Self::new("openai", model_id, "https://api.openai.com/v1", api_key)
+    }
+
+    pub fn with_timeout_ms(mut self, timeout_ms: u64) -> Result<Self> {
+        self.timeout_ms = timeout_ms;
+        self.validate()?;
+        Ok(self)
+    }
+
+    fn chat_completions_url(&self) -> String {
+        format!("{}/chat/completions", self.base_url.trim_end_matches('/'))
+    }
+
+    fn validate(&self) -> Result<()> {
+        require_text("provider_id", &self.provider_id)?;
+        require_text("model_id", &self.model_id)?;
+        require_text("base_url", &self.base_url)?;
+        require_text("api_key", &self.api_key)?;
+        ensure!(self.timeout_ms > 0, "timeout_ms must be positive");
+        Ok(())
+    }
+}
+
+impl fmt::Debug for OpenAiCompatibleConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpenAiCompatibleConfig")
+            .field("provider_id", &self.provider_id)
+            .field("model_id", &self.model_id)
+            .field("base_url", &self.base_url)
+            .field("api_key", &"[redacted]")
+            .field("timeout_ms", &self.timeout_ms)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenAiTransportResponse {
+    pub status: u16,
+    pub body: Value,
+}
+
+pub trait OpenAiCompatibleTransport: Clone {
+    fn post_chat_completions(
+        &self,
+        endpoint: &str,
+        api_key: &str,
+        timeout_ms: u64,
+        body: &Value,
+    ) -> Result<OpenAiTransportResponse>;
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ReqwestOpenAiTransport;
+
+impl OpenAiCompatibleTransport for ReqwestOpenAiTransport {
+    fn post_chat_completions(
+        &self,
+        endpoint: &str,
+        api_key: &str,
+        timeout_ms: u64,
+        body: &Value,
+    ) -> Result<OpenAiTransportResponse> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(timeout_ms))
+            .build()?;
+        let response = client
+            .post(endpoint)
+            .bearer_auth(api_key)
+            .json(body)
+            .send()?;
+        let status = response.status().as_u16();
+        let body = response.json::<Value>().unwrap_or_else(
+            |_| json!({ "error": { "message": "Provider returned non-JSON response." } }),
+        );
+        Ok(OpenAiTransportResponse { status, body })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OpenAiCompatibleProvider<T = ReqwestOpenAiTransport> {
+    config: OpenAiCompatibleConfig,
+    transport: T,
+}
+
+impl OpenAiCompatibleProvider<ReqwestOpenAiTransport> {
+    pub fn new(config: OpenAiCompatibleConfig) -> Self {
+        Self {
+            config,
+            transport: ReqwestOpenAiTransport,
+        }
+    }
+}
+
+impl<T: OpenAiCompatibleTransport> OpenAiCompatibleProvider<T> {
+    pub fn with_transport(config: OpenAiCompatibleConfig, transport: T) -> Self {
+        Self { config, transport }
+    }
+
+    pub fn request_body(&self, request: &LlmProviderRequest) -> Value {
+        openai_chat_completion_body(&self.config.model_id, request)
+    }
+}
+
+impl<T: OpenAiCompatibleTransport> LlmProviderAdapter for OpenAiCompatibleProvider<T> {
+    fn provider_id(&self) -> &str {
+        &self.config.provider_id
+    }
+
+    fn model_id(&self) -> &str {
+        &self.config.model_id
+    }
+
+    fn stream(&self, request: &LlmProviderRequest) -> Result<Vec<LlmProviderStreamEvent>> {
+        let body = self.request_body(request);
+        let response = self.transport.post_chat_completions(
+            &self.config.chat_completions_url(),
+            &self.config.api_key,
+            self.config.timeout_ms,
+            &body,
+        );
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                return Ok(vec![LlmProviderStreamEvent::Failed {
+                    code: "provider_transport_failed".to_string(),
+                    message: safe_provider_error_message(&error.to_string()),
+                }]);
+            }
+        };
+        Ok(vec![normalize_openai_response(response)])
+    }
+
+    fn cancel(&self, _run_id: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
+fn openai_chat_completion_body(model_id: &str, request: &LlmProviderRequest) -> Value {
+    let system_content = request
+        .prompt
+        .slots
+        .iter()
+        .map(|slot| format!("{}:\n{}", slot.label, slot.content))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    json!({
+        "model": model_id,
+        "stream": false,
+        "messages": [
+            {
+                "role": "system",
+                "content": system_content,
+            },
+            {
+                "role": "user",
+                "content": request.user_message,
+            }
+        ],
+        "metadata": {
+            "ordoRunId": request.run_id,
+            "ordoPromptHash": request.prompt.prompt_hash,
+        }
+    })
+}
+
+fn normalize_openai_response(response: OpenAiTransportResponse) -> LlmProviderStreamEvent {
+    if !(200..300).contains(&response.status) {
+        let (code, message) = openai_error_code_message(&response.body);
+        return LlmProviderStreamEvent::Failed {
+            code,
+            message: safe_provider_error_message(&message),
+        };
+    }
+
+    let Some(text) = response
+        .body
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+    else {
+        return LlmProviderStreamEvent::Failed {
+            code: "unsupported_provider_response".to_string(),
+            message: "OpenAI-compatible response did not include assistant text.".to_string(),
+        };
+    };
+
+    let input_tokens = response
+        .body
+        .get("usage")
+        .and_then(|usage| usage.get("prompt_tokens"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let output_tokens = response
+        .body
+        .get("usage")
+        .and_then(|usage| usage.get("completion_tokens"))
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| text.split_whitespace().count() as i64);
+
+    LlmProviderStreamEvent::Completed {
+        text: text.to_string(),
+        usage: LlmUsageMetadata {
+            input_tokens,
+            output_tokens,
+        },
+    }
+}
+
+fn openai_error_code_message(body: &Value) -> (String, String) {
+    let code = body
+        .get("error")
+        .and_then(|error| error.get("code").or_else(|| error.get("type")))
+        .and_then(Value::as_str)
+        .filter(|code| !code.trim().is_empty())
+        .unwrap_or("provider_error")
+        .to_string();
+    let message = body
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or("OpenAI-compatible provider returned an error.")
+        .to_string();
+    (code, message)
+}
+
+fn safe_provider_error_message(message: &str) -> String {
+    if text_contains_sensitive_fixture_value(message) {
+        format!(
+            "Provider error redacted; message hash {}.",
+            stable_content_hash(message)
+        )
+    } else {
+        message.to_string()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1628,6 +1900,7 @@ mod tests {
     use rusqlite::Connection;
     use std::cell::{Cell, RefCell};
     use std::path::PathBuf;
+    use std::rc::Rc;
 
     fn test_connection() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
@@ -1794,6 +2067,67 @@ mod tests {
         }
     }
 
+    type MockOpenAiCallLog = Rc<RefCell<Vec<(String, String, u64, Value)>>>;
+
+    #[derive(Clone)]
+    struct MockOpenAiTransport {
+        response: OpenAiTransportResponse,
+        seen: MockOpenAiCallLog,
+    }
+
+    impl MockOpenAiTransport {
+        fn success(text: &str) -> Self {
+            Self {
+                response: OpenAiTransportResponse {
+                    status: 200,
+                    body: json!({
+                        "choices": [
+                            { "message": { "content": text } }
+                        ],
+                        "usage": {
+                            "prompt_tokens": 17,
+                            "completion_tokens": text.split_whitespace().count() as i64,
+                        }
+                    }),
+                },
+                seen: Rc::new(RefCell::new(Vec::new())),
+            }
+        }
+
+        fn error(status: u16, code: &str, message: &str) -> Self {
+            Self {
+                response: OpenAiTransportResponse {
+                    status,
+                    body: json!({
+                        "error": {
+                            "code": code,
+                            "message": message,
+                        }
+                    }),
+                },
+                seen: Rc::new(RefCell::new(Vec::new())),
+            }
+        }
+    }
+
+    impl OpenAiCompatibleTransport for MockOpenAiTransport {
+        fn post_chat_completions(
+            &self,
+            endpoint: &str,
+            api_key: &str,
+            timeout_ms: u64,
+            body: &Value,
+        ) -> Result<OpenAiTransportResponse> {
+            self.seen.borrow_mut().push((
+                endpoint.to_string(),
+                api_key.to_string(),
+                timeout_ms,
+                body.clone(),
+            ));
+            Ok(self.response.clone())
+        }
+    }
+
     fn tool_request(conversation_id: &str, capability_id: &str) -> LlmToolRequestCreateRequest {
         LlmToolRequestCreateRequest {
             run_id: "llm_run_1".to_string(),
@@ -1806,6 +2140,242 @@ mod tests {
             visibility_ceiling: "staff_private".to_string(),
             client_id: Some("client_tool_1".to_string()),
         }
+    }
+
+    #[test]
+    fn openai_compatible_request_uses_transformed_payload_and_redacts_config_debug() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let mut request = llm_request(&conversation_id, &assistant_id);
+        request.provider_id = "openai".to_string();
+        request.model_id = "gpt-test".to_string();
+        request.user_message =
+            "Draft for Project Orchid using ada@example.com and sk-test-secret-value.".to_string();
+        request.prompt_slots = vec![PromptSlot::new(
+            "conversation_brief",
+            "Conversation Brief",
+            "Project Orchid client asked for a private next step.",
+            vec!["conversation_event_1".to_string()],
+            "Current conversation evidence.",
+            "participants",
+        )
+        .unwrap()];
+        let config = OpenAiCompatibleConfig::new(
+            "openai",
+            "gpt-test",
+            "https://api.openai.test/v1",
+            "sk-live-secret",
+        )
+        .unwrap()
+        .with_timeout_ms(12_345)
+        .unwrap();
+        assert!(!format!("{config:?}").contains("sk-live-secret"));
+        let transport = MockOpenAiTransport::success("Mocked provider answer");
+        let seen = transport.seen.clone();
+        let gateway = LlmGateway::new(OpenAiCompatibleProvider::with_transport(config, transport))
+            .with_private_terms(vec!["Project Orchid".to_string()]);
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result
+                .final_message
+                .as_ref()
+                .map(|message| message.body_markdown.as_str()),
+            Some("Mocked provider answer")
+        );
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "https://api.openai.test/v1/chat/completions");
+        assert_eq!(seen[0].1, "sk-live-secret");
+        assert_eq!(seen[0].2, 12_345);
+        let request_json = serde_json::to_string(&seen[0].3).unwrap();
+        assert!(request_json.contains("\"model\":\"gpt-test\""));
+        assert!(request_json.contains("__ORDO_PRIVATE_EMAIL_"));
+        assert!(request_json.contains("__ORDO_PRIVATE_API_KEY_"));
+        assert!(!request_json.contains("Project Orchid"));
+        assert!(!request_json.contains("ada@example.com"));
+        assert!(!request_json.contains("sk-test-secret-value"));
+    }
+
+    #[test]
+    fn openai_compatible_response_normalization_handles_success_error_and_bad_shape() {
+        let success = normalize_openai_response(OpenAiTransportResponse {
+            status: 200,
+            body: json!({
+                "choices": [{ "message": { "content": "Provider answer" } }],
+                "usage": { "prompt_tokens": 11, "completion_tokens": 2 }
+            }),
+        });
+        assert_eq!(
+            success,
+            LlmProviderStreamEvent::Completed {
+                text: "Provider answer".to_string(),
+                usage: LlmUsageMetadata {
+                    input_tokens: 11,
+                    output_tokens: 2,
+                },
+            }
+        );
+
+        let failed = normalize_openai_response(OpenAiTransportResponse {
+            status: 401,
+            body: json!({
+                "error": {
+                    "code": "invalid_api_key",
+                    "message": "Invalid API key sk-test-secret-value"
+                }
+            }),
+        });
+        assert!(matches!(
+            failed,
+            LlmProviderStreamEvent::Failed { ref code, ref message }
+                if code == "invalid_api_key"
+                    && message.contains("Provider error redacted")
+                    && !message.contains("sk-test-secret-value")
+        ));
+
+        let bad_shape = normalize_openai_response(OpenAiTransportResponse {
+            status: 200,
+            body: json!({ "choices": [] }),
+        });
+        assert!(matches!(
+            bad_shape,
+            LlmProviderStreamEvent::Failed { ref code, .. }
+                if code == "unsupported_provider_response"
+        ));
+    }
+
+    #[test]
+    fn openai_compatible_config_fails_closed_without_key() {
+        let error =
+            OpenAiCompatibleConfig::new("openai", "gpt-test", "https://api.openai.test/v1", "")
+                .unwrap_err();
+        assert!(error.to_string().contains("api_key is required"));
+        assert!(!error.to_string().contains("sk-"));
+    }
+
+    #[test]
+    fn openai_compatible_gateway_records_usage_and_avoids_sensitive_persistence() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let mut request = llm_request(&conversation_id, &assistant_id);
+        request.run_id = "llm_run_openai_mock".to_string();
+        request.provider_id = "openai".to_string();
+        request.model_id = "gpt-test".to_string();
+        request.user_message =
+            "Draft for Project Orchid using ada@example.com and sk-test-secret-value.".to_string();
+        request.prompt_slots = vec![PromptSlot::new(
+            "conversation_brief",
+            "Conversation Brief",
+            "Project Orchid needs a concise next step.",
+            vec!["conversation_event_1".to_string()],
+            "Current conversation evidence.",
+            "participants",
+        )
+        .unwrap()];
+        let config = OpenAiCompatibleConfig::new(
+            "openai",
+            "gpt-test",
+            "https://api.openai.test/v1",
+            "sk-live-secret",
+        )
+        .unwrap();
+        let gateway = LlmGateway::new(OpenAiCompatibleProvider::with_transport(
+            config,
+            MockOpenAiTransport::success("Safe mocked answer"),
+        ))
+        .with_private_terms(vec!["Project Orchid".to_string()]);
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result
+                .final_message
+                .as_ref()
+                .map(|message| message.body_markdown.as_str()),
+            Some("Safe mocked answer")
+        );
+        assert!(result
+            .frames
+            .iter()
+            .any(|frame| frame.frame_type == "llm.usage.recorded"));
+        let usage_kinds = connection
+            .prepare(
+                "SELECT usage_kind FROM llm_token_ledger_entries
+                 WHERE invocation_id = 'llm_run_openai_mock'
+                 ORDER BY usage_kind",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(usage_kinds.contains(&"provider_input".to_string()));
+        assert!(usage_kinds.contains(&"provider_output".to_string()));
+        let sensitive_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_events
+                 WHERE payload_json LIKE '%Project Orchid%'
+                    OR payload_json LIKE '%ada@example.com%'
+                    OR payload_json LIKE '%sk-test-secret-value%'
+                    OR payload_json LIKE '%sk-live-secret%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(sensitive_count, 0);
+    }
+
+    #[test]
+    fn openai_compatible_provider_error_does_not_create_final_message() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let mut request = llm_request(&conversation_id, &assistant_id);
+        request.provider_id = "openai".to_string();
+        request.model_id = "gpt-test".to_string();
+        let config = OpenAiCompatibleConfig::new(
+            "openai",
+            "gpt-test",
+            "https://api.openai.test/v1",
+            "sk-live-secret",
+        )
+        .unwrap();
+        let gateway = LlmGateway::new(OpenAiCompatibleProvider::with_transport(
+            config,
+            MockOpenAiTransport::error(404, "model_not_found", "No such model"),
+        ));
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        assert!(result.final_message.is_none());
+        assert!(result.frames.iter().any(|frame| {
+            frame.frame_type == "llm.run.failed" && frame.payload["code"] == "model_not_found"
+        }));
     }
 
     #[test]

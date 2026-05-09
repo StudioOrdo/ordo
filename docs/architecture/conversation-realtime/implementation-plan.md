@@ -370,7 +370,11 @@ Delivery order:
    `ReplayLlmProvider`, `ordo.llm_replay_fixture.v1`, a redacted tiny fixture,
    request fingerprint matching, usage replay through the token ledger, and a
    packet-backed `replay_provider_fixture` eval.
-10. Add real provider adapter behind the Rust-owned LLM gateway.
+10. Add real provider adapter behind the Rust-owned LLM gateway. Implemented
+    for OpenAI-compatible non-streaming Chat Completions-style responses with a
+    `reqwest` transport, mocked-transport default tests, privacy-transformed
+    request input, safe provider failure normalization, and usage recording
+    through the existing token ledger.
 11. Add opt-in live eval runner with network and spend guards.
 12. Add artifact review automation that classifies findings and drives
     follow-on issues.

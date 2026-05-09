@@ -28,6 +28,12 @@ use crate::business::{
     BusinessFactQuery, BusinessFactView, BusinessFactWriteRequest,
 };
 use crate::capabilities::{list_capabilities, CapabilityCatalogResponse};
+use crate::connections::{
+    create_connection, create_connection_grant, list_connection_events, list_connection_grants,
+    list_connections, revoke_connection_grant, update_connection, ConnectionEventListResponse,
+    ConnectionGrantCreateRequest, ConnectionGrantListResponse, ConnectionGrantRevokeRequest,
+    ConnectionGrantView, ConnectionListResponse, ConnectionView, ConnectionWriteRequest,
+};
 use crate::diagnostics::{
     diagnostic_log, list_diagnostic_logs, record_diagnostic_log, DiagnosticLogQuery,
     DiagnosticLogsResponse, NewDiagnosticLogEntry,
@@ -189,6 +195,28 @@ pub async fn serve(
         .route("/offer-acceptances", get(offer_acceptances_handler))
         .route("/trials", get(trials_handler))
         .route("/trials/:trial_id/status", put(trial_transition_handler))
+        .route("/connections", get(connections_handler))
+        .route("/connections", post(connection_create_handler))
+        .route(
+            "/connections/:connection_id",
+            put(connection_update_handler),
+        )
+        .route(
+            "/connections/:connection_id/grants",
+            get(connection_grants_handler),
+        )
+        .route(
+            "/connections/:connection_id/grants",
+            post(connection_grant_create_handler),
+        )
+        .route(
+            "/connections/:connection_id/grants/:grant_id/revoke",
+            put(connection_grant_revoke_handler),
+        )
+        .route(
+            "/connections/:connection_id/events",
+            get(connection_events_handler),
+        )
         .route(
             "/public/available-offers",
             get(public_available_offers_handler),
@@ -995,6 +1023,170 @@ async fn trial_transition_handler(
     Ok(Json(trial))
 }
 
+async fn connections_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<ConnectionListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/connections"),
+        Some("connections.list"),
+    )?;
+    list_connections(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn connection_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<ConnectionWriteRequest>,
+) -> Result<Json<ConnectionView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/connections"),
+        Some("connections.write"),
+    )?;
+    let (connection, event) = create_connection(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(connection))
+}
+
+async fn connection_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(connection_id): AxumPath<String>,
+    Json(request): Json<ConnectionWriteRequest>,
+) -> Result<Json<ConnectionView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/connections/{connection_id}"),
+        ),
+        Some("connections.write"),
+    )?;
+    let (connection, event) =
+        update_connection(&state.db_path, &connection_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(connection))
+}
+
+async fn connection_grants_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(connection_id): AxumPath<String>,
+) -> Result<Json<ConnectionGrantListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/connections/{connection_id}/grants"),
+        ),
+        Some("connection_grants.list"),
+    )?;
+    list_connection_grants(&state.db_path, &connection_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn connection_grant_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(connection_id): AxumPath<String>,
+    Json(request): Json<ConnectionGrantCreateRequest>,
+) -> Result<Json<ConnectionGrantView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/connections/{connection_id}/grants"),
+        ),
+        Some("connection_grants.write"),
+    )?;
+    let (grant, event) =
+        create_connection_grant(&state.db_path, &connection_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(grant))
+}
+
+async fn connection_grant_revoke_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath((connection_id, grant_id)): AxumPath<(String, String)>,
+    Json(request): Json<ConnectionGrantRevokeRequest>,
+) -> Result<Json<ConnectionGrantView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/connections/{connection_id}/grants/{grant_id}/revoke"),
+        ),
+        Some("connection_grants.write"),
+    )?;
+    let (grant, event) =
+        revoke_connection_grant(&state.db_path, &grant_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(grant))
+}
+
+async fn connection_events_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(connection_id): AxumPath<String>,
+) -> Result<Json<ConnectionEventListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/connections/{connection_id}/events"),
+        ),
+        Some("connection_events.list"),
+    )?;
+    list_connection_events(&state.db_path, &connection_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
 async fn public_available_offers_handler(
     State(state): State<AppState>,
 ) -> Result<Json<PublicOfferListResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -1783,6 +1975,71 @@ mod tests {
                  WHERE capability_id IN (
                     'offers.write', 'offers.list', 'offer_acceptances.list',
                     'trials.list', 'trials.transition'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn connection_management_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/connections"),
+            Some("connections.write"),
+        );
+        assert!(denied.is_err());
+
+        for (route, capability) in [
+            ("/connections", "connections.list"),
+            ("/connections/connection_1/grants", "connection_grants.list"),
+            ("/connections/connection_1/events", "connection_events.list"),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                PolicyAction::Inspect,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let grant_allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(
+                ResourceKind::DaemonRoute,
+                "/connections/connection_1/grants",
+            ),
+            Some("connection_grants.write"),
+        );
+        assert!(grant_allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN (
+                    'connections.write', 'connections.list', 'connection_grants.list',
+                    'connection_grants.write', 'connection_events.list'
                  )",
                 [],
                 |row| row.get(0),

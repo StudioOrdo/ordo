@@ -97,6 +97,7 @@ pub enum ResourceKind {
     DiagnosticLog,
     CorpusSource,
     CorpusItem,
+    Connection,
 }
 
 impl ResourceKind {
@@ -115,6 +116,7 @@ impl ResourceKind {
             Self::DiagnosticLog => "diagnostic_log",
             Self::CorpusSource => "corpus_source",
             Self::CorpusItem => "corpus_item",
+            Self::Connection => "connection",
         }
     }
 }
@@ -416,6 +418,53 @@ pub fn authorize_resource_access(
     }
 }
 
+pub fn authorize_connection_resource_access(
+    connection: &Connection,
+    connection_id: &str,
+    action: PolicyAction,
+    resource: ResourceRef,
+    capability_id: Option<&str>,
+) -> PolicyDecision {
+    match connection_resource_access_allowed(connection, connection_id, action, &resource) {
+        Ok(true) => PolicyDecision {
+            outcome: PolicyOutcome::Allowed,
+            actor: ActorContext::new(
+                ActorKind::BrowserOperator,
+                "connection",
+                Some(connection_id.to_string()),
+            ),
+            action,
+            resource,
+            capability_id: capability_id.map(ToString::to_string),
+            reason: "Durable connection grant allows this connection action.".to_string(),
+        },
+        Ok(false) => PolicyDecision {
+            outcome: PolicyOutcome::Denied,
+            actor: ActorContext::new(
+                ActorKind::BrowserOperator,
+                "connection",
+                Some(connection_id.to_string()),
+            ),
+            action,
+            resource,
+            capability_id: capability_id.map(ToString::to_string),
+            reason: "No active durable connection grant allows this connection action.".to_string(),
+        },
+        Err(error) => PolicyDecision {
+            outcome: PolicyOutcome::Denied,
+            actor: ActorContext::new(
+                ActorKind::BrowserOperator,
+                "connection",
+                Some(connection_id.to_string()),
+            ),
+            action,
+            resource,
+            capability_id: capability_id.map(ToString::to_string),
+            reason: format!("Durable connection grant check failed: {error}"),
+        },
+    }
+}
+
 pub fn authorize_capability_access(
     connection: &Connection,
     actor: ActorContext,
@@ -515,6 +564,7 @@ fn resource_access_allowed(
         "SELECT COUNT(*)
          FROM resource_grants grant_row
          WHERE grant_row.effect = 'allow'
+                     AND (grant_row.expires_at IS NULL OR grant_row.expires_at > ?5)
            AND grant_row.resource_kind = ?1
            AND grant_row.resource_id IN (?2, '*')
            AND grant_row.action IN (?3, '*')
@@ -532,6 +582,44 @@ fn resource_access_allowed(
             resource.id,
             action.as_str(),
             actor_id,
+            Utc::now().to_rfc3339(),
+        ],
+        |row| row.get(0),
+    )?;
+
+    Ok(allowed > 0)
+}
+
+fn connection_resource_access_allowed(
+    connection: &Connection,
+    connection_id: &str,
+    action: PolicyAction,
+    resource: &ResourceRef,
+) -> rusqlite::Result<bool> {
+    let allowed: i64 = connection.query_row(
+        "SELECT COUNT(*)
+         FROM resource_grants grant_row
+         INNER JOIN connection_grants connection_grant
+            ON connection_grant.resource_grant_id = grant_row.id
+         INNER JOIN connections connection_row
+            ON connection_row.id = connection_grant.connection_id
+         WHERE connection_row.id = ?4
+           AND connection_row.status = 'active'
+           AND connection_grant.status = 'active'
+           AND grant_row.effect = 'allow'
+           AND grant_row.subject_kind = 'connection'
+           AND grant_row.subject_id = ?4
+           AND grant_row.resource_kind = ?1
+           AND grant_row.resource_id IN (?2, '*')
+           AND grant_row.action IN (?3, '*')
+           AND (grant_row.expires_at IS NULL OR grant_row.expires_at > ?5)
+           AND (connection_grant.expires_at IS NULL OR connection_grant.expires_at > ?5)",
+        params![
+            resource.kind.as_str(),
+            resource.id,
+            action.as_str(),
+            connection_id,
+            Utc::now().to_rfc3339(),
         ],
         |row| row.get(0),
     )?;

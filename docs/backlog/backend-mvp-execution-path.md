@@ -36,8 +36,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | complete |
 | 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | complete |
 | 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | complete |
-| 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | ready for PR |
-| 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | not started |
+| 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | complete |
+| 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | ready for PR |
 | 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | not started |
 | 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | not started |
 | 8 | Knowledge corpus and governed retrieval | #57 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Corpus ingestion, source/item provenance, SQLite FTS retrieval, visibility filtering, and retrieval evidence exist. | not started |
@@ -146,7 +146,7 @@ Current implementation evidence:
 
 This phase turns public interest into durable commercial state.
 
-GitHub issue: #53.
+GitHub issue: #53. Pull request: #65, merged.
 
 Done means:
 
@@ -177,6 +177,18 @@ Done means:
 - connections have type, identity, status, scope, grants, and revocations;
 - policy decisions can consult connection grants;
 - connection events and receipts are durable.
+
+Current implementation evidence:
+
+- durable connection, grant, event, and receipt tables exist in schema version
+  13;
+- protected local daemon routes exist for connection records, explicit grants,
+  revocation, and event inspection;
+- connection grants mirror into `resource_grants` and are consulted through
+  `authorize_connection_resource_access` with active status and expiry checks;
+- connection mutations persist local connection events, receipt rows, realtime
+  events, and protected policy audit decisions;
+- wildcard resource grants are rejected.
 
 ### 6. Availability And Handoff Inbox
 

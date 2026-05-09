@@ -23,6 +23,11 @@ surfaces land.
   image with `.data` as the durable state boundary.
 - The daemon supervises the required Next.js child process with a bounded
   restart policy when the appliance runtime configures `--next-command`.
+- SQLite stores local install state, local owner/business identity basics,
+  provider configuration metadata, and encrypted local appliance vault items.
+  The daemon exposes protected local install and provider endpoints with
+  redacted provider read models so API keys remain write-only through HTTP
+  surfaces.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
@@ -66,8 +71,9 @@ surfaces land.
 - SQLite initialization now runs ordered schema migrations tracked by
   `PRAGMA user_version`; fresh databases and 0.1.0 databases use the same path.
 - Backup manifests now record SHA-256 checksum evidence with an algorithm
-  version, and restore preflight rejects malformed manifests, checksum
-  mismatches, and paths that escape the local backups boundary.
+  version, include selected data-boundary sidecar files such as the local vault
+  key for restore usability, and restore preflight rejects malformed manifests,
+  checksum mismatches, and paths that escape the local backups boundary.
 - The System shell now has Playwright browser smoke coverage for healthy and
   degraded daemon states, System Brief evidence/provenance, Backup And Restore,
   Logs, and Reports operator paths across desktop and mobile Chromium viewports.
@@ -83,6 +89,9 @@ surfaces land.
   Asks, Feed, Today, and Conversations are not built yet.
 - Authentication UI, hosted identity, OAuth/email login, public portals, and
   multi-user product surfaces are not implemented yet.
+- Frontend install wizard UI and provider network validation are not implemented
+  yet; current install/provider support is daemon-owned backend state and
+  protected local routes only.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
   integrations are not implemented yet.
 - Report submission transports to external systems are not implemented yet;
@@ -106,6 +115,9 @@ slices.
   describes the implemented policy/provenance foundation.
 - [Access And Local RBAC](architecture/access-rbac.md) describes the implemented
   durable local access foundation.
+- [Local Install And Providers](architecture/local-install-and-providers.md)
+  describes the implemented backend install state and redacted provider
+  configuration foundation.
 - [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
   implemented retrieval safety foundation for future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,

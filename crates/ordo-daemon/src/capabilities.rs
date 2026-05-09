@@ -80,6 +80,58 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &[],
         ),
         capability(
+            "install.state.read",
+            "Read Local Install State",
+            "Read local appliance install state, owner profile, business profile, and provider readiness summary.",
+            "install",
+            json!({ "type": "object", "additionalProperties": false }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
+            "install.complete",
+            "Complete Local Install",
+            "Persist local owner and business install identity for the appliance.",
+            "install",
+            json!({ "type": "object", "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
+            "providers.list",
+            "List Provider Configuration",
+            "Read redacted local provider configuration and secret source state.",
+            "providers",
+            json!({ "type": "object", "additionalProperties": false }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
+            "providers.update",
+            "Update Provider Configuration",
+            "Update local provider configuration and write-only provider secret references.",
+            "providers",
+            json!({ "type": "object", "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
             "system.health.check",
             "System Health Check",
             "Create a governed system health check job.",
@@ -543,6 +595,19 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &[],
         ),
         capability(
+            "policy.decisions.list",
+            "List Policy Decisions",
+            "Read bounded recent policy decision audit records for protected local operations.",
+            "policy",
+            json!({ "type": "object", "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
             "issue.report.list",
             "List Issue Reports",
             "Read locally prepared issue report artifacts.",
@@ -941,6 +1006,17 @@ mod tests {
         assert!(capabilities
             .iter()
             .any(|capability| capability.id == "restore.preflight.validate"));
+        for capability_id in [
+            "install.state.read",
+            "install.complete",
+            "providers.list",
+            "providers.update",
+            "policy.decisions.list",
+        ] {
+            assert!(capabilities
+                .iter()
+                .any(|capability| capability.id == capability_id));
+        }
     }
 
     #[test]
@@ -967,6 +1043,33 @@ mod tests {
         assert!(!exported
             .iter()
             .any(|capability| capability.id == "restore.execute"));
+        assert!(!exported.iter().any(|capability| matches!(
+            capability.id.as_str(),
+            "install.state.read"
+                | "install.complete"
+                | "providers.list"
+                | "providers.update"
+                | "policy.decisions.list"
+        )));
+    }
+
+    #[test]
+    fn protected_route_capability_ids_are_registered() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        seed_builtin_capabilities(&connection).unwrap();
+        let capability_ids = [
+            "install.state.read",
+            "install.complete",
+            "providers.list",
+            "providers.update",
+            "policy.decisions.list",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+        assert_capability_ids_registered(&connection, &capability_ids).unwrap();
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{ConnectInfo, Query, State};
+use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
@@ -34,6 +34,11 @@ use crate::events::{
 };
 use crate::health::{
     build_health_report, build_readiness_report, HealthCheck, HealthReport, ReadinessReport,
+};
+use crate::install::{
+    complete_local_install, list_provider_configs, read_install_state, update_provider_config,
+    CompleteInstallRequest, InstallStateResponse, ProviderConfigView, ProviderListResponse,
+    ProviderUpdateRequest,
 };
 use crate::mcp::{handle_mcp_json, McpResponse};
 use crate::policy::{
@@ -135,6 +140,10 @@ pub async fn serve(
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
         .route("/capabilities", get(capabilities_handler))
+        .route("/install/state", get(install_state_handler))
+        .route("/install/complete", post(install_complete_handler))
+        .route("/providers", get(providers_handler))
+        .route("/providers/:provider_id", put(provider_update_handler))
         .route("/logs", get(logs_handler))
         .route("/policy-decisions", get(policy_decisions_handler))
         .route("/briefs/system/latest", get(latest_system_brief_handler))
@@ -504,6 +513,90 @@ async fn capabilities_handler(
         .map_err(internal_error)
 }
 
+async fn install_state_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<InstallStateResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/install/state"),
+        Some("install.state.read"),
+    )?;
+    read_install_state(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn install_complete_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<CompleteInstallRequest>,
+) -> Result<Json<InstallStateResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/install/complete"),
+        Some("install.complete"),
+    )?;
+    let (state_response, event) =
+        complete_local_install(&state.db_path, request).map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(state_response))
+}
+
+async fn providers_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<ProviderListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/providers"),
+        Some("providers.list"),
+    )?;
+    list_provider_configs(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn provider_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(provider_id): AxumPath<String>,
+    Json(request): Json<ProviderUpdateRequest>,
+) -> Result<Json<ProviderConfigView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/providers/{provider_id}"),
+        ),
+        Some("providers.update"),
+    )?;
+    let (provider, event) = update_provider_config(&state.db_path, &provider_id, request)
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(provider))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EventReplayQuery {
@@ -850,6 +943,16 @@ fn forbidden_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
     )
 }
 
+fn invalid_request_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse::new(
+            DaemonErrorCode::InvalidRequest,
+            error.to_string(),
+        )),
+    )
+}
+
 fn record_log(db_path: &Path, entry: NewDiagnosticLogEntry) {
     let _ = record_diagnostic_log(db_path, entry);
 }
@@ -1064,6 +1167,48 @@ mod tests {
                 "SELECT COUNT(*) FROM policy_decisions
                  WHERE capability_id = 'policy.decisions.list'
                    AND resource_id = '/policy-decisions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn install_and_provider_mutations_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/install/complete"),
+            Some("install.complete"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/providers/anthropic"),
+            Some("providers.update"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('install.complete', 'providers.update')",
                 [],
                 |row| row.get(0),
             )

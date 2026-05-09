@@ -209,7 +209,14 @@ fn sanitize_payload(payload: Value) -> Value {
 
 fn is_sensitive_key(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
-    lower.contains("token") || lower.contains("secret") || lower.contains("password")
+    lower.contains("token")
+        || lower.contains("secret")
+        || lower.contains("password")
+        || lower.contains("apikey")
+        || lower.contains("api_key")
+        || lower.contains("api-key")
+        || lower.contains("vaultkey")
+        || lower.contains("vault_key")
 }
 
 fn cap_log_retention(connection: &Connection) -> Result<()> {
@@ -242,7 +249,12 @@ mod tests {
                     "warning",
                     "backup",
                     "Backup warning",
-                    json!({ "token": "secret", "count": 1 }),
+                    json!({
+                        "token": "secret",
+                        "apiKey": "secret-api-key",
+                        "vaultKey": "secret-vault-key",
+                        "count": 1
+                    }),
                 )
             },
         )
@@ -265,5 +277,7 @@ mod tests {
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].level, "warn");
         assert_eq!(logs[0].payload["token"], "[redacted]");
+        assert_eq!(logs[0].payload["apiKey"], "[redacted]");
+        assert_eq!(logs[0].payload["vaultKey"], "[redacted]");
     }
 }

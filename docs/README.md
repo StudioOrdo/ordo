@@ -11,6 +11,7 @@ material.
 4. [Architecture](architecture/README.md)
 5. [Process](process/README.md)
 6. [Decisions](decisions/README.md)
+7. [Backlog](backlog/README.md)
 
 ## Public Docs
 
@@ -20,6 +21,7 @@ material.
 | [architecture](architecture/README.md) | System boundaries, runtime direction, and technical decisions. |
 | [process](process/README.md) | How work moves through issues, pull requests, checks, review, and release evidence. |
 | [decisions](decisions/README.md) | Accepted architecture and operating decisions. |
+| [backlog](backlog/README.md) | High-level MVP specs for future features and issue-ready slices. |
 
 ## Current Reader Path
 
@@ -38,6 +40,7 @@ For future direction, read:
 4. [Ordo Core](business/ordo-core.md)
 5. [Product Roadmap](business/product-roadmap.md)
 6. [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md)
+7. [Backlog](backlog/README.md)
 
 ## Local Docs Convention
 

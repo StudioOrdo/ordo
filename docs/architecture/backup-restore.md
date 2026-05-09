@@ -52,6 +52,25 @@ mismatches, manifest checksum mismatches, artifact manifest paths outside the
 local backups boundary, and manifest-declared archive paths that escape their
 backup archive.
 
+## Local Vault Backup Boundary
+
+The local appliance vault stores provider keys and future sensitive appliance
+values encrypted in SQLite, unlocked by a `vault.key` file inside the durable
+data boundary.
+
+For the current backup model, local appliance backups include both encrypted
+vault data in the SQLite snapshot and selected data-boundary sidecar files such
+as `vault.key`. Restore preflight verifies the archived sidecar file checksums
+alongside the database and manifest checksums. This preserves restore usability
+without user-managed key recovery.
+
+This also means backup archives should be protected like the host and `.data`
+volume. The vault protects against casual database inspection and accidental
+leakage; it does not protect against someone who has full access to both a
+backup archive and the vault key material inside that archive. Future export
+modes may add redacted or passphrase-protected backup variants for stronger
+sharing boundaries.
+
 ## UI Contract
 
 The Backup And Restore page should show jobs in a table with operation, kind,

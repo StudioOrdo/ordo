@@ -1,7 +1,7 @@
 # Conversation Event Protocol
 
-Status: Draft protocol contract with backend protocol/seam types implemented
-for `conversation.gateway.v1`; `/chat/ws` transport remains deferred
+Status: `conversation.gateway.v1` protocol types and the protected `/chat/ws`
+transport are implemented for the first durable gateway slice.
 
 The conversation protocol should evolve Ordo from a simple outbound WebSocket
 projection into a bidirectional, resumable conversation gateway while preserving
@@ -9,15 +9,14 @@ the existing durable event rule: SQLite is truth, WebSocket is projection.
 
 ## Current Protocol Baseline
 
-The current daemon WebSocket path sends one `websocket.connected` system event,
+The daemon keeps two realtime paths. The current `/ws` path sends one
+`websocket.connected` system event,
 then forwards events received from a Tokio broadcast channel. The browser status
-component parses received JSON and displays the latest `eventType`. The current
-client does not send commands back to the daemon.
+component parses received JSON and displays the latest `eventType`.
 
-The next protocol should either version the existing `/ws` route or add a new
-conversation-specific route such as `/chat/ws`. A separate route is cleaner for
-compatibility because system-shell realtime consumers can keep the simple stream
-while chat clients use the richer protocol.
+Conversation clients use `/chat/ws`, a separate protected local daemon route.
+This keeps system-shell realtime consumers on the simple stream while chat
+clients use the richer bidirectional protocol.
 
 ## Envelope
 
@@ -88,7 +87,7 @@ Initial command catalog:
 | `conversation.replay_after_cursor` | replay events | `conversation.read` |
 | `message.submit` | `message.created` | `conversation.message.create` |
 | `message.edit` | `message.edited` | `conversation.message.edit` |
-| `message.delete` | `message.deleted` | `conversation.message.delete` |
+| `message.delete` | `message.tombstoned` | `conversation.message.delete` |
 | `message.undo` | `message.undo.cancelled` | `conversation.message.delete` |
 | `message.react` | `message.reaction.added` or `message.reaction.removed` | `conversation.reaction.write` |
 | `message.mark_read` | `message.read` and unread rollup events | `conversation.receipt.write` |
@@ -109,9 +108,11 @@ Initial command catalog:
 
 All commands should include `clientId`. Mutating commands should be idempotent
 for a bounded retry window using `clientId`, actor id, and conversation id.
-The first backend seam defines protocol envelope and capability mappings in
-Rust and TypeScript, while command execution and the `/chat/ws` read loop remain
-deferred.
+The first gateway implementation accepts `identify`, `subscribe`,
+`unsubscribe`, `resume`/`replay`, `heartbeat`, `message.submit`,
+`message.edit`, `message.delete`, `message.undo`, `typing.start`, and
+`typing.stop`. Unsupported commands return structured `command.rejected`
+errors instead of pretending success.
 
 ## Durable Event Catalog
 

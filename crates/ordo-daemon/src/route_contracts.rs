@@ -57,6 +57,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "policy.decisions.list",
     ),
     public_local(HttpMethod::Get, "/ws", "/ws"),
+    protected(
+        HttpMethod::Get,
+        "/chat/ws",
+        "/chat/ws",
+        PolicyAction::Read,
+        "conversation.read",
+    ),
     local_mcp(HttpMethod::Post, "/mcp", "/mcp"),
     protected(
         HttpMethod::Get,

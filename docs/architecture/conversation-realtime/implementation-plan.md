@@ -1,6 +1,7 @@
 # Conversation Realtime Implementation Plan
 
-Status: Draft staged delivery plan
+Status: Staged delivery plan with protocol, schema, core service, and first
+bidirectional gateway slice implemented.
 
 This plan keeps the first implementation small enough to validate while
 preserving the architecture needed for premium realtime chat, brief-first
@@ -70,6 +71,13 @@ Exit criteria:
 - Existing `/events` replay can show conversation events where projected.
 
 ## Phase 2: Bidirectional Gateway
+
+Implementation status: implemented for `/chat/ws` as a protected local daemon
+route. The first slice supports hello, identify, subscribe/unsubscribe,
+heartbeat, resume/replay, message submit/edit/delete/undo, structured rejection
+for unsupported commands, per-conversation local fanout, bounded broadcast
+channels, message command rate limiting, and ephemeral typing start/stop events.
+Read/unread receipt rollups remain Phase 3.
 
 Deliverables:
 

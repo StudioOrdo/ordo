@@ -348,9 +348,10 @@ Delivery order:
 4. Implement first deterministic backend workflow evals. The initial slice is
    implemented with `relationship_conversation_message` and
    `privacy_gateway_roundtrip`, both provider-free and packet-backed.
-5. Implement role lifecycle workflow evals for anonymous, client/member,
-   affiliate, staff, manager/admin, owner/system admin, Ordo agent, and
-   LLM/tool/provider boundaries.
+5. Implement role lifecycle workflow evals. The initial slice is implemented
+   with `role_lifecycle_anonymous_to_client`,
+   `role_lifecycle_staff_manager_owner_boundaries`, and
+   `role_lifecycle_agent_silence_boundary`, all deterministic and packet-backed.
 6. Implement Customer Feedback and Review workflow evals.
 7. Implement Home/About and Offer/Ask product surface workflow evals.
 8. Add replay-provider fixture support.

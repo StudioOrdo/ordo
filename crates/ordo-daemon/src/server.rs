@@ -43,6 +43,13 @@ use crate::connections::{
     ConnectionGrantCreateRequest, ConnectionGrantListResponse, ConnectionGrantRevokeRequest,
     ConnectionGrantView, ConnectionListResponse, ConnectionView, ConnectionWriteRequest,
 };
+use crate::corpus::{
+    create_corpus_item, create_corpus_source, list_corpus_items, list_corpus_sources,
+    read_corpus_item, read_corpus_source, retrieve_corpus, update_corpus_item,
+    update_corpus_source, CorpusItemListResponse, CorpusItemView, CorpusItemWriteRequest,
+    CorpusRetrievalQuery, CorpusRetrievalResponse, CorpusSourceListResponse, CorpusSourceView,
+    CorpusSourceWriteRequest, CorpusViewer,
+};
 use crate::diagnostics::{
     diagnostic_log, list_diagnostic_logs, record_diagnostic_log, DiagnosticLogQuery,
     DiagnosticLogsResponse, NewDiagnosticLogEntry,
@@ -275,6 +282,21 @@ pub async fn serve(
         .route("/backups/create", post(create_backup_handler))
         .route("/restore/validate", post(validate_restore_handler))
         .route("/events", get(events_handler))
+        .route("/corpus/sources", get(corpus_sources_handler))
+        .route("/corpus/sources", post(corpus_source_create_handler))
+        .route(
+            "/corpus/sources/:source_id",
+            get(corpus_source_read_handler),
+        )
+        .route(
+            "/corpus/sources/:source_id",
+            put(corpus_source_update_handler),
+        )
+        .route("/corpus/items", get(corpus_items_handler))
+        .route("/corpus/items", post(corpus_item_create_handler))
+        .route("/corpus/items/:item_id", get(corpus_item_read_handler))
+        .route("/corpus/items/:item_id", put(corpus_item_update_handler))
+        .route("/corpus/retrieve", post(corpus_retrieve_handler))
         .route("/reports/issues", get(list_issue_reports_handler))
         .route("/reports/issues/:report_id", get(read_issue_report_handler))
         .route(
@@ -1612,6 +1634,214 @@ async fn events_handler(
         .map_err(internal_error)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CorpusReadQuery {
+    viewer: Option<CorpusViewer>,
+    source_id: Option<String>,
+}
+
+async fn corpus_sources_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<CorpusReadQuery>,
+) -> Result<Json<CorpusSourceListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/corpus/sources"),
+        Some("corpus.sources.list"),
+    )?;
+    list_corpus_sources(&state.db_path, query.viewer)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn corpus_source_read_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(source_id): AxumPath<String>,
+    Query(query): Query<CorpusReadQuery>,
+) -> Result<Json<CorpusSourceView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/corpus/sources/{source_id}"),
+        ),
+        Some("corpus.sources.list"),
+    )?;
+    read_corpus_source(&state.db_path, &source_id, query.viewer)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn corpus_source_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<CorpusSourceWriteRequest>,
+) -> Result<Json<CorpusSourceView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/corpus/sources"),
+        Some("corpus.sources.write"),
+    )?;
+    let (source, event) = create_corpus_source(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(source))
+}
+
+async fn corpus_source_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(source_id): AxumPath<String>,
+    Json(request): Json<CorpusSourceWriteRequest>,
+) -> Result<Json<CorpusSourceView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/corpus/sources/{source_id}"),
+        ),
+        Some("corpus.sources.write"),
+    )?;
+    let (source, event) =
+        update_corpus_source(&state.db_path, &source_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(source))
+}
+
+async fn corpus_items_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<CorpusReadQuery>,
+) -> Result<Json<CorpusItemListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/corpus/items"),
+        Some("corpus.items.list"),
+    )?;
+    list_corpus_items(&state.db_path, query.source_id.as_deref(), query.viewer)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn corpus_item_read_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+    Query(query): Query<CorpusReadQuery>,
+) -> Result<Json<CorpusItemView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/corpus/items/{item_id}"),
+        ),
+        Some("corpus.items.list"),
+    )?;
+    read_corpus_item(&state.db_path, &item_id, query.viewer)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn corpus_item_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<CorpusItemWriteRequest>,
+) -> Result<Json<CorpusItemView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/corpus/items"),
+        Some("corpus.items.write"),
+    )?;
+    let (item, event) = create_corpus_item(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(item))
+}
+
+async fn corpus_item_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+    Json(request): Json<CorpusItemWriteRequest>,
+) -> Result<Json<CorpusItemView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/corpus/items/{item_id}"),
+        ),
+        Some("corpus.items.write"),
+    )?;
+    let (item, event) = update_corpus_item(&state.db_path, &item_id, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(item))
+}
+
+async fn corpus_retrieve_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<CorpusRetrievalQuery>,
+) -> Result<Json<CorpusRetrievalResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Read,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/corpus/retrieve"),
+        Some("corpus.retrieve"),
+    )?;
+    retrieve_corpus(&state.db_path, request)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
 async fn list_issue_reports_handler(
     State(state): State<AppState>,
 ) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -2629,5 +2859,86 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 8);
+    }
+
+    #[test]
+    fn corpus_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/corpus/items"),
+            Some("corpus.items.write"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            (
+                "/corpus/sources",
+                PolicyAction::Inspect,
+                "corpus.sources.list",
+            ),
+            (
+                "/corpus/sources/source_1",
+                PolicyAction::Inspect,
+                "corpus.sources.list",
+            ),
+            (
+                "/corpus/sources",
+                PolicyAction::Create,
+                "corpus.sources.write",
+            ),
+            (
+                "/corpus/sources/source_1",
+                PolicyAction::Update,
+                "corpus.sources.write",
+            ),
+            ("/corpus/items", PolicyAction::Inspect, "corpus.items.list"),
+            (
+                "/corpus/items/item_1",
+                PolicyAction::Inspect,
+                "corpus.items.list",
+            ),
+            ("/corpus/items", PolicyAction::Create, "corpus.items.write"),
+            (
+                "/corpus/items/item_1",
+                PolicyAction::Update,
+                "corpus.items.write",
+            ),
+            ("/corpus/retrieve", PolicyAction::Read, "corpus.retrieve"),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN (
+                    'corpus.sources.list', 'corpus.sources.write',
+                    'corpus.items.list', 'corpus.items.write', 'corpus.retrieve'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 10);
     }
 }

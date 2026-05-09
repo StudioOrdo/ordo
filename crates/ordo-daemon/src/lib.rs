@@ -4,6 +4,7 @@ pub mod briefs;
 pub mod business;
 pub mod capabilities;
 pub mod connections;
+pub mod corpus;
 pub mod diagnostics;
 pub mod entry_points;
 pub mod errors;

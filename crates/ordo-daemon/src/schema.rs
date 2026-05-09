@@ -52,13 +52,14 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "handoff_receipts",
     "corpus_sources",
     "corpus_items",
+    "corpus_items_fts",
     "schedules",
     "scheduled_job_runs",
     "brief_artifacts",
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 15;
+pub const CURRENT_SCHEMA_VERSION: i64 = 16;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -143,6 +144,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 15,
         name: "add_report_exports_and_support_packets",
         apply: add_report_exports_and_support_packets,
+    },
+    SchemaMigration {
+        version: 16,
+        name: "add_corpus_fts_retrieval_index",
+        apply: add_corpus_fts_retrieval_index,
     },
 ];
 
@@ -1251,6 +1257,21 @@ fn add_report_exports_and_support_packets(connection: &Connection) -> Result<()>
     Ok(())
 }
 
+fn add_corpus_fts_retrieval_index(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE VIRTUAL TABLE IF NOT EXISTS corpus_items_fts USING fts5(
+            item_id UNINDEXED,
+            title,
+            body_text,
+            tokenize = 'unicode61'
+        );
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1354,9 +1375,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 15);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 16);
     }
 
     #[test]
@@ -1435,6 +1456,7 @@ mod tests {
         assert!(table_exists(&connection, "business_facts"));
         assert!(table_exists(&connection, "corpus_sources"));
         assert!(table_exists(&connection, "corpus_items"));
+        assert!(table_exists(&connection, "corpus_items_fts"));
         assert!(table_exists(&connection, "tracked_entry_points"));
         assert!(table_exists(&connection, "visitor_sessions"));
         assert!(table_exists(&connection, "visitor_session_events"));
@@ -1597,6 +1619,16 @@ mod tests {
 
         assert_eq!(metadata, "{\"embedding\":\"not_present\"}");
         assert_eq!(classification, "{\"visibility\":\"owner_system\"}");
+    }
+
+    #[test]
+    fn corpus_fts_retrieval_index_is_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "corpus_items_fts"));
+        assert!(column_exists(&connection, "corpus_items_fts", "item_id"));
+        assert!(column_exists(&connection, "corpus_items_fts", "body_text"));
     }
 
     #[test]

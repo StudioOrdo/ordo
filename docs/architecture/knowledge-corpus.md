@@ -1,19 +1,20 @@
-# Knowledge Corpus Skeleton
+# Knowledge Corpus And Governed Retrieval
 
-Status: Implemented retrieval safety foundation
+Status: Implemented governed retrieval backend foundation
 
-Ordo now has a durable SQLite skeleton for future knowledge and RAG work. This
-is not shipped retrieval. It is the access-aware substrate future retrieval must
-use.
+Ordo has a durable SQLite corpus and a governed local retrieval path for future
+knowledge and RAG work. This is not answer generation. It is the access-aware
+retrieval substrate future drafts must use before any provider call is allowed.
 
 ## Current Shape
 
 The daemon schema stores:
 
 - corpus sources;
-- corpus items, including future chunk-shaped records.
+- corpus items, including chunk-shaped records;
+- a local SQLite FTS index over corpus item title and body text.
 
-Each record can carry:
+Each source and item can carry:
 
 - stable ID;
 - source identity;
@@ -22,32 +23,62 @@ Each record can carry:
 - provenance metadata;
 - status;
 - timestamps;
+- item content hash evidence;
 - general metadata for future retrieval plumbing.
 
 Corpus sources and items are ordinary SQLite records. SQLite remains the source
 of truth.
 
+The daemon exposes protected local routes for:
+
+- `GET /corpus/sources`
+- `POST /corpus/sources`
+- `GET /corpus/sources/:source_id`
+- `PUT /corpus/sources/:source_id`
+- `GET /corpus/items`
+- `POST /corpus/items`
+- `GET /corpus/items/:item_id`
+- `PUT /corpus/items/:item_id`
+- `POST /corpus/retrieve`
+
+Corpus mutations maintain source/item records and the local FTS index. They do
+not call providers, create embeddings, or send data outside the appliance.
+
+## Retrieval Contract
+
+Retrieval accepts a local query, viewer context, optional actor id, and bounded
+limit. It searches SQLite FTS, then filters every candidate before returning it.
+
+Returned results include:
+
+- corpus source and item records;
+- FTS rank;
+- snippet;
+- source and item provenance;
+- item content hash;
+- classification metadata;
+- explicit `generatedAnswer: false` evidence.
+
+Responses include `evidence_found` or `missing_evidence`, plus limitations that
+name the local-only FTS boundary.
+
 ## Access Boundary
 
-Corpus records have resource identity before retrieval exists. That lets policy
-tests prove future retrieval cannot ignore access boundaries.
-
-The current foundation supports the same access shapes used by the local RBAC
+The retrieval foundation supports the same access shapes used by the local RBAC
 spine:
 
 - public resources;
 - owner/system resources;
 - per-actor private resources.
 
-Resource grants remain the durable access path. Future retrieval should first
-resolve corpus records through policy-aware resource checks, then retrieve or
-rank only records the actor is allowed to read.
+Resource grants remain the durable access path. Retrieval only returns approved
+items from approved sources and checks visibility plus resource access before a
+candidate becomes evidence.
 
 ## What This Enables
 
 This slice prepares for future work such as:
 
-- approved knowledge corpora;
 - source-grounded retrieval;
 - content packs;
 - actor-private memory;
@@ -58,6 +89,7 @@ This slice prepares for future work such as:
 - No embeddings.
 - No vector store or vector search.
 - No RAG answer generation.
+- No provider or model calls.
 - No chat retrieval UI.
 - No public customer, student, or client portal.
 - No external integrations.

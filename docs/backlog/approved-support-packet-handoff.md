@@ -1,6 +1,6 @@
 # Approved Support Packet Handoff MVP
 
-Status: backend foundation ready for PR; egress transport not built
+Status: backend foundation merged; egress transport not built
 
 ## Why It Matters
 

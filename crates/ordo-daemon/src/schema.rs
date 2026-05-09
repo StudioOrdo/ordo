@@ -50,6 +50,11 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "handoff_inbox_items",
     "handoff_events",
     "handoff_receipts",
+    "conversations",
+    "conversation_segments",
+    "conversation_handoffs",
+    "conversation_modes",
+    "conversation_events",
     "corpus_sources",
     "corpus_items",
     "corpus_items_fts",
@@ -63,7 +68,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 18;
+pub const CURRENT_SCHEMA_VERSION: i64 = 19;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -163,6 +168,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 18,
         name: "add_mcp_pack_hardening",
         apply: add_mcp_pack_hardening,
+    },
+    SchemaMigration {
+        version: 19,
+        name: "add_conversation_product_foundation",
+        apply: add_conversation_product_foundation,
     },
 ];
 
@@ -1379,6 +1389,150 @@ fn add_mcp_pack_hardening(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_conversation_product_foundation(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS conversations (
+            id TEXT PRIMARY KEY,
+            surface TEXT NOT NULL,
+            subject_kind TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            connection_id TEXT,
+            visitor_session_id TEXT,
+            status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            privacy_scope TEXT NOT NULL,
+            current_segment_id TEXT,
+            last_meaningful_change TEXT NOT NULL DEFAULT '',
+            unread_count INTEGER NOT NULL DEFAULT 0,
+            action_count INTEGER NOT NULL DEFAULT 0,
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            closed_at TEXT,
+            archived_at TEXT,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE SET NULL,
+            FOREIGN KEY (visitor_session_id) REFERENCES visitor_sessions(id) ON DELETE SET NULL,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_active_subject
+            ON conversations(surface, subject_kind, subject_id)
+            WHERE archived_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_conversations_connection ON conversations(connection_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversations_visitor_session ON conversations(visitor_session_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversations_status_updated ON conversations(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS conversation_segments (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            segment_kind TEXT NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL,
+            candidate_state TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_by_job_id TEXT,
+            source_kind TEXT NOT NULL DEFAULT '',
+            source_id TEXT NOT NULL DEFAULT '',
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by_job_id) REFERENCES jobs(id) ON DELETE SET NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_segments_idempotency
+            ON conversation_segments(conversation_id, segment_kind, source_kind, source_id, created_by_job_id)
+            WHERE source_kind <> '' AND source_id <> '' AND created_by_job_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_conversation_segments_conversation ON conversation_segments(conversation_id, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_segments_kind_status ON conversation_segments(segment_kind, status, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_segments_candidate ON conversation_segments(candidate_state, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS conversation_handoffs (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            connection_id TEXT,
+            requested_by_actor_id TEXT,
+            assigned_to_actor_id TEXT,
+            reason TEXT NOT NULL,
+            urgency TEXT NOT NULL,
+            required_capability_id TEXT NOT NULL,
+            evidence_summary TEXT NOT NULL,
+            allowed_context_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL,
+            policy_decision_id TEXT,
+            receipt_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            closed_at TEXT,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE SET NULL,
+            FOREIGN KEY (requested_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL,
+            FOREIGN KEY (assigned_to_actor_id) REFERENCES actors(id) ON DELETE SET NULL,
+            FOREIGN KEY (required_capability_id) REFERENCES capabilities(id) ON DELETE RESTRICT,
+            FOREIGN KEY (policy_decision_id) REFERENCES policy_decisions(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_handoffs_assigned
+            ON conversation_handoffs(assigned_to_actor_id, status, urgency, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_handoffs_conversation
+            ON conversation_handoffs(conversation_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_handoffs_connection
+            ON conversation_handoffs(connection_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS conversation_modes (
+            conversation_id TEXT PRIMARY KEY,
+            mode TEXT NOT NULL,
+            led_by_actor_id TEXT,
+            delegated_to_agent INTEGER NOT NULL DEFAULT 0,
+            delegation_scope_json TEXT NOT NULL DEFAULT '[]',
+            idle_after TEXT,
+            private_reminder_sent_at TEXT,
+            last_public_agent_message_at TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (led_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_modes_mode ON conversation_modes(mode, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS conversation_events (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            handoff_id TEXT,
+            sequence INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            policy_decision_id TEXT,
+            realtime_cursor INTEGER,
+            occurred_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL,
+            FOREIGN KEY (handoff_id) REFERENCES conversation_handoffs(id) ON DELETE SET NULL,
+            FOREIGN KEY (policy_decision_id) REFERENCES policy_decisions(id) ON DELETE SET NULL,
+            UNIQUE(conversation_id, sequence)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_events_conversation
+            ON conversation_events(conversation_id, sequence);
+        CREATE INDEX IF NOT EXISTS idx_conversation_events_handoff
+            ON conversation_events(handoff_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_events_realtime
+            ON conversation_events(realtime_cursor);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1482,9 +1636,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 18);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 19);
     }
 
     #[test]
@@ -1988,6 +2142,54 @@ mod tests {
             &connection,
             "handoff_receipts",
             "receipt_kind"
+        ));
+    }
+
+    #[test]
+    fn conversation_product_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "conversations"));
+        assert!(column_exists(&connection, "conversations", "subject_kind"));
+        assert!(column_exists(
+            &connection,
+            "conversations",
+            "last_meaningful_change"
+        ));
+        assert!(table_exists(&connection, "conversation_segments"));
+        assert!(column_exists(
+            &connection,
+            "conversation_segments",
+            "candidate_state"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_segments",
+            "provenance_json"
+        ));
+        assert!(table_exists(&connection, "conversation_handoffs"));
+        assert!(column_exists(
+            &connection,
+            "conversation_handoffs",
+            "allowed_context_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_handoffs",
+            "policy_decision_id"
+        ));
+        assert!(table_exists(&connection, "conversation_modes"));
+        assert!(column_exists(
+            &connection,
+            "conversation_modes",
+            "private_reminder_sent_at"
+        ));
+        assert!(table_exists(&connection, "conversation_events"));
+        assert!(column_exists(
+            &connection,
+            "conversation_events",
+            "realtime_cursor"
         ));
     }
 

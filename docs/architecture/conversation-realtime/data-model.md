@@ -1049,6 +1049,43 @@ Required read models:
   and tool approval waiting;
 - token usage breakdown by conversation, provider, capability, model, and prompt
   slot.
+- Customer Feedback brief/read models with feedback rows, tags, review
+  candidate state, linked source objects, and recommended actions;
+- Home/About billboard read models with source object links, evidence refs,
+  owner-governed state, and reduced-motion-safe presentation metadata;
+- Offer/Ask intent read models that preserve both human-readable presentation
+  and future machine-readable matching/referral/proposal metadata.
+
+## Planned Product Intelligence Tables
+
+The 0.1.3 schema intentionally stopped before feedback/review/home billboard
+storage. 0.1.4 evals should pressure-test the product contract before adding
+tables. When implementation reaches these surfaces, prefer small evidence-backed
+tables rather than overloading generic analysis candidate rows.
+
+Potential table families:
+
+- `customer_feedback`: private business intelligence captured from
+  conversation, offer/ask, artifact, referral, outcome, form, or staff input
+  evidence.
+- `feedback_tags`: candidate/confirmed/rejected/superseded tags for sentiment,
+  business signal, surface, and proof/persuasion use.
+- `feedback_object_links`: evidence-backed links from feedback to conversation,
+  segment, message, connection, offer, ask, artifact, review, referral,
+  outcome, and brief objects.
+- `review_requests`, `reviews`, and `review_publications`: consent and
+  publication lifecycle so no feedback becomes public proof without approval.
+- `home_billboards`: Home/About narrative brief sections with linked object,
+  evidence refs, persuasion role, brand archetype role, state, and publication
+  metadata.
+- `brand_profile`: owner-governed brand archetype and public narrative guidance,
+  never a source of unsupported claims.
+- `offer_intents` and `ask_intents` or equivalent fields on existing offer/ask
+  tables when machine-readable business intent needs structure.
+
+Candidate records should cite durable evidence and provenance, default to
+`proposed` where generated, and avoid raw private fixture values in public or
+client-facing projections.
 
 ## Migration Order
 
@@ -1066,6 +1103,9 @@ Recommended migration stages:
 9. knowledge graph node and edge candidates;
 10. offer/ask/referral/outcome attribution tables;
 11. normalized artifacts, artifact links, and deliverable projections.
+12. customer feedback, feedback tags, review consent/publication, home
+    billboards, and brand profile tables after eval evidence proves the smallest
+    useful shape.
 
 Each stage should include schema tests, migration tests from an older database,
 and route tests for the domain behavior introduced in that stage.

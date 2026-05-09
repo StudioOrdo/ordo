@@ -53,7 +53,7 @@ Studio Ordo | Chat | Home | Offers | Asks | Latest | Account
 The staff rail is role-gated business movement:
 
 ```text
-Today | Conversations | Connections | Offers | Asks | Affiliates | Artifacts | Jobs | Reports
+Today | Conversations | Connections | Offers | Asks | Customer Feedback | Affiliates | Artifacts | Jobs | Reports
 ```
 
 Owner/admin adds appliance operation:
@@ -93,6 +93,58 @@ Primary views:
 Business staff default to `My Handoffs`. Manager/admin roles may default to
 `Team Queue`. Owners may default to Today Brief or Team Queue. `All
 Conversations` is available only to roles with the right scope.
+
+### Affiliate Chat And Account Tools
+
+Affiliates use the client/member conversation surface, not staff queues. Their
+account tools may include Affiliate dashboard, Referral links, QR card,
+Referred leads, Outcome/commission status, Approved materials, and Settings.
+Affiliate chat cards may show referral captured, lead qualified, ask matched,
+offer accepted by referred connection, and outcome recorded when those facts are
+authorized and evidence-backed.
+
+### Customer Feedback
+
+Customer Feedback is a business staff area, not an admin appliance screen. It
+uses the same area pattern:
+
+```text
+Customer Feedback -> feedback evidence list -> feedback brief/detail
+```
+
+The default detail is a narrative Feedback Brief: what customers are saying,
+what is working, what needs attention, review candidates, recommended actions,
+and evidence. Feedback rows should answer who gave the feedback, type/signal,
+whether it needs action, whether it can become a review, and the source object.
+
+Selected feedback detail should show meaning, suggested action, source,
+connection, conversation episode/segment, related offer, ask, artifact, outcome,
+status, and actions such as star, tag, request review, attach, create job, open
+conversation, approve/reject review candidate.
+
+### Reviews And Public Proof
+
+Feedback is private business intelligence until consent turns it into a review.
+A testimonial is a curated/published review used in Home/About, Offers, or
+Latest. Review request and publication UI must make consent, display-name
+preference, approval, publication, featured, and retired states visible.
+
+### Home/About Narrative Brief
+
+Home/About is the public narrative brief of the business. It should use
+scrollytelling billboards only when motion clarifies state and reduced-motion
+fallbacks preserve the same information. Billboards may summarize Offers, Asks,
+Latest, Artifacts, Customer Feedback, Reviews, Outcomes, and Chat, but every
+claim must link to evidence or be clearly aspirational. Owner-governed states
+are pinned, dynamic, draft, published, and retired.
+
+### Offers And Asks As Intent Objects
+
+Offer and Ask surfaces should remain human-readable while preserving enough
+structure for future machine-readable business intent: what is provided or
+wanted, who qualifies, required inputs, produced artifact/deliverable, terms,
+approval needs, how to start/respond, and outcome/referral links. Do not expose
+external A2A controls until those contracts exist.
 
 ### Conversation List And Queue Rows
 

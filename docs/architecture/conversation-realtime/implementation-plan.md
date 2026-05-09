@@ -327,3 +327,36 @@ Deferred release-hardening work:
 - heartbeat timeout eviction for abandoned browser sockets;
 - distributed fanout or cross-process gateway coordination;
 - provider-backed continuous analysis and measured production load envelopes.
+
+## Phase 10: Product Workflow Evals And Real LLM Readiness
+
+Status: accepted 0.1.4 milestone. This is an eval/manufacturing arc, not a
+feature-expansion sprint. The purpose is to prove the product shape through
+deterministic workflow evidence before relying on live providers or owner usage.
+
+Delivery order:
+
+1. Align the product workflow eval canon with `product_ux2`.
+2. Add deterministic backend eval harness foundation.
+3. Add transcript artifact packets and scorecards.
+4. Implement role lifecycle workflow evals for anonymous, client/member,
+   affiliate, staff, manager/admin, owner/system admin, Ordo agent, and
+   LLM/tool/provider boundaries.
+5. Implement Customer Feedback and Review workflow evals.
+6. Implement Home/About and Offer/Ask product surface workflow evals.
+7. Add replay-provider fixture support.
+8. Add real provider adapter behind the Rust-owned LLM gateway.
+9. Add opt-in live eval runner with network and spend guards.
+10. Add artifact review automation that classifies findings and drives
+    follow-on issues.
+
+Phase boundaries:
+
+- Deterministic evals run by default and never need provider keys or network.
+- Replay fixtures run in CI only after redacted fixtures are approved.
+- Live provider evals are opt-in and require explicit network and spend guards.
+- Generated findings become GitHub issues only after they have transcript,
+  ledger, scorecard, and smallest-responsible-subsystem evidence.
+- Product additions such as Customer Feedback, Reviews, Home/About billboards,
+  and Offer/Ask intent metadata should be implemented only after eval evidence
+  clarifies the smallest useful schema and UI contract.

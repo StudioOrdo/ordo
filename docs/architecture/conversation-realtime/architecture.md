@@ -31,6 +31,12 @@ The conversation layer should support:
 - continuous conversation analysis for episodes, tags, summaries, briefs,
   handoff decisions, knowledge graph candidates, ethical recommendation
   candidates, and action detection;
+- Customer Feedback and Review as evidence-backed business intelligence that
+  can become public proof only through consent and approval;
+- Home/About as a public narrative brief composed from offers, asks, latest
+  activity, artifacts, reviews, outcomes, and chat calls to action;
+- Offers and Asks as both human-readable pages and future machine-readable
+  business intent objects;
 - UI behavior that feels instant while reconciling to daemon truth.
 
 ## Current System Anchors
@@ -58,6 +64,29 @@ The existing implementation already has several reusable foundations.
 | SQLite | Source of truth for conversations, participants, messages, receipts, read state, analysis outputs, token ledger, privacy mappings, and durable events. |
 | WebSocket | Live projection and bidirectional command transport. It does not replace SQLite. |
 | External LLM providers | Only receive daemon-mediated, policy-approved, privacy-transformed prompts. They never receive direct browser traffic. |
+
+## Product Intelligence Surfaces
+
+Ordo's product shape is broader than chat. Conversation is the active surface,
+but business intelligence comes from the links between conversations,
+relationships, offers, asks, artifacts, feedback, reviews, referrals, outcomes,
+briefs, and jobs.
+
+Customer Feedback should be modeled as private business intelligence first. It
+can cite conversation messages, segments, offers, asks, artifacts, referrals,
+and outcomes. Reviews are consented/published feedback; testimonials are
+curated public proof. Feedback-derived tags and graph links remain candidates
+until confirmed.
+
+Home/About should be a public narrative brief made of billboards. Each
+billboard needs linked evidence and a detail target. Generated billboard drafts
+must be owner-governed through pinned/dynamic/draft/published/retired states so
+the public page does not shift unpredictably.
+
+Offers and Asks should remain pages people can read and intent objects future
+agents can inspect. External A2A is out of scope for the current milestone, but
+the data and eval language should not reduce offers/asks to static marketing
+copy.
 
 ## Control Point
 
@@ -163,7 +192,7 @@ appliance operation.
 | Surface | Intended audience | Canonical shape |
 | --- | --- | --- |
 | Top rail | Public users, clients, members, affiliates, staff, owners | `Studio Ordo`, Chat, Home, Offers, Asks, Latest, Account. |
-| Business staff rail | Staff and owner roles | Today, Conversations, Connections, Offers, Asks, Affiliates, Artifacts, Jobs, Reports. |
+| Business staff rail | Staff and owner roles | Today, Conversations, Connections, Offers, Asks, Customer Feedback, Affiliates, Artifacts, Jobs, Reports. |
 | Admin/system rail | Owner/admin roles | System, Knowledge, Events, Logs, Backup, Settings. |
 
 Ordinary staff should not see health, logs, backup, readiness, events, or other

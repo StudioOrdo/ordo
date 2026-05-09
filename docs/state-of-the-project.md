@@ -258,10 +258,11 @@ work.
   describes the implemented 0.1.3 conversation realtime spine, including the
   product doctrine that keeps the work from becoming a generic CRM, support
   inbox, or dashboard.
-- [Real LLM E2E Evals](architecture/conversation-realtime/real-llm-e2e-evals.md)
-  defines the next validation phase: deterministic backend evals, transcript
-  artifact packets, replay fixtures, opt-in live-provider evals, and provider
-  adapter sequencing.
+- [Product Workflow Evals And Real LLM Readiness](architecture/conversation-realtime/real-llm-e2e-evals.md)
+  defines the next validation phase: deterministic product workflow evals,
+  transcript artifact packets, role lifecycle coverage, Customer Feedback and
+  Review workflow pressure tests, replay fixtures, opt-in live-provider evals,
+  and provider adapter sequencing.
 - [Ordo Core](business/ordo-core.md) describes the durable product doctrine and
   how future MCP tools and packs should customize the work without bypassing the
   trust boundary.

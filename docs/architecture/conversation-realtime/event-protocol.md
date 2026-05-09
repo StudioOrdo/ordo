@@ -315,6 +315,40 @@ artifact ids, kind, title, and evidence refs for system surfaces. Deliverable
 events carry client-safe deliverable ids, artifact ids, label, and status
 without exposing internal provenance, storage, job, or policy details.
 
+Planned product intelligence events for 0.1.4+ eval pressure:
+
+- `feedback.item.created`
+- `feedback.item.tagged`
+- `feedback.item.untagged`
+- `feedback.item.starred`
+- `feedback.item.unstarred`
+- `feedback.item.linked`
+- `feedback.item.review_candidate.marked`
+- `feedback.item.review_candidate.dismissed`
+- `feedback.brief.requested`
+- `feedback.brief.generated`
+- `review.requested`
+- `review.received`
+- `review.consent.confirmed`
+- `review.approved`
+- `review.published`
+- `review.featured`
+- `review.retired`
+- `home.about.refresh.requested`
+- `home.about.billboard.generated`
+- `home.about.billboard.pinned`
+- `home.about.billboard.published`
+- `home.about.billboard.retired`
+- `conversation.mode.changed`
+- `conversation.agent.delegated`
+- `conversation.agent.delegation.revoked`
+
+These are planned event contracts, not current route claims. They should follow
+the existing persistence rule: validate, mutate domain state, insert ordered
+domain/conversation event, mirror to global realtime only when relevant, commit,
+then broadcast. Feedback/review/Home events must cite evidence refs and must not
+publish private feedback without consent and approval.
+
 ## Ephemeral Event Catalog
 
 Ephemeral events are routed through in-memory conversation rooms. They may be

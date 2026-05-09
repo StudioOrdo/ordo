@@ -66,6 +66,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "llm_invocations",
     "llm_prompt_slot_usage",
     "llm_token_ledger_entries",
+    "conversation_analysis_jobs",
+    "conversation_analysis_candidates",
+    "conversation_brief_candidates",
+    "conversation_memory_candidates",
     "corpus_sources",
     "corpus_items",
     "corpus_items_fts",
@@ -79,7 +83,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 21;
+pub const CURRENT_SCHEMA_VERSION: i64 = 22;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -194,6 +198,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 21,
         name: "add_llm_token_ledger_schema",
         apply: add_llm_token_ledger_schema,
+    },
+    SchemaMigration {
+        version: 22,
+        name: "add_conversation_analysis_foundation",
+        apply: add_conversation_analysis_foundation,
     },
 ];
 
@@ -1835,6 +1844,125 @@ fn add_llm_token_ledger_schema(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_conversation_analysis_foundation(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS conversation_analysis_jobs (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            analysis_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source_message_id TEXT,
+            source_event_cursor_start INTEGER,
+            source_event_cursor_end INTEGER,
+            input_refs_json TEXT NOT NULL DEFAULT '[]',
+            output_json TEXT NOT NULL DEFAULT '{}',
+            policy_decision_id TEXT,
+            llm_run_id TEXT,
+            error_message_hash TEXT,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL,
+            FOREIGN KEY (source_message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL,
+            FOREIGN KEY (policy_decision_id) REFERENCES policy_decisions(id) ON DELETE SET NULL,
+            UNIQUE(conversation_id, analysis_kind, source_message_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_analysis_jobs_conversation
+            ON conversation_analysis_jobs(conversation_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_analysis_jobs_kind_status
+            ON conversation_analysis_jobs(analysis_kind, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_analysis_jobs_source_cursor
+            ON conversation_analysis_jobs(conversation_id, source_event_cursor_end);
+
+        CREATE TABLE IF NOT EXISTS conversation_analysis_candidates (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            candidate_kind TEXT NOT NULL,
+            candidate_state TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            prompt_slot_ids_json TEXT NOT NULL DEFAULT '[]',
+            llm_run_id TEXT,
+            content_hash TEXT NOT NULL,
+            summary_text TEXT NOT NULL,
+            body_json TEXT NOT NULL DEFAULT '{}',
+            visibility TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (job_id) REFERENCES conversation_analysis_jobs(id) ON DELETE CASCADE,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_analysis_candidates_conversation
+            ON conversation_analysis_candidates(conversation_id, candidate_kind, candidate_state, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_analysis_candidates_job
+            ON conversation_analysis_candidates(job_id, created_at ASC);
+
+        CREATE TABLE IF NOT EXISTS conversation_brief_candidates (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            candidate_state TEXT NOT NULL,
+            title TEXT NOT NULL,
+            brief_markdown TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            limitations_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            content_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (job_id) REFERENCES conversation_analysis_jobs(id) ON DELETE CASCADE,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_brief_candidates_conversation
+            ON conversation_brief_candidates(conversation_id, candidate_state, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_brief_candidates_job
+            ON conversation_brief_candidates(job_id, created_at ASC);
+
+        CREATE TABLE IF NOT EXISTS conversation_memory_candidates (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            memory_kind TEXT NOT NULL,
+            candidate_state TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            content_hash TEXT NOT NULL,
+            summary_text TEXT NOT NULL,
+            body_json TEXT NOT NULL DEFAULT '{}',
+            visibility TEXT NOT NULL,
+            approval_status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (job_id) REFERENCES conversation_analysis_jobs(id) ON DELETE CASCADE,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_memory_candidates_conversation
+            ON conversation_memory_candidates(conversation_id, candidate_state, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_memory_candidates_job
+            ON conversation_memory_candidates(job_id, created_at ASC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1938,9 +2066,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 21);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 22);
     }
 
     #[test]
@@ -2610,6 +2738,50 @@ mod tests {
             &connection,
             "llm_token_ledger_entries",
             "pricing_snapshot_json"
+        ));
+    }
+
+    #[test]
+    fn conversation_analysis_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "conversation_analysis_jobs"));
+        assert!(column_exists(
+            &connection,
+            "conversation_analysis_jobs",
+            "source_event_cursor_end"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_analysis_jobs",
+            "error_message_hash"
+        ));
+        assert!(table_exists(
+            &connection,
+            "conversation_analysis_candidates"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_analysis_candidates",
+            "candidate_state"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_analysis_candidates",
+            "prompt_slot_ids_json"
+        ));
+        assert!(table_exists(&connection, "conversation_brief_candidates"));
+        assert!(column_exists(
+            &connection,
+            "conversation_brief_candidates",
+            "limitations_json"
+        ));
+        assert!(table_exists(&connection, "conversation_memory_candidates"));
+        assert!(column_exists(
+            &connection,
+            "conversation_memory_candidates",
+            "approval_status"
         ));
     }
 

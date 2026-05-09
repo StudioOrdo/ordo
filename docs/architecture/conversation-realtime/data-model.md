@@ -1,7 +1,7 @@
 # Conversation Realtime Data Model
 
 Status: Draft schema plan with backend foundation implemented through daemon
-schema versions 19 and 20
+schema versions 19 through 22
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -31,12 +31,13 @@ segment/episode candidate, governed handoff, current mode, and replayable
 conversation event tables in schema version 19. Schema version 20 adds
 participants, messages, revisions, message artifact links, reactions, receipts,
 read states, and presence snapshots for the protocol layer. Tags, analysis,
-graph candidates, memory, and business outcome tables remain planned for later
-gateway and LLM work. Schema version 21 adds the first dedicated LLM accounting
-tables for invocation metadata, prompt slot usage, and append-only token ledger
-entries. Dedicated privacy transform tables remain deferred; privacy transform
-run ids are recorded on invocations, while placeholder mappings stay behind the
-encrypted local vault boundary.
+graph candidates and business outcome tables remain planned for later gateway
+and LLM work. Schema version 21 adds the first dedicated LLM accounting tables
+for invocation metadata, prompt slot usage, and append-only token ledger
+entries. Schema version 22 adds the first continuous conversation analysis,
+brief candidate, and memory candidate foundation. Dedicated privacy transform
+tables remain deferred; privacy transform run ids are recorded on invocations,
+while placeholder mappings stay behind the encrypted local vault boundary.
 
 ### `conversations`
 
@@ -405,9 +406,15 @@ Columns:
 - `updated_at TEXT NOT NULL`
 - `expires_at TEXT`
 
-### `conversation_analysis_runs`
+### `conversation_analysis_jobs`
 
-Stores analysis jobs over one or more messages.
+Stores bounded analysis jobs over one or more durable conversation events.
+
+Status: implemented in schema version 22 for deterministic local analysis after
+eligible visible message creation. Jobs are idempotent by conversation, analysis
+kind, and source message. Provider-backed analysis can later attach `llm_run_id`
+and policy evidence, but the current foundation does not call external
+providers.
 
 Columns:
 
@@ -416,18 +423,120 @@ Columns:
 - `segment_id TEXT`
 - `analysis_kind TEXT NOT NULL`
 - `status TEXT NOT NULL`
-- `input_range_json TEXT NOT NULL DEFAULT '{}'`
+- `source_message_id TEXT`
+- `source_event_cursor_start INTEGER`
+- `source_event_cursor_end INTEGER`
+- `input_refs_json TEXT NOT NULL DEFAULT '[]'`
 - `output_json TEXT NOT NULL DEFAULT '{}'`
-- `provider_call_id TEXT`
 - `policy_decision_id TEXT`
+- `llm_run_id TEXT`
+- `error_message_hash TEXT`
 - `created_at TEXT NOT NULL`
+- `started_at TEXT`
 - `completed_at TEXT`
-- `error_message TEXT`
+- `updated_at TEXT NOT NULL`
 
 Indexes:
 
 - `(conversation_id, created_at DESC)`;
 - `(analysis_kind, status, created_at DESC)`.
+- `(conversation_id, source_event_cursor_end)`.
+
+### `conversation_analysis_candidates`
+
+Stores evidence-backed operational candidates from analysis, including summary
+signals, open questions, action-needed signals, and handoff signals.
+
+Status: implemented in schema version 22. Candidates default to `proposed`.
+They carry evidence refs, provenance, prompt slot ids where applicable, content
+hashes, confidence, and safe summaries. They are not business truth.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `job_id TEXT NOT NULL`
+- `conversation_id TEXT NOT NULL`
+- `segment_id TEXT`
+- `candidate_kind TEXT NOT NULL`
+- `candidate_state TEXT NOT NULL`
+- `confidence REAL NOT NULL`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `prompt_slot_ids_json TEXT NOT NULL DEFAULT '[]'`
+- `llm_run_id TEXT`
+- `content_hash TEXT NOT NULL`
+- `summary_text TEXT NOT NULL`
+- `body_json TEXT NOT NULL DEFAULT '{}'`
+- `visibility TEXT NOT NULL`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+
+Indexes:
+
+- `(conversation_id, candidate_kind, candidate_state, created_at DESC)`;
+- `(job_id, created_at ASC)`.
+
+### `conversation_brief_candidates`
+
+Stores candidate narrative briefs for a conversation or segment.
+
+Status: implemented in schema version 22. Brief candidates cite durable
+conversation evidence and remain proposed until a governed product surface
+confirms or supersedes them. Full surface brief jobs remain owned by #105.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `job_id TEXT NOT NULL`
+- `conversation_id TEXT NOT NULL`
+- `segment_id TEXT`
+- `candidate_state TEXT NOT NULL`
+- `title TEXT NOT NULL`
+- `brief_markdown TEXT NOT NULL`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `limitations_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `content_hash TEXT NOT NULL`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+
+Indexes:
+
+- `(conversation_id, candidate_state, created_at DESC)`;
+- `(job_id, created_at ASC)`.
+
+### `conversation_memory_candidates`
+
+Stores proposed relationship-memory candidates from conversation analysis.
+
+Status: implemented in schema version 22. Memory candidates cite durable
+conversation evidence and use `approval_status = requires_approval`; they do
+not automatically promote into corpus, business facts, or durable relationship
+truth.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `job_id TEXT NOT NULL`
+- `conversation_id TEXT NOT NULL`
+- `segment_id TEXT`
+- `memory_kind TEXT NOT NULL`
+- `candidate_state TEXT NOT NULL`
+- `confidence REAL NOT NULL`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `content_hash TEXT NOT NULL`
+- `summary_text TEXT NOT NULL`
+- `body_json TEXT NOT NULL DEFAULT '{}'`
+- `visibility TEXT NOT NULL`
+- `approval_status TEXT NOT NULL`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+
+Indexes:
+
+- `(conversation_id, candidate_state, created_at DESC)`;
+- `(job_id, created_at ASC)`.
 
 ### `knowledge_graph_candidates`
 
@@ -719,7 +828,7 @@ Recommended migration stages:
 6. pricing snapshots when provider pricing evidence exists;
 7. privacy transform runs and placeholders when vault-backed events are not
    enough for inspection;
-8. analysis runs, tags, knowledge graph candidate tables, and surface briefs;
+8. analysis jobs, analysis candidates, brief candidates, and memory candidates;
 9. offer/ask/referral/outcome attribution tables.
 
 Each stage should include schema tests, migration tests from an older database,

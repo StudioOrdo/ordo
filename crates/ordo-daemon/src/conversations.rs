@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::conversation_analysis::queue_analysis_for_message;
 use crate::events::{append_realtime_event, append_realtime_event_tx, RealtimeEvent};
 use crate::policy::{
     record_policy_decision, ActorContext, ActorKind, PolicyAction, PolicyDecision,
@@ -1458,7 +1459,9 @@ pub fn create_conversation_message(
     update_conversation_unread_count_tx(&transaction, &request.conversation_id)?;
     transaction.commit()?;
 
-    load_message(connection, &message_id)
+    let message = load_message(connection, &message_id)?;
+    let _ = queue_analysis_for_message(connection, &message)?;
+    Ok(message)
 }
 
 pub fn edit_conversation_message(

@@ -386,6 +386,12 @@ Delivery order:
     `artifact-review.md`, maps findings to subsystem categories/severities,
     emits local redacted issue drafts where appropriate, and does not call
     GitHub, providers, or the network.
+13. Define customer, operator, and reviewer simulator prompt contracts.
+    Implemented with `docs/architecture/conversation-realtime/simulators/` and
+    `eval_simulators`, a deterministic schema validator for
+    `ordo.eval_simulator_output.v1` outputs that keeps simulators as
+    non-authoritative pressure signals, requires evidence/assertion refs, and
+    rejects unsafe raw values or pass/fail authority fields.
 
 Phase boundaries:
 
@@ -394,6 +400,9 @@ Phase boundaries:
 - Live provider evals are opt-in and require explicit network and spend guards.
 - Generated findings become GitHub issues only after they have transcript,
   ledger, scorecard, and smallest-responsible-subsystem evidence.
+- Simulator outputs create customer/operator/reviewer pressure for future
+  replay/live runs, but deterministic assertions and durable evidence remain
+  authoritative.
 - Product additions such as Customer Feedback, Reviews, Home/About billboards,
   and Offer/Ask intent metadata should be implemented only after eval evidence
   clarifies the smallest useful schema and UI contract.

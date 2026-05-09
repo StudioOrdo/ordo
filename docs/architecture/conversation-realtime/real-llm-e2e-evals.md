@@ -137,6 +137,8 @@ evidence rather than live-model impressions:
 7. Real provider adapter.
 8. Opt-in live eval runner with network and spend guards.
 9. Artifact review loop that classifies findings and drives follow-on issues.
+10. Customer, operator, and reviewer simulator contracts for future replay/live
+    workflow pressure.
 
 Every implementation phase should begin by re-reading the issue, current docs,
 and current code because earlier eval work may change the best implementation
@@ -428,6 +430,25 @@ Implemented Phase 7 artifact review classifier behavior:
   failures.
 - The classifier does not call providers, GitHub, or the network. Issue drafts
   are local redacted text only; filing remains a governed human/agent workflow.
+
+Implemented Phase 8 simulator contract behavior:
+
+- `docs/architecture/conversation-realtime/simulators/` defines versioned
+  customer, operator, reviewer, and shared schema contracts for future
+  replay/live workflow pressure.
+- `crates/ordo-daemon/src/eval_simulators.rs` defines
+  `ordo.eval_simulator_output.v1` and validates customer, operator, and
+  reviewer simulator outputs.
+- Simulator outputs must cite redacted evidence or artifact refs, message
+  hashes, expected pressure subsystems, safety constraints, and deterministic
+  assertion refs.
+- Reviewer outputs are restricted to the same finding taxonomy as
+  `ordo.eval_artifact_review.v1`.
+- Unknown roles, unknown fields, missing message hashes or excerpts, raw
+  secrets, raw emails, raw phone numbers, configured private terms, and
+  simulator-owned pass/fail fields are rejected.
+- Simulator outputs remain candidate pressure signals. Deterministic backend
+  assertions and durable evidence remain the pass/fail source of truth.
 
 ### Real-World Workflow Eval Suite
 

@@ -240,6 +240,13 @@ artifacts derived from redacted packet evidence. Candidate findings can suggest
 GitHub issue drafts, but they are not automatically filed and are not part of
 the WebSocket protocol.
 
+Simulator contracts introduce no runtime conversation events. Customer,
+operator, and reviewer simulator outputs use
+`ordo.eval_simulator_output.v1` as local eval artifacts. They can cite
+conversation events, artifact packet refs, and deterministic assertion refs,
+but they cannot create pass/fail authority or bypass gateway, policy, privacy,
+or provider boundaries.
+
 Implemented tool governance behavior: LLM tool requests are durable
 conversation events with `toolRequestId`, `runId`, requested capability, reason,
 evidence refs, redacted input summary, visibility ceiling, status, and policy

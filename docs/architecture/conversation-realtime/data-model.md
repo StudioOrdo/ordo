@@ -1105,6 +1105,12 @@ Dedicated billboard and intent tables should be added only when future evals
 show that the fact-backed contract cannot express the needed lifecycle,
 governance, or query shape cleanly.
 
+The 0.1.4 simulator contract slice does not add SQLite tables. Customer,
+operator, and reviewer simulator outputs are local eval artifacts using
+`ordo.eval_simulator_output.v1`. They cite durable rows, packet artifact refs,
+and deterministic assertion refs, but they are not promoted into product truth
+or runtime state.
+
 ## Migration Order
 
 Recommended migration stages:

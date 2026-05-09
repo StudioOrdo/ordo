@@ -595,6 +595,23 @@ Phase 7 artifact review classifier coverage now includes:
 - proof that review generation is local, provider-free, network-free, and does
   not auto-file GitHub issues.
 
+Phase 8 simulator contract coverage now includes:
+
+- `ordo.eval_simulator_output.v1` schema validation for customer, operator, and
+  reviewer simulator outputs;
+- customer and operator outputs rejected when they attempt to emit artifact
+  review findings;
+- reviewer outputs restricted to known artifact-review finding categories;
+- missing message hashes, redacted excerpts, deterministic assertion refs, or
+  evidence/artifact refs rejected;
+- unknown simulator roles and unknown authority fields such as `passed`
+  rejected;
+- raw email, phone, API-key-shaped, and configured private-term values rejected
+  from simulator output;
+- deterministic output serialization tests;
+- proof that default simulator contract tests require no provider keys and no
+  network.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

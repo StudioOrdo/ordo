@@ -42,6 +42,23 @@ Greenfield implementation should prefer clean current contracts over backwards
 compatibility with awkward draft names, UI habits, or accidental response
 shapes.
 
+## Eval Simulator Doctrine
+
+Customer, operator, and reviewer simulators are pressure generators for the
+product workflow eval loop. They make workflows more realistic, but they do not
+own truth.
+
+Simulator outputs must remain candidate test-driver artifacts:
+
+- deterministic backend evidence owns pass/fail;
+- customer and operator simulator turns can pressure privacy, policy, handoff,
+  delegation, feedback/review, Home/About, offer/ask, accounting, provider, and
+  fixture boundaries;
+- reviewer simulator output can classify redacted artifact-review findings but
+  cannot file issues automatically or request raw transcripts;
+- all simulator inputs and outputs must be redacted, evidence-linked, and safe
+  to inspect.
+
 ## Navigation And Information Architecture
 
 The primary flow is:

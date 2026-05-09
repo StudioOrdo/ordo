@@ -1,6 +1,6 @@
 # Public Surfaces MVP
 
-Status: backend read models implemented; UI not built
+Status: backend read models merged; UI not built
 
 ## Why It Matters
 

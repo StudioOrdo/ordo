@@ -44,7 +44,7 @@ architecture doc together.
 | [Handoff Inbox](handoff-inbox.md) | Create handoff envelopes and owner attention items with evidence and receipts. | not built |
 | [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Send reviewed diagnostic/support packets with explicit approval and receipt. | reports foundation exists; egress not built |
 | [Reports And QA Loop](reports-qa-loop.md) | Expand local reports into a practical developer/support feedback loop. | local reports exist |
-| [Public Surfaces](public-surfaces.md) | Build public About, Offers, Asks, and Feed read models without private leakage. | backend read models implemented; UI not built |
+| [Public Surfaces](public-surfaces.md) | Build public About, Offers, Asks, and Feed read models without private leakage. | backend read models merged; UI not built |
 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Track QR/link/campaign entry and visitor conversations. | not built |
 | [Offer Acceptance And Trial State](offer-trial-state.md) | Record offer acceptance, 30-day trial state, and follow-up evidence. | not built |
 | [Affiliate Attribution](affiliate-attribution.md) | Connect affiliates, referral assets, attribution, and credit review. | not built |

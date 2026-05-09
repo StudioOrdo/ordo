@@ -182,6 +182,8 @@ LLM gateway:
 - `llm.prompt.compiled`
 - `llm.prompt.slot.included`
 - `privacy.egress.transformed`
+- `privacy.egress.blocked`
+- `privacy.egress.reconstructed`
 - `llm.provider.started`
 - `llm.tool.requested`
 - `llm.tool.approved`
@@ -211,6 +213,14 @@ decision id. Unknown capabilities and non-exported/dangerous capabilities are
 rejected before request persistence. Execution requires an approved tool request
 and a registered exported capability, then emits `llm.tool.executing` followed
 by `llm.tool.completed` or `llm.tool.failed`.
+
+Implemented privacy egress behavior: provider-bound user and prompt-slot content
+is transformed before `llm.provider.started`. `privacy.egress.transformed`
+contains transform run id, scope, detector/transform versions, payload hashes,
+placeholder count, detector kinds, placeholders, and content hashes. It does not
+contain raw sensitive spans or transformed prompt text. Untransformable payloads
+emit `privacy.egress.blocked` and `llm.run.failed` with
+`privacy_transform_failed`; the provider adapter is not invoked.
 
 Analysis and briefs:
 

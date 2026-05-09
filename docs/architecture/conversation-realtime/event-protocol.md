@@ -185,6 +185,8 @@ LLM gateway:
 - `privacy.egress.blocked`
 - `privacy.egress.reconstructed`
 - `llm.provider.started`
+- `llm.prompt.slot.accounted`
+- `llm.ledger.entry.recorded`
 - `llm.tool.requested`
 - `llm.tool.approved`
 - `llm.tool.rejected`
@@ -221,6 +223,15 @@ placeholder count, detector kinds, placeholders, and content hashes. It does not
 contain raw sensitive spans or transformed prompt text. Untransformable payloads
 emit `privacy.egress.blocked` and `llm.run.failed` with
 `privacy_transform_failed`; the provider adapter is not invoked.
+
+Implemented token ledger behavior: every allowed LLM run creates an
+`llm_invocations` row and every included prompt slot creates
+`llm_prompt_slot_usage` plus durable `llm.prompt.slot.accounted` evidence.
+Provider-reported usage creates append-only `llm_token_ledger_entries` and
+durable `llm.ledger.entry.recorded` events. Accounting events carry ids,
+hashes, visibility, usage kind, token counts, and pricing snapshot metadata; raw
+prompt, user, provider, and sensitive values are not part of the ledger or
+UI-facing protocol payloads.
 
 Analysis and briefs:
 

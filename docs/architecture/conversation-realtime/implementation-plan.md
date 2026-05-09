@@ -208,9 +208,18 @@ Exit criteria:
 
 ## Phase 7: Token Ledger
 
+Status: foundation implemented in the #94 slice. Schema version 21 adds
+`llm_invocations`, `llm_prompt_slot_usage`, and
+`llm_token_ledger_entries`. The Rust-owned LLM gateway records allowed
+invocations, prompt-slot accounting, provider-reported input/output token usage,
+safe terminal states, and query-backed rollups by conversation, provider/model,
+capability, and prompt slot. Cost data is explicitly conservative and
+not-priced until real provider pricing evidence is introduced.
+
 Deliverables:
 
-- Add invocation, prompt slot usage, ledger entry, and pricing snapshot tables.
+- Add invocation, prompt slot usage, and ledger entry tables.
+- Defer pricing snapshot tables until provider pricing evidence exists.
 - Record estimated prompt slot tokens before provider calls.
 - Record provider-reported usage after provider calls.
 - Add rollup read models for conversation, provider, model, capability, and slot
@@ -221,8 +230,11 @@ Exit criteria:
 - Owner can inspect token usage like a storage breakdown.
 - Tests prove slot totals reconcile to invocation totals where provider data is
   available.
-- Tests prove the ethical persuasion slot has evidence refs and cannot be used
-  to invent urgency, authority, social proof, or relationship context.
+- Tests prove accounting rows/events do not contain raw prompt text, user text,
+  provider text, or privacy-sensitive values.
+- Full ethical persuasion behavior remains owned by #107; the
+  `ethical_business_persuasion` prompt slot is accounted like every other slot
+  and must keep evidence refs when included.
 
 ## Phase 8: Continuous Analysis And Briefs
 

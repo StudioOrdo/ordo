@@ -21,6 +21,10 @@ use crate::conversations::{
     ConversationMessageView,
 };
 use crate::events::RealtimeEvent;
+use crate::llm_accounting::{
+    record_invocation_completed, record_invocation_failed, record_invocation_started,
+    record_privacy_transform_runs, record_prompt_slot_usage,
+};
 use crate::policy::{
     record_policy_decision, ActorContext, PolicyAction, PolicyDecision, PolicyDecisionCorrelation,
     PolicyOutcome, ResourceKind, ResourceRef,
@@ -416,50 +420,7 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
         }
 
         let prompt = compile_prompt(&request.prompt_slots)?;
-        let privacy = match transform_provider_payload(
-            &self.privacy_firewall,
-            db_path,
-            connection,
-            &request,
-            &prompt,
-        ) {
-            Ok(privacy) => privacy,
-            Err(error) => {
-                let frames = vec![
-                    persist_dispatch(
-                        connection,
-                        &request.conversation_id,
-                        request.segment_id.as_deref(),
-                        "privacy.egress.blocked",
-                        json!({
-                            "runId": request.run_id,
-                            "reason": "Provider-bound payload failed privacy egress transform.",
-                            "errorHash": stable_content_hash(&error.to_string()),
-                        }),
-                        Some(&policy_decision_id),
-                    )?,
-                    persist_dispatch(
-                        connection,
-                        &request.conversation_id,
-                        request.segment_id.as_deref(),
-                        "llm.run.failed",
-                        json!({
-                            "runId": request.run_id,
-                            "code": "privacy_transform_failed",
-                            "message": "Provider-bound payload failed privacy egress transform.",
-                        }),
-                        Some(&policy_decision_id),
-                    )?,
-                ];
-                return Ok(LlmGatewayRunResult {
-                    run_id: request.run_id,
-                    policy_decision_id,
-                    prompt: Some(prompt),
-                    final_message: None,
-                    frames,
-                });
-            }
-        };
+        record_invocation_started(connection, &request, &prompt, &policy_decision_id)?;
         let mut frames = Vec::new();
         frames.push(persist_dispatch(
             connection,
@@ -504,6 +465,68 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
                 Some(&policy_decision_id),
             )?);
         }
+        frames.extend(
+            record_prompt_slot_usage(connection, &request, &prompt, &policy_decision_id)?
+                .into_iter()
+                .map(|event| dispatch_from_event(&request.conversation_id, &event)),
+        );
+        let privacy = match transform_provider_payload(
+            &self.privacy_firewall,
+            db_path,
+            connection,
+            &request,
+            &prompt,
+        ) {
+            Ok(privacy) => privacy,
+            Err(error) => {
+                record_invocation_failed(
+                    connection,
+                    &request.run_id,
+                    "privacy_transform_failed",
+                    &error.to_string(),
+                )?;
+                frames.push(persist_dispatch(
+                    connection,
+                    &request.conversation_id,
+                    request.segment_id.as_deref(),
+                    "privacy.egress.blocked",
+                    json!({
+                        "runId": request.run_id,
+                        "reason": "Provider-bound payload failed privacy egress transform.",
+                        "errorHash": stable_content_hash(&error.to_string()),
+                    }),
+                    Some(&policy_decision_id),
+                )?);
+                frames.push(persist_dispatch(
+                    connection,
+                    &request.conversation_id,
+                    request.segment_id.as_deref(),
+                    "llm.run.failed",
+                    json!({
+                        "runId": request.run_id,
+                        "code": "privacy_transform_failed",
+                        "message": "Provider-bound payload failed privacy egress transform.",
+                    }),
+                    Some(&policy_decision_id),
+                )?);
+                return Ok(LlmGatewayRunResult {
+                    run_id: request.run_id,
+                    policy_decision_id,
+                    prompt: Some(prompt),
+                    final_message: None,
+                    frames,
+                });
+            }
+        };
+        record_privacy_transform_runs(
+            connection,
+            &request.run_id,
+            &privacy
+                .transforms
+                .iter()
+                .map(|transform| transform.transform_run_id.clone())
+                .collect::<Vec<_>>(),
+        )?;
         for transform in &privacy.transforms {
             frames.push(persist_dispatch(
                 connection,
@@ -557,6 +580,7 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
                     usage = Some(event_usage);
                 }
                 LlmProviderStreamEvent::Failed { code, message } => {
+                    record_invocation_failed(connection, &request.run_id, &code, &message)?;
                     frames.push(persist_dispatch(
                         connection,
                         &request.conversation_id,
@@ -614,6 +638,16 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
             Some(&policy_decision_id),
         )?);
         if let Some(usage) = usage {
+            frames.extend(
+                record_invocation_completed(
+                    connection,
+                    &request,
+                    Some(&usage),
+                    &policy_decision_id,
+                )?
+                .into_iter()
+                .map(|event| dispatch_from_event(&request.conversation_id, &event)),
+            );
             frames.push(persist_dispatch(
                 connection,
                 &request.conversation_id,
@@ -625,6 +659,12 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
                 }),
                 Some(&policy_decision_id),
             )?);
+        } else {
+            frames.extend(
+                record_invocation_completed(connection, &request, None, &policy_decision_id)?
+                    .into_iter()
+                    .map(|event| dispatch_from_event(&request.conversation_id, &event)),
+            );
         }
         frames.push(persist_dispatch(
             connection,
@@ -2254,5 +2294,183 @@ mod tests {
             .unwrap();
         assert_eq!(capability_count, 4);
         assert_eq!(leaked_secret_count, 0);
+    }
+
+    #[test]
+    fn completed_llm_run_records_invocation_slots_and_ledger_entries() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let gateway = LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"));
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                llm_request(&conversation_id, &assistant_id),
+            )
+            .unwrap();
+
+        assert!(result
+            .frames
+            .iter()
+            .any(|frame| frame.frame_type == "llm.prompt.slot.accounted"));
+        assert!(result
+            .frames
+            .iter()
+            .any(|frame| frame.frame_type == "llm.ledger.entry.recorded"));
+        let invocation: (String, String, String, String) = connection
+            .query_row(
+                "SELECT status, provider_id, model_id, capability_id
+                 FROM llm_invocations
+                 WHERE id = 'llm_run_1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            invocation,
+            (
+                "completed".to_string(),
+                "local_fake".to_string(),
+                "fake-chat".to_string(),
+                "llm.invoke".to_string()
+            )
+        );
+        let slot_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM llm_prompt_slot_usage WHERE invocation_id = 'llm_run_1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let (ledger_total, usage_kinds): (i64, String) = connection
+            .query_row(
+                "SELECT SUM(token_count), group_concat(usage_kind, ',')
+                 FROM llm_token_ledger_entries
+                 WHERE invocation_id = 'llm_run_1'
+                 ORDER BY usage_kind",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(slot_count, 2);
+        assert!(ledger_total > 0);
+        assert!(usage_kinds.contains("provider_input"));
+        assert!(usage_kinds.contains("provider_output"));
+    }
+
+    #[test]
+    fn provider_failure_updates_invocation_without_ledger_entries() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let gateway = LlmGateway::new(DeterministicLlmProvider::failing(
+            "local_fake",
+            "fake-chat",
+            "provider_unavailable",
+            "provider offline",
+        ));
+
+        gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                llm_request(&conversation_id, &assistant_id),
+            )
+            .unwrap();
+
+        let (status, failure_code, failure_hash): (String, String, String) = connection
+            .query_row(
+                "SELECT status, failure_code, failure_message_hash
+                 FROM llm_invocations
+                 WHERE id = 'llm_run_1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "failed");
+        assert_eq!(failure_code, "provider_unavailable");
+        assert!(failure_hash.starts_with("sha256:"));
+        let ledger_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM llm_token_ledger_entries WHERE invocation_id = 'llm_run_1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ledger_count, 0);
+    }
+
+    #[test]
+    fn token_ledger_does_not_store_raw_sensitive_prompt_or_user_text() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let provider = RecordingProvider {
+            seen_request: RefCell::new(None),
+            echo_user_message: false,
+        };
+        let gateway =
+            LlmGateway::new(provider).with_private_terms(vec!["Project Orchid".to_string()]);
+        let mut request = llm_request(&conversation_id, &assistant_id);
+        request.user_message =
+            "Reach ada@example.com with Bearer tok_abcdef123456 about Project Orchid.".to_string();
+        request.prompt_slots.push(
+            PromptSlot::new(
+                "private_fixture",
+                "Private Fixture",
+                "Do not leak ada@example.com or Project Orchid.",
+                vec!["fixture".to_string()],
+                "Privacy regression fixture.",
+                "staff_private",
+            )
+            .unwrap(),
+        );
+
+        gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        for raw in [
+            "ada@example.com",
+            "tok_abcdef123456",
+            "Project Orchid",
+            "Do not leak ada@example.com",
+        ] {
+            for (table, columns) in [
+                (
+                    "llm_invocations",
+                    "metadata_json || prompt_hash || privacy_transform_run_ids_json",
+                ),
+                (
+                    "llm_prompt_slot_usage",
+                    "slot_id || source_refs_json || visibility || content_hash",
+                ),
+                (
+                    "llm_token_ledger_entries",
+                    "usage_kind || pricing_snapshot_json || metadata_json",
+                ),
+                ("conversation_events", "event_type || payload_json"),
+                ("realtime_events", "event_type || payload_json"),
+                ("policy_decisions", "reason || metadata_json"),
+            ] {
+                let leaked_count: i64 = connection
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM {table} WHERE {columns} LIKE ?1"),
+                        [format!("%{raw}%")],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(leaked_count, 0, "{table} leaked {raw}");
+            }
+        }
     }
 }

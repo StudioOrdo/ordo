@@ -31,11 +31,12 @@ segment/episode candidate, governed handoff, current mode, and replayable
 conversation event tables in schema version 19. Schema version 20 adds
 participants, messages, revisions, message artifact links, reactions, receipts,
 read states, and presence snapshots for the protocol layer. Tags, analysis,
-graph candidates, memory, dedicated LLM ledger tables, and business outcome
-tables remain planned for later gateway and LLM work. The first LLM gateway
-foundation records run, prompt slot, provider start, usage, terminal state, and
-final assistant-message evidence in `conversation_events`, `realtime_events`,
-and `conversation_messages` rather than introducing the full ledger schema.
+graph candidates, memory, and business outcome tables remain planned for later
+gateway and LLM work. Schema version 21 adds the first dedicated LLM accounting
+tables for invocation metadata, prompt slot usage, and append-only token ledger
+entries. Dedicated privacy transform tables remain deferred; privacy transform
+run ids are recorded on invocations, while placeholder mappings stay behind the
+encrypted local vault boundary.
 
 ### `conversations`
 
@@ -519,8 +520,9 @@ implementation records transform run metadata as durable
 `privacy.egress.transformed` conversation events and stores placeholder mappings
 as encrypted `vault_items` with metadata for transform id, placeholder, detector
 kind, scope, and content hash. Dedicated `privacy_transform_runs` and
-`privacy_placeholders` tables remain planned for query-optimized privacy and
-token-ledger work.
+`privacy_placeholders` tables remain planned only when query-optimized privacy
+inspection needs require them. Schema version 21 records privacy transform run
+ids on `llm_invocations` without duplicating raw placeholder values.
 
 Columns:
 
@@ -567,43 +569,54 @@ Unique:
 
 Stores provider call metadata.
 
-Status: planned dedicated ledger table. The current Rust-owned LLM gateway
-foundation uses the conversation event stream for invocation metadata until the
-privacy egress firewall and token ledger phases add this table.
+Status: implemented in schema version 21 for token ledger accounting. Every
+allowed LLM invocation creates an invocation row before provider work proceeds.
+Rows carry prompt hashes, capability/provider/model ids, policy decision ids,
+privacy transform run ids, terminal status, and safe failure metadata.
 
-Current tool-governance state is also event-sourced: `llm.tool.requested`,
+Current tool-governance state remains event-sourced: `llm.tool.requested`,
 `llm.tool.approved`, `llm.tool.rejected`, `llm.tool.executing`,
 `llm.tool.completed`, and `llm.tool.failed` store the tool request id, run id,
 conversation id, requested capability id, actor evidence, evidence refs, redacted
 input summary, visibility ceiling, status, policy decision id, and timestamps in
-`conversation_events`. A dedicated invocation/tool table remains deferred until
-the token ledger and privacy phases require query-optimized accounting.
+`conversation_events`. A dedicated tool table remains deferred until tool query
+volume requires it.
 
 Columns:
 
 - `id TEXT PRIMARY KEY`
-- `conversation_id TEXT`
+- `conversation_id TEXT NOT NULL`
 - `segment_id TEXT`
 - `capability_id TEXT NOT NULL`
 - `provider_id TEXT NOT NULL`
 - `model_id TEXT NOT NULL`
 - `status TEXT NOT NULL`
 - `prompt_hash TEXT NOT NULL`
-- `privacy_transform_run_id TEXT`
+- `privacy_transform_run_ids_json TEXT NOT NULL DEFAULT '[]'`
 - `policy_decision_id TEXT`
 - `started_at TEXT NOT NULL`
 - `completed_at TEXT`
 - `failure_code TEXT`
-- `failure_message TEXT`
+- `failure_message_hash TEXT`
 - `metadata_json TEXT NOT NULL DEFAULT '{}'`
+
+Indexes:
+
+- `(conversation_id, started_at DESC)`;
+- `(provider_id, model_id, started_at DESC)`;
+- `(capability_id, started_at DESC)`;
+- `(status, started_at DESC)`.
 
 ### `llm_prompt_slot_usage`
 
 Stores bill-of-materials accounting for prompt construction.
 
-Status: planned dedicated ledger table. Current prompt slot inclusion is durable
-as `llm.prompt.slot.included` conversation events with source refs, inclusion
-reason, visibility ceiling, and content hashes.
+Status: implemented in schema version 21. Current prompt slot inclusion remains
+durable as `llm.prompt.slot.included` conversation events, and each included
+slot also receives a `llm_prompt_slot_usage` row plus a
+`llm.prompt.slot.accounted` event. Rows store source refs, visibility, stable
+token estimates, content hashes, inclusion state, optional provider-allocation
+actuals, and truncation reason without storing raw slot text.
 
 Columns:
 
@@ -629,17 +642,23 @@ only show respectful, agency-preserving language.
 
 Stores append-only token usage and cost evidence.
 
+Status: implemented in schema version 21. Provider-reported usage creates
+append-only ledger entries for input and output tokens. Cost fields are
+conservative estimates; the current deterministic/local provider path records
+`estimated_cost_micros = 0` with `costKind: not_priced` metadata rather than
+pretending to know external billing.
+
 Columns:
 
 - `id TEXT PRIMARY KEY`
 - `invocation_id TEXT NOT NULL`
-- `conversation_id TEXT`
+- `conversation_id TEXT NOT NULL`
 - `capability_id TEXT NOT NULL`
 - `provider_id TEXT NOT NULL`
 - `model_id TEXT NOT NULL`
 - `usage_kind TEXT NOT NULL`
 - `token_count INTEGER NOT NULL`
-- `estimated_cost_micros INTEGER`
+- `estimated_cost_micros INTEGER NOT NULL DEFAULT 0`
 - `pricing_snapshot_json TEXT NOT NULL DEFAULT '{}'`
 - `metadata_json TEXT NOT NULL DEFAULT '{}'`
 - `created_at TEXT NOT NULL`
@@ -649,6 +668,7 @@ Indexes:
 - `(conversation_id, created_at DESC)`;
 - `(capability_id, created_at DESC)`;
 - `(provider_id, model_id, created_at DESC)`.
+- `(usage_kind, created_at DESC)`.
 
 ## Event Persistence Pattern
 
@@ -695,9 +715,10 @@ Recommended migration stages:
 2. messages, revisions, artifacts, reactions;
 3. receipts, read states, conversation events;
 4. presence snapshots and ephemeral room broker state;
-5. LLM invocation and prompt slot usage;
-6. token ledger entries and pricing snapshots;
-7. privacy transform runs and placeholders;
+5. LLM invocation, prompt slot usage, and token ledger entries;
+6. pricing snapshots when provider pricing evidence exists;
+7. privacy transform runs and placeholders when vault-backed events are not
+   enough for inspection;
 8. analysis runs, tags, knowledge graph candidate tables, and surface briefs;
 9. offer/ask/referral/outcome attribution tables.
 

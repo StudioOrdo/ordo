@@ -15,6 +15,7 @@ These docs turn the product thesis into system shape.
 - [Local Install And Providers](local-install-and-providers.md)
 - [Business Truth, Visibility, And Publication](business-truth-visibility.md)
 - [Public Surface Read Models](public-surfaces.md)
+- [Tracked Entry Points And Visitor Sessions](tracked-entry-points.md)
 - [Resource, Provenance, And Policy Spine](resource-provenance-policy.md)
 - [Access And Local RBAC](access-rbac.md)
 - [Knowledge Corpus Skeleton](knowledge-corpus.md)

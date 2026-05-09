@@ -29,6 +29,9 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "vault_items",
     "provider_configs",
     "business_facts",
+    "tracked_entry_points",
+    "visitor_sessions",
+    "visitor_session_events",
     "corpus_sources",
     "corpus_items",
     "schedules",
@@ -37,7 +40,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 10;
+pub const CURRENT_SCHEMA_VERSION: i64 = 11;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -97,6 +100,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 10,
         name: "add_business_truth_visibility_publication",
         apply: add_business_truth_visibility_publication,
+    },
+    SchemaMigration {
+        version: 11,
+        name: "add_tracked_entry_points_and_visitor_sessions",
+        apply: add_tracked_entry_points_and_visitor_sessions,
     },
 ];
 
@@ -796,6 +804,73 @@ fn add_business_truth_visibility_publication(connection: &Connection) -> Result<
     Ok(())
 }
 
+fn add_tracked_entry_points_and_visitor_sessions(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS tracked_entry_points (
+            id TEXT PRIMARY KEY,
+            slug TEXT NOT NULL UNIQUE,
+            label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_label TEXT,
+            destination_surface TEXT NOT NULL,
+            destination_id TEXT,
+            public_path TEXT NOT NULL,
+            qr_payload_json TEXT NOT NULL DEFAULT '{}',
+            attribution_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            archived_at TEXT,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tracked_entry_points_status ON tracked_entry_points(status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_tracked_entry_points_source ON tracked_entry_points(source_kind, source_label);
+        CREATE INDEX IF NOT EXISTS idx_tracked_entry_points_destination ON tracked_entry_points(destination_surface, destination_id);
+
+        CREATE TABLE IF NOT EXISTS visitor_sessions (
+            id TEXT PRIMARY KEY,
+            entry_point_id TEXT NOT NULL,
+            entry_point_slug TEXT NOT NULL,
+            status TEXT NOT NULL,
+            destination_surface TEXT NOT NULL,
+            destination_id TEXT,
+            attribution_json TEXT NOT NULL DEFAULT '{}',
+            user_agent_hash TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            ended_at TEXT,
+            FOREIGN KEY (entry_point_id) REFERENCES tracked_entry_points(id) ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_visitor_sessions_entry_point ON visitor_sessions(entry_point_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_visitor_sessions_slug ON visitor_sessions(entry_point_slug, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_visitor_sessions_status ON visitor_sessions(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS visitor_session_events (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            entry_point_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            occurred_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES visitor_sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY (entry_point_id) REFERENCES tracked_entry_points(id) ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_visitor_session_events_session ON visitor_session_events(session_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_visitor_session_events_entry_point ON visitor_session_events(entry_point_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_visitor_session_events_type ON visitor_session_events(event_type, occurred_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -897,8 +972,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 10);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 11);
     }
 
     #[test]
@@ -977,6 +1052,9 @@ mod tests {
         assert!(table_exists(&connection, "business_facts"));
         assert!(table_exists(&connection, "corpus_sources"));
         assert!(table_exists(&connection, "corpus_items"));
+        assert!(table_exists(&connection, "tracked_entry_points"));
+        assert!(table_exists(&connection, "visitor_sessions"));
+        assert!(table_exists(&connection, "visitor_session_events"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -1160,6 +1238,42 @@ mod tests {
             &connection,
             "business_facts",
             "publication_state"
+        ));
+    }
+
+    #[test]
+    fn tracked_entry_point_and_visitor_session_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "tracked_entry_points"));
+        assert!(column_exists(&connection, "tracked_entry_points", "slug"));
+        assert!(column_exists(
+            &connection,
+            "tracked_entry_points",
+            "destination_surface"
+        ));
+        assert!(column_exists(
+            &connection,
+            "tracked_entry_points",
+            "qr_payload_json"
+        ));
+        assert!(table_exists(&connection, "visitor_sessions"));
+        assert!(column_exists(
+            &connection,
+            "visitor_sessions",
+            "entry_point_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "visitor_sessions",
+            "attribution_json"
+        ));
+        assert!(table_exists(&connection, "visitor_session_events"));
+        assert!(column_exists(
+            &connection,
+            "visitor_session_events",
+            "event_type"
         ));
     }
 

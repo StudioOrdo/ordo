@@ -18,6 +18,7 @@ These docs turn the product thesis into system shape.
 - [Tracked Entry Points And Visitor Sessions](tracked-entry-points.md)
 - [Offers And Trial Lifecycle](offers-and-trials.md)
 - [Connections Foundation](connections.md)
+- [Availability And Handoff Inbox](availability-and-handoff.md)
 - [Resource, Provenance, And Policy Spine](resource-provenance-policy.md)
 - [Access And Local RBAC](access-rbac.md)
 - [Knowledge Corpus Skeleton](knowledge-corpus.md)

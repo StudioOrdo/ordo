@@ -16,6 +16,15 @@ use std::time::Duration as StdDuration;
 use tokio::sync::broadcast;
 use tokio::time::{self, Duration};
 
+use crate::availability::{
+    create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox,
+    list_handoff_receipts, read_availability_state, resolve_handoff_inbox_item,
+    update_availability_schedule, update_operator_presence, AvailabilityScheduleView,
+    AvailabilityScheduleWriteRequest, AvailabilityStateResponse, HandoffEligibilityRequest,
+    HandoffEligibilityView, HandoffInboxCreateRequest, HandoffInboxItemView,
+    HandoffInboxListResponse, HandoffInboxResolveRequest, HandoffReceiptListResponse,
+    OperatorPresenceView, OperatorPresenceWriteRequest,
+};
 use crate::backups::{
     create_backup, list_backup_restore_jobs, run_restore_preflight, BackupRestoreResponse,
     RestorePreflightRequest,
@@ -216,6 +225,26 @@ pub async fn serve(
         .route(
             "/connections/:connection_id/events",
             get(connection_events_handler),
+        )
+        .route("/availability", get(availability_handler))
+        .route(
+            "/availability/schedule",
+            put(availability_schedule_update_handler),
+        )
+        .route(
+            "/availability/presence",
+            put(operator_presence_update_handler),
+        )
+        .route("/handoff/eligibility", post(handoff_eligibility_handler))
+        .route("/handoff/inbox", get(handoff_inbox_handler))
+        .route("/handoff/inbox", post(handoff_inbox_create_handler))
+        .route(
+            "/handoff/inbox/:item_id/resolve",
+            put(handoff_inbox_resolve_handler),
+        )
+        .route(
+            "/handoff/inbox/:item_id/receipts",
+            get(handoff_receipts_handler),
         )
         .route(
             "/public/available-offers",
@@ -1187,6 +1216,176 @@ async fn connection_events_handler(
         .map_err(invalid_request_error)
 }
 
+async fn availability_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<AvailabilityStateResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/availability"),
+        Some("availability.read"),
+    )?;
+    read_availability_state(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn availability_schedule_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<AvailabilityScheduleWriteRequest>,
+) -> Result<Json<AvailabilityScheduleView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/availability/schedule"),
+        Some("availability.write"),
+    )?;
+    let (schedule, event) =
+        update_availability_schedule(&state.db_path, request).map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(schedule))
+}
+
+async fn operator_presence_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<OperatorPresenceWriteRequest>,
+) -> Result<Json<OperatorPresenceView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/availability/presence"),
+        Some("availability.write"),
+    )?;
+    let (presence, event) = update_operator_presence(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(presence))
+}
+
+async fn handoff_eligibility_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<HandoffEligibilityRequest>,
+) -> Result<Json<HandoffEligibilityView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/handoff/eligibility"),
+        Some("handoff.eligibility.evaluate"),
+    )?;
+    evaluate_handoff_eligibility(&state.db_path, request)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn handoff_inbox_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<HandoffInboxListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/handoff/inbox"),
+        Some("handoff.inbox.list"),
+    )?;
+    list_handoff_inbox(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn handoff_inbox_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<HandoffInboxCreateRequest>,
+) -> Result<Json<HandoffInboxItemView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/handoff/inbox"),
+        Some("handoff.inbox.write"),
+    )?;
+    let (item, event) = create_handoff_inbox_item(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(item))
+}
+
+async fn handoff_inbox_resolve_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+    Json(request): Json<HandoffInboxResolveRequest>,
+) -> Result<Json<HandoffInboxItemView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/handoff/inbox/{item_id}/resolve"),
+        ),
+        Some("handoff.inbox.write"),
+    )?;
+    let (item, event) =
+        resolve_handoff_inbox_item(&state.db_path, &item_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(item))
+}
+
+async fn handoff_receipts_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+) -> Result<Json<HandoffReceiptListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/handoff/inbox/{item_id}/receipts"),
+        ),
+        Some("handoff.receipts.list"),
+    )?;
+    list_handoff_receipts(&state.db_path, &item_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
 async fn public_available_offers_handler(
     State(state): State<AppState>,
 ) -> Result<Json<PublicOfferListResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -2046,5 +2245,81 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn availability_and_handoff_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/handoff/inbox"),
+            Some("handoff.inbox.write"),
+        );
+        assert!(denied.is_err());
+
+        for (route, capability) in [
+            ("/availability", "availability.read"),
+            ("/handoff/eligibility", "handoff.eligibility.evaluate"),
+            ("/handoff/inbox", "handoff.inbox.list"),
+            (
+                "/handoff/inbox/handoff_item_1/receipts",
+                "handoff.receipts.list",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                PolicyAction::Inspect,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        for route in [
+            "/availability/schedule",
+            "/availability/presence",
+            "/handoff/inbox/handoff_item_1/resolve",
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                PolicyAction::Create,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(if route.starts_with("/availability") {
+                    "availability.write"
+                } else {
+                    "handoff.inbox.write"
+                }),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN (
+                    'handoff.inbox.write', 'availability.read', 'availability.write',
+                    'handoff.eligibility.evaluate', 'handoff.inbox.list', 'handoff.receipts.list'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 8);
     }
 }

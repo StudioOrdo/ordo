@@ -40,6 +40,12 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "connection_grants",
     "connection_events",
     "connection_receipts",
+    "availability_schedules",
+    "operator_presence",
+    "handoff_eligibility_decisions",
+    "handoff_inbox_items",
+    "handoff_events",
+    "handoff_receipts",
     "corpus_sources",
     "corpus_items",
     "schedules",
@@ -48,7 +54,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 13;
+pub const CURRENT_SCHEMA_VERSION: i64 = 14;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -123,6 +129,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 13,
         name: "add_connections_foundation",
         apply: add_connections_foundation,
+    },
+    SchemaMigration {
+        version: 14,
+        name: "add_availability_and_handoff_inbox",
+        apply: add_availability_and_handoff_inbox,
     },
 ];
 
@@ -1063,6 +1074,103 @@ fn add_connections_foundation(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_availability_and_handoff_inbox(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS availability_schedules (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            timezone TEXT NOT NULL,
+            status TEXT NOT NULL,
+            windows_json TEXT NOT NULL DEFAULT '[]',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_availability_schedules_status ON availability_schedules(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS operator_presence (
+            id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            threshold TEXT NOT NULL,
+            status_message TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            updated_by_actor_id TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (updated_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_operator_presence_status ON operator_presence(status, threshold, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS handoff_eligibility_decisions (
+            id TEXT PRIMARY KEY,
+            intent TEXT NOT NULL,
+            connection_id TEXT,
+            connection_trust TEXT NOT NULL,
+            allowed INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            decided_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_handoff_eligibility_decisions_time ON handoff_eligibility_decisions(decided_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_handoff_eligibility_decisions_connection ON handoff_eligibility_decisions(connection_id, decided_at DESC);
+
+        CREATE TABLE IF NOT EXISTS handoff_inbox_items (
+            id TEXT PRIMARY KEY,
+            source_kind TEXT NOT NULL,
+            source_id TEXT,
+            destination_kind TEXT NOT NULL,
+            destination_id TEXT,
+            request_json TEXT NOT NULL DEFAULT '{}',
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            approval_requirement TEXT NOT NULL,
+            delivery_state TEXT NOT NULL,
+            owner_decision TEXT,
+            decision_reason TEXT,
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            resolved_at TEXT,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_handoff_inbox_items_state ON handoff_inbox_items(delivery_state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_handoff_inbox_items_source ON handoff_inbox_items(source_kind, source_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_handoff_inbox_items_destination ON handoff_inbox_items(destination_kind, destination_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS handoff_events (
+            id TEXT PRIMARY KEY,
+            handoff_item_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            occurred_at TEXT NOT NULL,
+            FOREIGN KEY (handoff_item_id) REFERENCES handoff_inbox_items(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_handoff_events_item ON handoff_events(handoff_item_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_handoff_events_type ON handoff_events(event_type, occurred_at DESC);
+
+        CREATE TABLE IF NOT EXISTS handoff_receipts (
+            id TEXT PRIMARY KEY,
+            handoff_item_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            receipt_kind TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (handoff_item_id) REFERENCES handoff_inbox_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (event_id) REFERENCES handoff_events(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_handoff_receipts_item ON handoff_receipts(handoff_item_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_handoff_receipts_event ON handoff_receipts(event_id);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1164,8 +1272,11 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 13);
+        assert_eq!(
+            versions,
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        );
+        assert_eq!(CURRENT_SCHEMA_VERSION, 14);
     }
 
     #[test]
@@ -1255,6 +1366,12 @@ mod tests {
         assert!(table_exists(&connection, "connection_grants"));
         assert!(table_exists(&connection, "connection_events"));
         assert!(table_exists(&connection, "connection_receipts"));
+        assert!(table_exists(&connection, "availability_schedules"));
+        assert!(table_exists(&connection, "operator_presence"));
+        assert!(table_exists(&connection, "handoff_eligibility_decisions"));
+        assert!(table_exists(&connection, "handoff_inbox_items"));
+        assert!(table_exists(&connection, "handoff_events"));
+        assert!(table_exists(&connection, "handoff_receipts"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -1543,6 +1660,46 @@ mod tests {
         assert!(column_exists(
             &connection,
             "connection_receipts",
+            "receipt_kind"
+        ));
+    }
+
+    #[test]
+    fn availability_and_handoff_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "availability_schedules"));
+        assert!(column_exists(
+            &connection,
+            "availability_schedules",
+            "windows_json"
+        ));
+        assert!(table_exists(&connection, "operator_presence"));
+        assert!(column_exists(&connection, "operator_presence", "threshold"));
+        assert!(table_exists(&connection, "handoff_eligibility_decisions"));
+        assert!(column_exists(
+            &connection,
+            "handoff_eligibility_decisions",
+            "evidence_json"
+        ));
+        assert!(table_exists(&connection, "handoff_inbox_items"));
+        assert!(column_exists(
+            &connection,
+            "handoff_inbox_items",
+            "approval_requirement"
+        ));
+        assert!(column_exists(
+            &connection,
+            "handoff_inbox_items",
+            "delivery_state"
+        ));
+        assert!(table_exists(&connection, "handoff_events"));
+        assert!(column_exists(&connection, "handoff_events", "event_type"));
+        assert!(table_exists(&connection, "handoff_receipts"));
+        assert!(column_exists(
+            &connection,
+            "handoff_receipts",
             "receipt_kind"
         ));
     }

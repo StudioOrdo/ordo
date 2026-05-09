@@ -491,6 +491,23 @@ Phase 3A role lifecycle workflow coverage now includes:
   handoff, conversation event, and realtime replay evidence where current
   backend helpers support it.
 
+Phase 3B Customer Feedback and Review workflow coverage now includes:
+
+- `feedback_capture_private_business_intelligence`, which captures private
+  feedback from durable conversation/message evidence, stars it as staff
+  intelligence rather than a rating, proposes a feedback tag candidate, and
+  confirms no public review/testimonial is created;
+- `review_candidate_consent_publication_boundary`, which creates a review
+  candidate from private feedback, verifies publication fails closed before
+  consent and approval, transitions through requested, received, consent
+  confirmed, approved, published, featured, and retired states, and confirms
+  public visibility is removed after retirement;
+- schema/domain tests for feedback evidence/provenance requirements and review
+  consent/approval publication guards;
+- packet, scorecard, and manifest writing for feedback/review cases, including
+  feedback and review ledger sections and redaction of sensitive source-message
+  fixture text.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

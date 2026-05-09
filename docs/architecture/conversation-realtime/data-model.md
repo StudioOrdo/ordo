@@ -1056,25 +1056,28 @@ Required read models:
 - Offer/Ask intent read models that preserve both human-readable presentation
   and future machine-readable matching/referral/proposal metadata.
 
-## Planned Product Intelligence Tables
+## Customer Feedback And Review Tables
 
-The 0.1.3 schema intentionally stopped before feedback/review/home billboard
-storage. 0.1.4 evals should pressure-test the product contract before adding
-tables. When implementation reaches these surfaces, prefer small evidence-backed
-tables rather than overloading generic analysis candidate rows.
+Implemented in schema version 27:
 
-Potential table families:
+- `customer_feedback`: private business intelligence captured from durable
+  conversation/message evidence. Rows include connection, conversation, segment
+  and message refs, kind, status, `private_business_intelligence` visibility,
+  star flag, source refs, evidence refs, and provenance.
+- `feedback_tags`: feedback tags with `proposed`, `confirmed`, `rejected`, or
+  `superseded` candidate state, confidence, evidence refs, and provenance.
+- `customer_reviews`: review candidates and public-review lifecycle rows with
+  status, review body, publication visibility, consent evidence refs, approval
+  evidence refs, evidence refs, provenance, and published/featured/retired
+  timestamps.
 
-- `customer_feedback`: private business intelligence captured from
-  conversation, offer/ask, artifact, referral, outcome, form, or staff input
-  evidence.
-- `feedback_tags`: candidate/confirmed/rejected/superseded tags for sentiment,
-  business signal, surface, and proof/persuasion use.
-- `feedback_object_links`: evidence-backed links from feedback to conversation,
-  segment, message, connection, offer, ask, artifact, review, referral,
-  outcome, and brief objects.
-- `review_requests`, `reviews`, and `review_publications`: consent and
-  publication lifecycle so no feedback becomes public proof without approval.
+The first implementation keeps object links through source/evidence refs rather
+than adding a dedicated `feedback_object_links` table. A review cannot become
+public proof without consent and approval evidence. Staff stars remain internal
+business-intelligence signals and are not customer ratings.
+
+Planned product intelligence tables still deferred:
+
 - `home_billboards`: Home/About narrative brief sections with linked object,
   evidence refs, persuasion role, brand archetype role, state, and publication
   metadata.
@@ -1103,9 +1106,9 @@ Recommended migration stages:
 9. knowledge graph node and edge candidates;
 10. offer/ask/referral/outcome attribution tables;
 11. normalized artifacts, artifact links, and deliverable projections.
-12. customer feedback, feedback tags, review consent/publication, home
-    billboards, and brand profile tables after eval evidence proves the smallest
-    useful shape.
+12. customer feedback, feedback tags, and review consent/publication.
+13. home billboards and brand profile tables after eval evidence proves the
+    smallest useful shape.
 
 Each stage should include schema tests, migration tests from an older database,
 and route tests for the domain behavior introduced in that stage.

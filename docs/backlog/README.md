@@ -46,7 +46,7 @@ architecture doc together.
 | [Reports And QA Loop](reports-qa-loop.md) | Expand local reports into a practical developer/support feedback loop. | local reports exist |
 | [Public Surfaces](public-surfaces.md) | Build public About, Offers, Asks, and Feed read models without private leakage. | backend read models merged; UI not built |
 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Track QR/link/campaign entry and visitor conversations. | backend foundation implemented; UI not built |
-| [Offer Acceptance And Trial State](offer-trial-state.md) | Record offer acceptance, 30-day trial state, and follow-up evidence. | not built |
+| [Offer Acceptance And Trial State](offer-trial-state.md) | Record offer acceptance, 30-day trial state, and follow-up evidence. | backend foundation implemented; UI not built |
 | [Affiliate Attribution](affiliate-attribution.md) | Connect affiliates, referral assets, attribution, and credit review. | not built |
 | [Mediated Chat](mediated-chat.md) | Let owners and visitors communicate through Ordo with context and policy intact. | not built |
 | [Job Kernel V2](job-kernel-v2.md) | Add leases, ownership, cancel, retry, and resume semantics for longer work. | not built |

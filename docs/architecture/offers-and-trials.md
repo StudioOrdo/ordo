@@ -1,0 +1,76 @@
+# Offers And Trial Lifecycle
+
+Status: backend foundation implemented
+
+This slice turns public interest into durable commercial state without adding UI,
+payments, affiliate payouts, analytics dashboards, external egress, mediated
+chat, or RAG.
+
+## What Is Implemented
+
+SQLite stores:
+
+- `offers`: durable offer records with slug, title, summary, status,
+  visibility, publication state, 30-day default trial duration, terms metadata,
+  source metadata, and timestamps.
+- `offer_acceptances`: public-safe acceptance records linked to the accepted
+  offer plus visitor session, entry point, and attribution context when present.
+- `trials`: 30-day trial lifecycle state linked to an acceptance and offer.
+- `trial_events`: durable event rows for trial starts and lifecycle decisions.
+
+Protected owner/operator routes:
+
+- `GET /offers`
+- `POST /offers`
+- `PUT /offers/:offer_id`
+- `GET /offer-acceptances`
+- `GET /trials`
+- `PUT /trials/:trial_id/status`
+
+Public-safe routes:
+
+- `GET /public/available-offers`
+- `POST /public/offers/:offer_slug/accept`
+
+Protected routes pass through the local daemon access boundary and record policy
+decision evidence through non-MCP-exported capability ids.
+
+## Public Offer Boundary
+
+Public offer availability is intentionally narrow. An offer can be accepted only
+when it is available through one of these public-safe sources:
+
+- an explicit durable offer with `status = available`, `visibility = public`,
+  and `publication_state = published`; or
+- a public Offers read-model item derived from published public business facts.
+
+Private, authenticated, staff, owner, draft, archived, revoked, paused, and
+unpublished material cannot enter public acceptance.
+
+## Attribution And Trial State
+
+When public acceptance includes a visitor session id, the backend copies the
+visitor session's entry point id, entry point slug, and attribution JSON into the
+acceptance. Additional public acceptance attribution can be merged into that
+record. Raw user agent text is not exposed in offer or trial responses.
+
+Accepting an offer starts a trial immediately. Trial state supports:
+
+- `started`
+- `converted`
+- `voided`
+- `expired`
+- `follow_up_needed`
+
+Each lifecycle transition records decision evidence and emits persisted realtime
+events.
+
+## Non-Goals
+
+- No UI implementation.
+- No payment processing.
+- No affiliate payout automation.
+- No analytics dashboard.
+- No cookie-heavy tracking.
+- No RAG or mediated chat.
+- No external notifications or egress.

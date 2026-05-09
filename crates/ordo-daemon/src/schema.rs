@@ -32,6 +32,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "tracked_entry_points",
     "visitor_sessions",
     "visitor_session_events",
+    "offers",
+    "offer_acceptances",
+    "trials",
+    "trial_events",
     "corpus_sources",
     "corpus_items",
     "schedules",
@@ -40,7 +44,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 11;
+pub const CURRENT_SCHEMA_VERSION: i64 = 12;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -105,6 +109,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 11,
         name: "add_tracked_entry_points_and_visitor_sessions",
         apply: add_tracked_entry_points_and_visitor_sessions,
+    },
+    SchemaMigration {
+        version: 12,
+        name: "add_offers_and_trial_lifecycle",
+        apply: add_offers_and_trial_lifecycle,
     },
 ];
 
@@ -871,6 +880,99 @@ fn add_tracked_entry_points_and_visitor_sessions(connection: &Connection) -> Res
     Ok(())
 }
 
+fn add_offers_and_trial_lifecycle(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS offers (
+            id TEXT PRIMARY KEY,
+            slug TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            publication_state TEXT NOT NULL,
+            trial_days INTEGER NOT NULL DEFAULT 30,
+            source_kind TEXT NOT NULL,
+            source_ref TEXT,
+            terms_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            published_at TEXT,
+            archived_at TEXT,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_offers_public_state ON offers(visibility, publication_state, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_offers_status ON offers(status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_offers_source ON offers(source_kind, source_ref);
+
+        CREATE TABLE IF NOT EXISTS offer_acceptances (
+            id TEXT PRIMARY KEY,
+            offer_id TEXT NOT NULL,
+            offer_slug TEXT NOT NULL,
+            offer_title TEXT NOT NULL,
+            visitor_session_id TEXT,
+            entry_point_id TEXT,
+            entry_point_slug TEXT,
+            attribution_json TEXT NOT NULL DEFAULT '{}',
+            acceptance_context_json TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL,
+            accepted_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_offer_acceptances_offer ON offer_acceptances(offer_id, accepted_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_offer_acceptances_session ON offer_acceptances(visitor_session_id, accepted_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_offer_acceptances_entry_point ON offer_acceptances(entry_point_id, accepted_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_offer_acceptances_status ON offer_acceptances(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS trials (
+            id TEXT PRIMARY KEY,
+            acceptance_id TEXT NOT NULL,
+            offer_id TEXT NOT NULL,
+            offer_slug TEXT NOT NULL,
+            visitor_session_id TEXT,
+            status TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            trial_ends_at TEXT NOT NULL,
+            converted_at TEXT,
+            voided_at TEXT,
+            expired_at TEXT,
+            follow_up_needed_at TEXT,
+            decision_evidence_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (acceptance_id) REFERENCES offer_acceptances(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_trials_acceptance ON trials(acceptance_id);
+        CREATE INDEX IF NOT EXISTS idx_trials_offer ON trials(offer_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_trials_status ON trials(status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_trials_ends ON trials(trial_ends_at, status);
+
+        CREATE TABLE IF NOT EXISTS trial_events (
+            id TEXT PRIMARY KEY,
+            trial_id TEXT NOT NULL,
+            acceptance_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            occurred_at TEXT NOT NULL,
+            FOREIGN KEY (trial_id) REFERENCES trials(id) ON DELETE CASCADE,
+            FOREIGN KEY (acceptance_id) REFERENCES offer_acceptances(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_trial_events_trial ON trial_events(trial_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_trial_events_acceptance ON trial_events(acceptance_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_trial_events_type ON trial_events(event_type, occurred_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -972,8 +1074,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 11);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 12);
     }
 
     #[test]
@@ -1055,6 +1157,10 @@ mod tests {
         assert!(table_exists(&connection, "tracked_entry_points"));
         assert!(table_exists(&connection, "visitor_sessions"));
         assert!(table_exists(&connection, "visitor_session_events"));
+        assert!(table_exists(&connection, "offers"));
+        assert!(table_exists(&connection, "offer_acceptances"));
+        assert!(table_exists(&connection, "trials"));
+        assert!(table_exists(&connection, "trial_events"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -1275,6 +1381,37 @@ mod tests {
             "visitor_session_events",
             "event_type"
         ));
+    }
+
+    #[test]
+    fn offer_and_trial_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "offers"));
+        assert!(column_exists(&connection, "offers", "slug"));
+        assert!(column_exists(&connection, "offers", "trial_days"));
+        assert!(column_exists(&connection, "offers", "publication_state"));
+        assert!(table_exists(&connection, "offer_acceptances"));
+        assert!(column_exists(
+            &connection,
+            "offer_acceptances",
+            "visitor_session_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "offer_acceptances",
+            "attribution_json"
+        ));
+        assert!(table_exists(&connection, "trials"));
+        assert!(column_exists(&connection, "trials", "trial_ends_at"));
+        assert!(column_exists(
+            &connection,
+            "trials",
+            "decision_evidence_json"
+        ));
+        assert!(table_exists(&connection, "trial_events"));
+        assert!(column_exists(&connection, "trial_events", "event_type"));
     }
 
     fn create_legacy_unversioned_database(connection: &Connection) {

@@ -129,6 +129,10 @@ surfaces land.
   browser-prepared local report artifact were verified with disposable state.
 - The 0.1.0 release evidence dossier is recorded in
   [release-0.1.0.md](process/release-0.1.0.md).
+- The backend-to-UI handoff map is recorded in
+  [backend-handoff-package-0.1.2.md](process/backend-handoff-package-0.1.2.md),
+  including route families, response cues, smoke seed scenarios, validation
+  commands, and known non-goals for future UI work.
 
 ## What Is Not Built Yet
 
@@ -171,7 +175,8 @@ surfaces land.
 Continue the 0.1.1 stabilization track after the runtime supervision, network
 posture, MCP policy tier, MCP request strictness, durable event replay, schema
 migration, backup integrity, UI smoke coverage, and local diagnostics/reporting
-slices.
+slices. The backend handoff package now gives the next UI implementation slice a
+single route-and-boundary map to start from.
 
 ## Useful Current References
 
@@ -218,6 +223,9 @@ slices.
   future Home Ordo and Worker Ordo scaling.
 - [Diagnostics And Reports Runtime Proof 1.0](process/diagnostics-reports-runtime-proof-1.0.md)
   records the container proof for the Logs and Reports slice.
+- [Backend Handoff Package 0.1.2](process/backend-handoff-package-0.1.2.md)
+  records the UI-ready backend route families, smoke seed scenarios, validation
+  commands, and non-goals for the backend handoff.
 
 ## How To Read Claims
 

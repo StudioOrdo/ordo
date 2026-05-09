@@ -412,8 +412,9 @@ Phase boundaries:
 Status: accepted planning arc for 0.1.5. Phase 1 persona library/validator,
 Phase 2 multi-case runner planning foundation, Phase 3 QR-to-trial journey
 eval, Phase 4 review-return journey eval, Phase 5 affiliate-referral journey
-eval, and Phase 6 admin/staff handoff and moderation journey eval are
-implemented. The full contract is documented in
+eval, Phase 6 admin/staff handoff and moderation journey eval, and Phase 7
+cross-persona analyzed journey report are implemented. The full contract is
+documented in
 `docs/architecture/conversation-realtime/live-product-journey-evals.md`.
 
 Delivery order:
@@ -446,7 +447,11 @@ Delivery order:
    human-led/delegated/returned mode boundaries, review moderation, affiliate
    grant revocation, and redacted packet/manifest output without provider keys
    or network calls.
-8. #169 Add cross-persona analyzed journey report.
+8. #169 Add cross-persona analyzed journey report. Implemented as deterministic
+   JSON/Markdown report generation from journey manifests, packets,
+   scorecards, and artifact-review outputs with aggregate conversion, review,
+   referral, handoff, privacy, accounting, persuasion, artifact-finding,
+   explicit-gap, and local-only issue-draft summaries.
 9. #170 Decide the governed email simulation or adapter path.
 
 Phase boundaries:

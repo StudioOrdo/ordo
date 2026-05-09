@@ -621,11 +621,18 @@ Phase 8 simulator contract coverage now includes:
 - validator rejection for missing required fields, unknown pressure subsystems,
   duplicate ids, raw emails, phone numbers, API-key-shaped strings, bearer
   tokens, and configured private terms.
+- multi-case live journey planning that loads personas deterministically;
+- missing live/network guards produce skipped planning summaries without
+  network or provider construction;
+- explicit persona id selection rejects unknown ids and preserves requested
+  order;
+- max-case and budget caps are enforced before journey execution;
+- run manifests include persona ids, content hashes, planned case ids, guard
+  decisions, and budget summaries without raw secrets or private persona
+  narrative.
 
 0.1.5 live product journey eval coverage should still add:
 
-- multi-case live runner guards for max cases, budget, provider/model/key, and
-  no default network;
 - QR/event entry point to visitor session to relationship conversation evidence;
 - live LLM conversation evidence through privacy egress, prompt slots, token
   ledger, and artifact packets;

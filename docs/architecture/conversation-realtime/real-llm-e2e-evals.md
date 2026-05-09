@@ -29,6 +29,10 @@ artifact-review foundations to validate persona-driven QR/event journeys,
 cross-persona analyzed reports.
 The 0.1.5 Phase 1 persona library and validator are implemented under
 `docs/evals/personas/` and `crates/ordo-daemon/src/eval_personas.rs`.
+The 0.1.5 Phase 2 multi-case runner foundation is implemented in
+`crates/ordo-daemon/src/live_eval_runner.rs`; it plans persona-backed live
+journey cases and writes a guarded manifest without running the QR-to-trial
+journey yet.
 
 ## Current Assessment
 
@@ -151,7 +155,8 @@ evidence rather than live-model impressions:
 11. Live product journey evals that run persona-driven QR-to-trial,
     review-return, affiliate-referral, and staff/admin handoff paths behind
     explicit live-provider guards. Phase 1 now provides the committed synthetic
-    persona library and deterministic validator.
+    persona library and deterministic validator. Phase 2 now provides the
+    multi-case guard/cap planner and manifest shape.
 
 Every implementation phase should begin by re-reading the issue, current docs,
 and current code because earlier eval work may change the best implementation

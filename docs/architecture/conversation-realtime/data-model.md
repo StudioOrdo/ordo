@@ -1111,6 +1111,27 @@ operator, and reviewer simulator outputs are local eval artifacts using
 and deterministic assertion refs, but they are not promoted into product truth
 or runtime state.
 
+The 0.1.5 live product journey eval arc should begin by reusing existing
+durable tables rather than adding broad new schema:
+
+- `tracked_entry_points` and `visitor_sessions` for event QR scans and return
+  links;
+- `conversations`, `conversation_participants`, `conversation_messages`, and
+  `conversation_events` for relationship continuity;
+- `llm_invocations`, `llm_prompt_slot_usage`, and
+  `llm_token_ledger_entries` for guarded live LLM evidence;
+- `offers`, `offer_acceptances`, and `trials` for the 30-day OrdoStudio trial
+  path;
+- `business_outcomes`, `business_outcome_attributions`, and
+  `referral_records` for conversion/referral evidence;
+- `customer_feedback`, `feedback_tags`, and `customer_reviews` for the review
+  return path;
+- `artifacts` and eval packet/report files for analyzed journey evidence.
+
+Dedicated persona, email, journey-run, or aggregate-report tables should be
+added only if the first implementation slices prove that file artifacts and the
+existing durable rows cannot express the required evidence cleanly.
+
 ## Migration Order
 
 Recommended migration stages:

@@ -406,3 +406,35 @@ Phase boundaries:
 - Product additions such as Customer Feedback, Reviews, Home/About billboards,
   and Offer/Ask intent metadata should be implemented only after eval evidence
   clarifies the smallest useful schema and UI contract.
+
+## Phase 11: Live Product Journey Evals
+
+Status: accepted planning arc for 0.1.5. The full contract is documented in
+`docs/architecture/conversation-realtime/live-product-journey-evals.md`.
+
+Delivery order:
+
+1. #162 Align live product journey eval canon and GitHub manufacturing setup.
+2. #163 Add persona markdown library and parser/validator.
+3. #164 Add multi-case live journey runner foundation.
+4. #165 Implement QR event to 30-day trial journey.
+5. #166 Implement review-request return journey with simulated email/link
+   artifact.
+6. #167 Implement affiliate referral journey eval.
+7. #168 Implement admin/staff handoff and moderation journey evals.
+8. #169 Add cross-persona analyzed journey report.
+9. #170 Decide the governed email simulation or adapter path.
+
+Phase boundaries:
+
+- Live LLM calls are always opt-in and require explicit network, provider,
+  model, key, max-case, and budget guards.
+- Default tests stay deterministic, provider-free, network-free, and CI-safe.
+- Persona messages and LLM outputs create realistic pressure but do not own
+  pass/fail authority.
+- The eval may test whether Ordo helps someone decide to try OrdoStudio, but it
+  must not test manipulation or unsupported persuasion.
+- Review-request email starts as a simulated redacted artifact/link unless a
+  later accepted issue adds a governed outbound email adapter.
+- Cross-run report issue drafts remain local artifacts until governed GitHub
+  filing is implemented.

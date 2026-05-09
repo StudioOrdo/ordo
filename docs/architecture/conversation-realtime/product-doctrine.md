@@ -59,6 +59,14 @@ Simulator outputs must remain candidate test-driver artifacts:
 - all simulator inputs and outputs must be redacted, evidence-linked, and safe
   to inspect.
 
+Live product journey evals extend this doctrine into realistic business paths:
+QR/event introductions, relationship conversations, OrdoStudio trial decisions,
+review-return loops, affiliate referrals, and staff/admin handoffs. These evals
+may use guarded live LLM calls to create realistic language, but they must
+remain evidence-backed and agency-preserving. Ordo should help a person decide
+whether trying OrdoStudio fits their situation; it must not invent proof,
+manufacture urgency, hide pressure, or treat model persuasion as truth.
+
 ## Navigation And Information Architecture
 
 The primary flow is:

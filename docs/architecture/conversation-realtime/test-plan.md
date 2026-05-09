@@ -612,6 +612,25 @@ Phase 8 simulator contract coverage now includes:
 - proof that default simulator contract tests require no provider keys and no
   network.
 
+0.1.5 live product journey eval coverage should add:
+
+- persona markdown parsing and validation with no real private data;
+- multi-case live runner guards for max cases, budget, provider/model/key, and
+  no default network;
+- QR/event entry point to visitor session to relationship conversation evidence;
+- live LLM conversation evidence through privacy egress, prompt slots, token
+  ledger, and artifact packets;
+- OrdoStudio offer acceptance, 30-day trial, outcome, and attribution evidence;
+- simulated review-request email/link artifact before any real outbound email;
+- return visit, feedback capture, review candidate, consent, approval, publish,
+  feature, and retire boundaries;
+- affiliate connection, referral entry point, referred visitor, referral record,
+  and outcome attribution evidence;
+- staff/admin handoff, delegation, review approval, affiliate management, and
+  client-safe versus staff-only visibility evidence;
+- cross-persona analyzed report with conversion, trial, review, referral,
+  handoff, privacy, persuasion, token, and artifact-review summaries.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

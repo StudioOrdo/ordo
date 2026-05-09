@@ -247,6 +247,13 @@ conversation events, artifact packet refs, and deterministic assertion refs,
 but they cannot create pass/fail authority or bypass gateway, policy, privacy,
 or provider boundaries.
 
+Live product journey evals should not add live-only event types by default.
+QR scans, visitor sessions, offer acceptance, trials, referrals, feedback,
+reviews, handoffs, LLM runs, privacy transforms, and token usage should
+normalize through their existing durable events. Simulated review-request email
+links should begin as local eval artifacts unless a later accepted slice adds a
+governed outbound email event contract.
+
 Implemented tool governance behavior: LLM tool requests are durable
 conversation events with `toolRequestId`, `runId`, requested capability, reason,
 evidence refs, redacted input summary, visibility ceiling, status, and policy

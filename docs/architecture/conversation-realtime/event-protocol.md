@@ -346,6 +346,12 @@ Deferred product intelligence events for later surface work:
 - `conversation.agent.delegated`
 - `conversation.agent.delegation.revoked`
 
+The first Home/About and Offer/Ask eval slice uses existing
+`business.fact.created`, `surface.brief.*`, artifact, feedback/review, offer,
+and outcome evidence rather than adding new `home.about.*` events. Dedicated
+Home/About billboard events remain planned until the product surface needs
+first-class billboard lifecycle mutation beyond public business facts.
+
 These are planned event contracts, not current route claims. They should follow
 the existing persistence rule: validate, mutate domain state, insert ordered
 domain/conversation event, mirror to global realtime only when relevant, commit,

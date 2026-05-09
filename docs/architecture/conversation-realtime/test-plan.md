@@ -508,6 +508,23 @@ Phase 3B Customer Feedback and Review workflow coverage now includes:
   feedback and review ledger sections and redaction of sensitive source-message
   fixture text.
 
+Phase 3C Home/About and Offer/Ask product surface workflow coverage now
+includes:
+
+- `home_about_public_narrative_brief`, which seeds public Home/About billboard
+  facts, draft/private excluded facts, a surface brief, and a linked artifact,
+  then verifies the public contract includes evidence refs, allowed state,
+  reduced-motion fallback, and Chat/source links;
+- `offer_ask_machine_readable_intent`, which seeds public Offer and Ask intent
+  facts, verifies human-readable and machine-readable intent metadata, preserves
+  the future-A2A boundary, and rejects unsupported public persuasion proof such
+  as fake scarcity;
+- packet, scorecard, and manifest writing for both cases, including a
+  product-surface ledger for durable business facts, offers, and outcomes;
+- provider-free, network-free validation that uses public business facts as the
+  first durable surface contract instead of adding dedicated billboard/intent
+  tables before eval evidence requires them.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

@@ -23,6 +23,7 @@ target/
 coverage/
 test-results/
 playwright-report/
+project-export.txt
 *.log
 *.jsonl
 *.tsbuildinfo

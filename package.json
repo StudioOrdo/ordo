@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "smoke:ui": "playwright test",
+    "export": "node scripts/export-project.mjs",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run build"
   },

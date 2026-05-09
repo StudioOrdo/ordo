@@ -179,7 +179,12 @@ cargo run -p ordo-daemon -- create-backup-json --db-path .data/local.db
 cargo run -p ordo-daemon -- list-backups-json --db-path .data/local.db
 cargo run -p ordo-daemon -- restore-preflight-json --db-path .data/local.db --backup-id <backup_id> --confirmation "RESTORE <backup_id>"
 cargo run -p ordo-daemon -- serve --db-path .data/local.db
+npm run export
 ```
+
+`npm run export` writes an ignored `project-export.txt` context bundle for
+external AI/code review tools. See [Project Export](docs/process/project-export.md)
+for when to use it and what it intentionally excludes.
 
 The Phase 2 system shell is a minimal Next.js app.
 

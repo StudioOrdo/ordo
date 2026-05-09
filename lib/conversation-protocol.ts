@@ -35,7 +35,9 @@ export type ConversationCommandType =
   | "handoff.assign"
   | "handoff.return_to_agent"
   | "agent.delegate"
-  | "agent.takeover";
+  | "agent.takeover"
+  | "llm.run.request"
+  | "llm.run.cancel";
 
 export type ConversationGatewayEnvelope<TPayload = unknown> = {
   schemaVersion: typeof CONVERSATION_GATEWAY_SCHEMA_VERSION;
@@ -138,6 +140,8 @@ export const conversationCommandCapabilities: Record<ConversationCommandType, st
   "handoff.return_to_agent": "conversation.handoff.manage",
   "agent.delegate": "conversation.agent.delegate",
   "agent.takeover": "conversation.agent.delegate",
+  "llm.run.request": "llm.invoke",
+  "llm.run.cancel": "llm.cancel",
 };
 
 export const conversationProtocolFixtures = {

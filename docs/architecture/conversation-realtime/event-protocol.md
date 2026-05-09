@@ -95,8 +95,8 @@ Initial command catalog:
 | `typing.start` | ephemeral `typing.started` | `conversation.presence.write` |
 | `typing.stop` | ephemeral `typing.stopped` | `conversation.presence.write` |
 | `presence.update` | ephemeral and optional durable presence snapshot | `conversation.presence.write` |
-| `llm.run.request` | durable `llm.run.started` plus stream events | `llm.invoke` |
-| `llm.run.cancel` | durable or ephemeral cancel event | `llm.cancel` |
+| `llm.run.request` | durable `llm.run.requested`, prompt/provider events, ephemeral deltas, durable completion/failure | `llm.invoke` |
+| `llm.run.cancel` | durable `llm.run.cancelled` | `llm.cancel` |
 | `tool.approve` | durable approval event | `llm.tool.approve` |
 | `tool.reject` | durable rejection event | `llm.tool.reject` |
 | `handoff.accept` | `handoff.item.accepted` | `conversation.handoff.manage` |
@@ -191,6 +191,14 @@ LLM gateway:
 - `llm.run.completed`
 - `llm.run.failed`
 - `llm.run.cancelled`
+
+Implemented foundation behavior: `llm.text.delta` is an ephemeral gateway
+dispatch and is not persisted in `conversation_events`; `llm.text.completed`,
+`llm.usage.recorded`, terminal run state, prompt compilation, prompt slot
+inclusion, and provider start evidence are durable conversation events. Final
+assistant text is persisted as a normal `conversation_messages` row only after
+provider completion. Provider keys are not part of the command, event, prompt
+slot, or UI contract.
 
 Analysis and briefs:
 

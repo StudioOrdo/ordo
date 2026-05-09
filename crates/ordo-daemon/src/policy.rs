@@ -103,6 +103,8 @@ pub enum ResourceKind {
     Conversation,
     ConversationMessage,
     ConversationParticipant,
+    LlmRun,
+    PromptSlot,
 }
 
 impl ResourceKind {
@@ -127,6 +129,8 @@ impl ResourceKind {
             Self::Conversation => "conversation",
             Self::ConversationMessage => "conversation_message",
             Self::ConversationParticipant => "conversation_participant",
+            Self::LlmRun => "llm_run",
+            Self::PromptSlot => "prompt_slot",
         }
     }
 }

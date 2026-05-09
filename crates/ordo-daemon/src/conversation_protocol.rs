@@ -62,6 +62,8 @@ pub enum ConversationCommandType {
     HandoffReturnToAgent,
     AgentDelegate,
     AgentTakeover,
+    LlmRunRequest,
+    LlmRunCancel,
 }
 
 impl ConversationCommandType {
@@ -87,6 +89,8 @@ impl ConversationCommandType {
             ConversationCommandType::HandoffReturnToAgent => "handoff.return_to_agent",
             ConversationCommandType::AgentDelegate => "agent.delegate",
             ConversationCommandType::AgentTakeover => "agent.takeover",
+            ConversationCommandType::LlmRunRequest => "llm.run.request",
+            ConversationCommandType::LlmRunCancel => "llm.run.cancel",
         }
     }
 
@@ -112,6 +116,8 @@ impl ConversationCommandType {
             ConversationCommandType::AgentDelegate | ConversationCommandType::AgentTakeover => {
                 "conversation.agent.delegate"
             }
+            ConversationCommandType::LlmRunRequest => "llm.invoke",
+            ConversationCommandType::LlmRunCancel => "llm.cancel",
         }
     }
 }

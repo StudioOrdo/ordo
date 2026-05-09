@@ -90,6 +90,13 @@ surfaces land.
   stored as SQLite artifacts. Reports include health, readiness, recent events,
   recent jobs, and structured diagnostic logs as evidence envelopes, then render
   a local markdown draft for operator review, copy, or export.
+- SQLite stores durable report export records, report status events, support
+  packet drafts, and support packet receipts. The daemon exposes protected local
+  routes for report detail, status changes, local markdown export, support
+  packet preview, local-only approval, and receipt inspection.
+- Support packet drafts are bounded derivatives of local reports and approval
+  records `approved_local_only` with `externalDelivery: false`; no support
+  packet route performs network delivery.
 - Local issue report job artifacts include provenance metadata that identifies
   actor, action, resource, producing capability, producing job, process template,
   and high-trust classification.
@@ -135,8 +142,9 @@ surfaces land.
   evidence, local inbox events, and receipt evidence only.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
   integrations are not implemented yet.
-- Report submission transports to external systems are not implemented yet;
-  Reports 1.0 prepares local evidence packages only.
+- Report submission and support packet transport to external systems are not
+  implemented yet; Reports 1.0 and support packet approval remain local evidence
+  and approval records only.
 - MCP is currently a local JSON-RPC daemon projection with first policy tiers,
   not a third-party plugin surface.
 - Full visual regression coverage is not implemented yet.

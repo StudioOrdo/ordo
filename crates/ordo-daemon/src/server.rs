@@ -85,7 +85,12 @@ use crate::public_surfaces::{
     AsksReadModel, FeedReadModel, OffersReadModel, PublicSurfacesResponse,
 };
 use crate::reports::{
-    list_issue_reports, prepare_issue_report, IssueReportPrepareRequest, IssueReportsResponse,
+    approve_support_packet, draft_support_packet, export_issue_report, list_issue_reports,
+    list_support_packet_receipts, list_support_packets, prepare_issue_report, read_issue_report,
+    update_issue_report_status, IssueReportDetailResponse, IssueReportExportRequest,
+    IssueReportExportResponse, IssueReportPrepareRequest, IssueReportStatusUpdateRequest,
+    IssueReportsResponse, SupportPacketApprovalRequest, SupportPacketDraftRequest,
+    SupportPacketListResponse, SupportPacketReceiptListResponse, SupportPacketView,
 };
 use crate::schema::init_database;
 
@@ -271,9 +276,28 @@ pub async fn serve(
         .route("/restore/validate", post(validate_restore_handler))
         .route("/events", get(events_handler))
         .route("/reports/issues", get(list_issue_reports_handler))
+        .route("/reports/issues/:report_id", get(read_issue_report_handler))
+        .route(
+            "/reports/issues/:report_id/status",
+            put(update_issue_report_status_handler),
+        )
+        .route(
+            "/reports/issues/:report_id/exports",
+            post(export_issue_report_handler),
+        )
         .route(
             "/reports/issues/prepare",
             post(prepare_issue_report_handler),
+        )
+        .route("/support-packets", get(support_packets_handler))
+        .route("/support-packets", post(draft_support_packet_handler))
+        .route(
+            "/support-packets/:packet_id/approve",
+            put(approve_support_packet_handler),
+        )
+        .route(
+            "/support-packets/:packet_id/receipts",
+            get(support_packet_receipts_handler),
         )
         .route("/mcp", post(mcp_handler))
         .route("/ws", get(ws_handler))
@@ -1596,6 +1620,94 @@ async fn list_issue_reports_handler(
         .map_err(internal_error)
 }
 
+async fn read_issue_report_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(report_id): AxumPath<String>,
+) -> Result<Json<IssueReportDetailResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/reports/issues/{report_id}"),
+        ),
+        Some("issue.report.detail"),
+    )?;
+    read_issue_report(&state.db_path, &report_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn update_issue_report_status_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(report_id): AxumPath<String>,
+    Json(request): Json<IssueReportStatusUpdateRequest>,
+) -> Result<Json<IssueReportDetailResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/reports/issues/{report_id}/status"),
+        ),
+        Some("issue.report.status.update"),
+    )?;
+    let detail =
+        update_issue_report_status(&state.db_path, &report_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "issue.report.status.updated",
+        json!({ "reportId": detail.report.id, "status": detail.report.status }),
+    );
+    Ok(Json(detail))
+}
+
+async fn export_issue_report_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(report_id): AxumPath<String>,
+    Json(request): Json<IssueReportExportRequest>,
+) -> Result<Json<IssueReportExportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Export,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/reports/issues/{report_id}/exports"),
+        ),
+        Some("issue.report.export"),
+    )?;
+    let exported = export_issue_report(&state.db_path, &report_id, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "issue.report.exported",
+        json!({
+            "reportId": exported.report.id,
+            "exportId": exported.export.id,
+            "contentHash": exported.export.content_hash,
+        }),
+    );
+    Ok(Json(exported))
+}
+
 async fn prepare_issue_report_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -1627,6 +1739,114 @@ async fn prepare_issue_report_handler(
     list_issue_reports(&state.db_path)
         .map(Json)
         .map_err(internal_error)
+}
+
+async fn support_packets_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<SupportPacketListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/support-packets"),
+        Some("support.packets.list"),
+    )?;
+    list_support_packets(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn draft_support_packet_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<SupportPacketDraftRequest>,
+) -> Result<Json<SupportPacketView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Prepare,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/support-packets"),
+        Some("support.packets.draft"),
+    )?;
+    let packet = draft_support_packet(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "support.packet.drafted",
+        json!({
+            "packetId": packet.id,
+            "reportId": packet.report_id,
+            "externalDelivery": false,
+            "approvalRequired": packet.approval_required,
+        }),
+    );
+    Ok(Json(packet))
+}
+
+async fn approve_support_packet_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(packet_id): AxumPath<String>,
+    Json(request): Json<SupportPacketApprovalRequest>,
+) -> Result<Json<SupportPacketView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/support-packets/{packet_id}/approve"),
+        ),
+        Some("support.packets.approve"),
+    )?;
+    let packet = approve_support_packet(&state.db_path, &packet_id, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "support.packet.approved.local_only",
+        json!({
+            "packetId": packet.id,
+            "reportId": packet.report_id,
+            "externalDelivery": false,
+            "deliveryState": "not_sent",
+        }),
+    );
+    Ok(Json(packet))
+}
+
+async fn support_packet_receipts_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(packet_id): AxumPath<String>,
+) -> Result<Json<SupportPacketReceiptListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/support-packets/{packet_id}/receipts"),
+        ),
+        Some("support.packet.receipts.list"),
+    )?;
+    list_support_packet_receipts(&state.db_path, &packet_id)
+        .map(Json)
+        .map_err(invalid_request_error)
 }
 
 async fn mcp_handler(
@@ -2315,6 +2535,94 @@ mod tests {
                  WHERE capability_id IN (
                     'handoff.inbox.write', 'availability.read', 'availability.write',
                     'handoff.eligibility.evaluate', 'handoff.inbox.list', 'handoff.receipts.list'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 8);
+    }
+
+    #[test]
+    fn report_and_support_packet_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Approve,
+            ResourceRef::new(
+                ResourceKind::DaemonRoute,
+                "/support-packets/packet_1/approve",
+            ),
+            Some("support.packets.approve"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            (
+                "/reports/issues/report_1",
+                PolicyAction::Inspect,
+                "issue.report.detail",
+            ),
+            (
+                "/reports/issues/report_1/status",
+                PolicyAction::Update,
+                "issue.report.status.update",
+            ),
+            (
+                "/reports/issues/report_1/exports",
+                PolicyAction::Export,
+                "issue.report.export",
+            ),
+            (
+                "/support-packets",
+                PolicyAction::Inspect,
+                "support.packets.list",
+            ),
+            (
+                "/support-packets",
+                PolicyAction::Prepare,
+                "support.packets.draft",
+            ),
+            (
+                "/support-packets/packet_1/approve",
+                PolicyAction::Approve,
+                "support.packets.approve",
+            ),
+            (
+                "/support-packets/packet_1/receipts",
+                PolicyAction::Inspect,
+                "support.packet.receipts.list",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN (
+                    'support.packets.approve', 'issue.report.detail',
+                    'issue.report.status.update', 'issue.report.export',
+                    'support.packets.list', 'support.packets.draft',
+                    'support.packet.receipts.list'
                  )",
                 [],
                 |row| row.get(0),

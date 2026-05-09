@@ -38,8 +38,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | complete |
 | 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | complete |
 | 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | complete |
-| 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | ready for PR |
-| 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | not started |
+| 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | complete |
+| 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | ready for PR |
 | 8 | Knowledge corpus and governed retrieval | #57 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Corpus ingestion, source/item provenance, SQLite FTS retrieval, visibility filtering, and retrieval evidence exist. | not started |
 | 9 | RAG answer draft spine | #58 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Provider-backed answer draft job uses governed retrieval, emits evidence, avoids unsupported claims, and preserves redaction guarantees. | not started |
 | 10 | MCP pack and tool hardening | #59 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Pack manifest validation, tool schemas, side effect declarations, capability policy mapping, and disable behavior exist. | not started |
@@ -196,6 +196,8 @@ Current implementation evidence:
 
 This phase gives Ordo a safe owner-attention boundary.
 
+GitHub issue: #55. Pull request: #67, merged.
+
 Done means:
 
 - schedule, presence, and interruption threshold influence handoff eligibility;
@@ -221,12 +223,28 @@ Current implementation evidence:
 
 This phase turns local reports into an explicit support handoff path.
 
+GitHub issue: #56. Pull request: pending.
+
 Done means:
 
 - reports have detail, export, and status contracts;
 - support packet payload is previewable before egress;
-- sending is approval-gated and receipt-backed;
+- support packet approval is explicit, local-only, and receipt-backed;
 - redaction tests cover provider/vault material.
+
+Current implementation evidence:
+
+- durable report export, report status event, support packet, and support
+  packet receipt tables exist in schema version 15;
+- protected local daemon routes exist for report detail, status transition,
+  local markdown export, support packet draft preview, approval, and receipt
+  inspection;
+- report exports persist the exact reviewed markdown content with SHA-256
+  evidence;
+- support packet drafts are bounded derivatives of local reports and record
+  `externalDelivery: false`;
+- approval records `approved_local_only` and receipt evidence without creating a
+  network send path.
 
 ### 8. Knowledge Corpus And Governed Retrieval
 

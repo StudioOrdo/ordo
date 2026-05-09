@@ -19,7 +19,14 @@ The daemon exposes:
 
 - `GET /logs`
 - `GET /reports/issues`
+- `GET /reports/issues/:report_id`
+- `PUT /reports/issues/:report_id/status`
+- `POST /reports/issues/:report_id/exports`
 - `POST /reports/issues/prepare`
+- `GET /support-packets`
+- `POST /support-packets`
+- `PUT /support-packets/:packet_id/approve`
+- `GET /support-packets/:packet_id/receipts`
 
 The browser uses the bundled Next.js API route to request report preparation
 from the daemon. Report preparation is a protected daemon mutation.
@@ -65,6 +72,11 @@ Preparing a report:
 Reports are stored locally as artifacts. They are not automatically submitted to
 GitHub, support systems, model providers, or other Ordos.
 
+Report detail reads include the stored artifact, local export records, status
+events, and any support packet drafts derived from the report. Markdown exports
+are durable local records with the exact reviewed markdown content and content
+hash evidence. Status changes are stored as local status events.
+
 Reports must not include plaintext provider keys or local vault key material.
 Provider status may be summarized only through redacted presence/source
 metadata.
@@ -72,6 +84,18 @@ metadata.
 Issue report job artifacts include provenance metadata for the current local
 policy spine: actor, action, report resource, producing capability, producing
 job, process template, and local high-trust classification.
+
+## Support Packets
+
+Support packets are local, approval-gated derivatives of issue reports. A draft
+support packet previews bounded markdown content, destination metadata, payload
+hash evidence, and `externalDelivery: false` before any future transport is
+introduced.
+
+Approving a packet records `approved_local_only` and a local receipt with
+`deliveryState: not_sent`. Approval is evidence for a future egress gate, not a
+network send. There is no daemon route in this slice that delivers a support
+packet to Studio Ordo Support, GitHub, model providers, or other Ordos.
 
 ## Evidence Boundary
 
@@ -84,6 +108,7 @@ The current implementation is local-first:
 - no hidden network egress;
 - no automatic external issue creation;
 - no automatic A2A support submission;
+- no support packet delivery route;
 - no raw database upload;
 - no unrestricted log export.
 

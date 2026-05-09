@@ -1,7 +1,7 @@
 # Conversation Realtime Data Model
 
 Status: Draft schema plan with backend foundation implemented through daemon
-schema versions 19 through 24
+schema versions 19 through 25
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -37,9 +37,11 @@ usage, and append-only token ledger entries. Schema version 22 adds the first
 continuous conversation analysis, brief candidate, and memory candidate
 foundation. Schema version 23 adds dedicated knowledge graph node and edge
 candidate tables. Schema version 24 adds referral records, business outcomes,
-and business outcome attribution candidates. Dedicated privacy transform tables
-remain deferred; privacy transform run ids are recorded on invocations, while
-placeholder mappings stay behind the encrypted local vault boundary.
+and business outcome attribution candidates. Schema version 25 adds normalized
+artifacts, versions, evidence/influence links, and client-facing deliverable
+projections. Dedicated privacy transform tables remain deferred; privacy
+transform run ids are recorded on invocations, while placeholder mappings stay
+behind the encrypted local vault boundary.
 
 ### `conversations`
 
@@ -718,6 +720,98 @@ Columns:
 Referral statuses include `captured`, `qualified`, `converted`, `lost`, and
 `voided`.
 
+### `artifacts`
+
+Stores `Artifact` as the canonical internal system noun for durable
+knowledge/business objects. Existing operational tables such as
+`job_artifacts`, `brief_artifacts`, issue report artifacts, backup artifacts,
+and support packets remain valid producers or specialized records; normalized
+`artifacts` rows provide the product contract for conversation cards, evidence
+links, attribution influence, and future surface briefs.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `artifact_kind TEXT NOT NULL`
+- `title TEXT NOT NULL`
+- `status TEXT NOT NULL`
+- `visibility_ceiling TEXT NOT NULL`
+- `summary TEXT NOT NULL`
+- `source_kind TEXT`
+- `source_id TEXT`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `content_hash TEXT NOT NULL`
+- `storage_uri TEXT`
+- `health_status TEXT`
+- `created_by_job_id TEXT`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+
+Indexes:
+
+- `(artifact_kind, status, updated_at DESC)`;
+- `(source_kind, source_id)`;
+- `(visibility_ceiling, updated_at DESC)`.
+
+### `artifact_versions`
+
+Tracks durable artifact revisions by content hash and storage pointer without
+requiring a storage backend or editor UI in this slice.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `artifact_id TEXT NOT NULL`
+- `version INTEGER NOT NULL`
+- `content_hash TEXT NOT NULL`
+- `storage_uri TEXT`
+- `metadata_json TEXT NOT NULL DEFAULT '{}'`
+- `created_at TEXT NOT NULL`
+
+Unique:
+
+- `(artifact_id, version)`.
+
+### `artifact_links`
+
+Links artifacts to concrete evidence and business objects. Links require real
+source ids so artifact influence cannot be invented.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `artifact_id TEXT NOT NULL`
+- `link_kind TEXT NOT NULL`
+- `source_kind TEXT NOT NULL`
+- `source_id TEXT NOT NULL`
+- `relation TEXT NOT NULL`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `created_at TEXT NOT NULL`
+
+Unique:
+
+- `(artifact_id, link_kind, source_kind, source_id, relation)`.
+
+### `artifact_deliverables`
+
+Stores optional client-facing `Deliverable` projections from internal artifacts.
+Deliverables expose client-safe labels and summaries without leaking internal
+provenance, storage, job, or policy mechanics.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `artifact_id TEXT NOT NULL`
+- `client_label TEXT NOT NULL`
+- `status TEXT NOT NULL`
+- `visibility TEXT NOT NULL`
+- `summary TEXT NOT NULL`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+- `published_at TEXT`
+
 ### `surface_briefs`
 
 Stores latest completed evidence-backed briefs for major UI surfaces. Brief
@@ -953,7 +1047,8 @@ Recommended migration stages:
    enough for inspection;
 8. analysis jobs, analysis candidates, brief candidates, and memory candidates;
 9. knowledge graph node and edge candidates;
-10. offer/ask/referral/outcome attribution tables.
+10. offer/ask/referral/outcome attribution tables;
+11. normalized artifacts, artifact links, and deliverable projections.
 
 Each stage should include schema tests, migration tests from an older database,
 and route tests for the domain behavior introduced in that stage.

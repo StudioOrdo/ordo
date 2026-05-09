@@ -72,6 +72,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "conversation_memory_candidates",
     "knowledge_graph_node_candidates",
     "knowledge_graph_edge_candidates",
+    "artifacts",
+    "artifact_versions",
+    "artifact_links",
+    "artifact_deliverables",
     "referral_records",
     "business_outcomes",
     "business_outcome_attributions",
@@ -88,7 +92,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 24;
+pub const CURRENT_SCHEMA_VERSION: i64 = 25;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -218,6 +222,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 24,
         name: "add_business_outcome_attribution_schema",
         apply: add_business_outcome_attribution_schema,
+    },
+    SchemaMigration {
+        version: 25,
+        name: "add_artifact_deliverable_contract_schema",
+        apply: add_artifact_deliverable_contract_schema,
     },
 ];
 
@@ -2150,6 +2159,92 @@ fn add_business_outcome_attribution_schema(connection: &Connection) -> Result<()
     Ok(())
 }
 
+fn add_artifact_deliverable_contract_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS artifacts (
+            id TEXT PRIMARY KEY,
+            artifact_kind TEXT NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility_ceiling TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            source_kind TEXT,
+            source_id TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            content_hash TEXT NOT NULL,
+            storage_uri TEXT,
+            health_status TEXT,
+            created_by_job_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (created_by_job_id) REFERENCES jobs(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_artifacts_kind_status
+            ON artifacts(artifact_kind, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_artifacts_source
+            ON artifacts(source_kind, source_id);
+        CREATE INDEX IF NOT EXISTS idx_artifacts_visibility
+            ON artifacts(visibility_ceiling, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS artifact_versions (
+            id TEXT PRIMARY KEY,
+            artifact_id TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            content_hash TEXT NOT NULL,
+            storage_uri TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE,
+            UNIQUE(artifact_id, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_artifact_versions_artifact
+            ON artifact_versions(artifact_id, version DESC);
+
+        CREATE TABLE IF NOT EXISTS artifact_links (
+            id TEXT PRIMARY KEY,
+            artifact_id TEXT NOT NULL,
+            link_kind TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            relation TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE,
+            UNIQUE(artifact_id, link_kind, source_kind, source_id, relation)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_artifact_links_artifact
+            ON artifact_links(artifact_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_artifact_links_source
+            ON artifact_links(source_kind, source_id);
+
+        CREATE TABLE IF NOT EXISTS artifact_deliverables (
+            id TEXT PRIMARY KEY,
+            artifact_id TEXT NOT NULL,
+            client_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            published_at TEXT,
+            FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_artifact_deliverables_artifact
+            ON artifact_deliverables(artifact_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_artifact_deliverables_status
+            ON artifact_deliverables(status, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -2255,10 +2350,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24,
+                24, 25,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 24);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 25);
     }
 
     #[test]
@@ -3023,6 +3118,27 @@ mod tests {
             &connection,
             "business_outcome_attributions",
             "influence_role"
+        ));
+        assert!(table_exists(&connection, "artifacts"));
+        assert!(column_exists(
+            &connection,
+            "artifacts",
+            "visibility_ceiling"
+        ));
+        assert!(column_exists(&connection, "artifacts", "content_hash"));
+        assert!(table_exists(&connection, "artifact_versions"));
+        assert!(column_exists(
+            &connection,
+            "artifact_versions",
+            "metadata_json"
+        ));
+        assert!(table_exists(&connection, "artifact_links"));
+        assert!(column_exists(&connection, "artifact_links", "relation"));
+        assert!(table_exists(&connection, "artifact_deliverables"));
+        assert!(column_exists(
+            &connection,
+            "artifact_deliverables",
+            "client_label"
         ));
     }
 

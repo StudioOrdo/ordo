@@ -294,6 +294,12 @@ Coverage:
   that have concrete offer, visitor-session, or entry-point ids;
 - attribution lifecycle transitions are durable for confirmed, rejected, and
   superseded states;
+- artifacts require evidence refs, provenance, content hash, and visibility
+  ceiling;
+- artifact links require concrete source ids and do not invent influence;
+- deliverables project from artifacts with client-safe label and summary;
+- artifact detail briefs answer value, use, next action, producing job,
+  provenance, and storage/health where available;
 - brief candidates cite durable conversation evidence;
 - ethical recommendation candidates cite durable evidence and limitations;
 - provider-backed analysis uses the same privacy and token ledger path.

@@ -274,6 +274,10 @@ Conversation should render Ordo artifacts as compact cards:
 - surface brief refreshed.
 
 Cards should have stable dimensions and clear actions. Avoid nested cards.
+Staff-facing cards use `Artifact` and may show producing job, provenance, and
+storage/health. Client-facing cards use `Deliverable` only when an artifact is
+intentionally exposed; they should show value, use, and next action without
+internal storage or policy mechanics.
 
 ## Presence
 

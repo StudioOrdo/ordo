@@ -37,7 +37,7 @@ The conversation layer should support:
 
 The existing implementation already has several reusable foundations.
 
-| Current asset | Existing responsibility | Conversation use |
+| Current anchor | Existing responsibility | Conversation use |
 | --- | --- | --- |
 | `RealtimeEvent` in `crates/ordo-daemon/src/events.rs` | Durable event shape with global cursor replay. | Extend with conversation family events and per-conversation sequencing. |
 | `/events` replay | Cursor-based replay for persisted events. | Recover missed durable chat events and receipt changes after reconnect. |

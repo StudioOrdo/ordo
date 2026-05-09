@@ -240,13 +240,14 @@ Exit criteria:
 
 ## Phase 8: Continuous Analysis And Briefs
 
-Status: foundation implemented in the #95, #102, and #103 slices. Schema
+Status: foundation implemented in the #95, #102, #103, and #104 slices. Schema
 version 22 adds `conversation_analysis_jobs`,
 `conversation_analysis_candidates`, `conversation_brief_candidates`, and
 `conversation_memory_candidates`. Schema version 23 adds
 `knowledge_graph_node_candidates` and `knowledge_graph_edge_candidates`. Schema
 version 24 adds `referral_records`, `business_outcomes`, and
-`business_outcome_attributions`.
+`business_outcome_attributions`. Schema version 25 adds normalized `artifacts`,
+`artifact_versions`, `artifact_links`, and `artifact_deliverables`.
 Eligible visible durable messages queue idempotent local analysis jobs. The
 deterministic analyzer creates proposed operational candidates, a narrative
 brief candidate, and a relationship-memory candidate with evidence refs,
@@ -254,9 +255,11 @@ provenance, safe summaries, content hashes, and no automatic truth promotion.
 Deterministic graph extraction can create proposed staff-private node and edge
 candidates from completed analysis jobs. Offer acceptance now records an
 evidence-backed outcome and attribution candidates for offer, visitor session,
-and entry point influence when those ids exist. Provider-backed analysis,
-surface brief jobs, and the full ethical persuasion prompt-slot contract remain
-owned by later accepted issues.
+and entry point influence when those ids exist. Artifact cards now use Artifact
+as the staff/system noun and Deliverable as the client-facing projection noun
+where intentionally exposed. Provider-backed analysis, surface brief jobs, and
+the full ethical persuasion prompt-slot contract remain owned by later accepted
+issues.
 
 Deliverables:
 
@@ -268,6 +271,8 @@ Deliverables:
   evidence.
 - Record offer/ask/referral/outcome attribution foundation with proposed
   evidence-backed influence rows.
+- Record normalized artifacts, artifact links, version hashes, and client-safe
+  deliverable projections.
 - Defer surface brief jobs for business, conversations, connections, offers,
   asks, artifacts, jobs, affiliates, and customers to #105.
 - Defer full ethical persuasion prompt-slot behavior to #107.

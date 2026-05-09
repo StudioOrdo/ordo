@@ -338,6 +338,10 @@ imported knowledge, support packets, offer materials, QR/card designs, and
 published content.
 
 Client-facing surfaces may use `Deliverable` when that language is clearer.
+Deliverables are projections from artifacts, not a separate source of truth.
+They should expose client-safe labels, summaries, and actions without leaking
+internal job, provenance, policy, or storage mechanics unless that detail is
+explicitly useful to the client.
 
 Artifact briefs should answer:
 
@@ -473,7 +477,7 @@ Do not use this product pass to build:
 - a full CRM dashboard;
 - fake analytics;
 - fake scarcity or social proof;
-- asset-performance plugins without evidence;
+- artifact-performance plugins without evidence;
 - a full affiliate commission system;
 - external social or YouTube analytics;
 - a multi-operator enterprise inbox;

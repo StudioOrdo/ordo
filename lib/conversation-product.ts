@@ -89,6 +89,21 @@ export interface ConversationMessage {
   reactions: readonly ConversationReaction[];
 }
 
+export interface ArtifactBriefCard {
+  id: string;
+  artifactKind: string;
+  systemLabel: string;
+  clientLabel: string;
+  value: string;
+  use: string;
+  nextAction: string;
+  producingJob: string;
+  provenance: string;
+  storageHealth: string;
+  visibility: "staff" | "client";
+  evidenceRefs: readonly string[];
+}
+
 export interface ConversationDetail {
   conversationId: string;
   participantId: string;
@@ -105,6 +120,7 @@ export interface ConversationDetail {
     limitation: string;
   };
   messages: readonly ConversationMessage[];
+  artifactCards: readonly ArtifactBriefCard[];
   typing: readonly string[];
   presence: readonly string[];
   unreadFromSequence: number;
@@ -275,6 +291,22 @@ export const sampleConversationDetails: Record<string, ConversationDetail> = {
         reactions: [{ key: "clear", label: "Clear", count: 1, selectedByViewer: true }],
       },
     ],
+    artifactCards: [
+      {
+        id: "artifact_qr_card_1",
+        artifactKind: "offer.material",
+        systemLabel: "Artifact: Starter QR card proof",
+        clientLabel: "Deliverable: QR card proof",
+        value: "Turns Ava's pricing question into a concrete proof she can review.",
+        use: "Used by the Starter offer conversation and future offer outcome attribution.",
+        nextAction: "Confirm the offer scope, then decide whether to publish as a client deliverable.",
+        producingJob: "artifacts.brief.generate",
+        provenance: "offer_view_starter_3, message_ava_14",
+        storageHealth: "available",
+        visibility: "client",
+        evidenceRefs: ["offer_view_starter_3", "message_ava_14"],
+      },
+    ],
   },
   conv_marcus: {
     conversationId: "conv_marcus",
@@ -323,6 +355,22 @@ export const sampleConversationDetails: Record<string, ConversationDetail> = {
         canUndo: false,
         receiptLabel: "Delivered",
         reactions: [{ key: "lead", label: "Lead", count: 1, selectedByViewer: false }],
+      },
+    ],
+    artifactCards: [
+      {
+        id: "artifact_beta_ask_1",
+        artifactKind: "ask.material",
+        systemLabel: "Artifact: Local-business beta ask",
+        clientLabel: "Deliverable: Beta intro brief",
+        value: "Captures the ask Marcus responded to before referral qualification.",
+        use: "Used by the team queue and referral outcome evidence.",
+        nextAction: "Confirm permission to mention Marcus before treating the referral as qualified.",
+        producingJob: "artifact.usage.summarize",
+        provenance: "ask_view_beta_2, message_marcus_7",
+        storageHealth: "available",
+        visibility: "staff",
+        evidenceRefs: ["ask_view_beta_2", "message_marcus_7"],
       },
     ],
   },

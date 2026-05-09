@@ -117,6 +117,8 @@ test("Client chat keeps one relationship conversation and hides staff rails", as
   await expect(page.getByRole("navigation", { name: "Public and member navigation" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your conversation with Studio Ordo" })).toBeVisible();
   await expect(page.locator("main")).toContainText("single relationship conversation");
+  await expect(page.getByLabel("Deliverable cards")).toContainText("Deliverable: QR card proof");
+  await expect(page.getByLabel("Deliverable cards")).not.toContainText("Producing job");
   await expect(page.getByLabel("Conversation timeline")).toContainText("Are metal QR cards included");
   await page.getByLabel("Write a reply").fill("Please send me the digital proof.");
   await page.getByRole("button", { name: "Send" }).click();
@@ -151,6 +153,9 @@ test("Premium conversation UI supports edit, undo, retry, unread, reactions, and
   await expect(page.getByRole("button", { name: "Jump to latest" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Simulate offline" })).toBeVisible();
   await expect(page.getByLabel("Narrative brief")).toContainText("What is happening");
+  await expect(page.getByLabel("Artifact cards")).toContainText("Artifact: Starter QR card proof");
+  await expect(page.getByLabel("Artifact cards")).toContainText("Producing job");
+  await expect(page.getByLabel("Artifact cards")).toContainText("Storage health");
   await expect(page.getByLabel("Conversation timeline")).toContainText("Ava is typing");
   await expect(page.locator(".unread-divider")).toBeVisible();
 

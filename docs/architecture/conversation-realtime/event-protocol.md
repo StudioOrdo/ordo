@@ -292,7 +292,10 @@ Business outcomes:
 - `referral.converted`
 - `referral.lost`
 - `ask.outcome.recorded`
+- `artifact.recorded`
+- `artifact.linked`
 - `artifact.usage.recorded`
+- `deliverable.published`
 
 Implemented outcome and attribution behavior: public offer acceptance records a
 durable `business_outcomes` row and emits `business.outcome.recorded` with
@@ -301,6 +304,11 @@ default to `proposed`; accepted offers can propose direct offer influence plus
 visitor-session and entry-point influence when those source ids exist. The
 model intentionally does not infer campaigns, referrals, artifacts, asks, or
 payments without source evidence.
+
+Implemented artifact and deliverable behavior: normalized artifact events carry
+artifact ids, kind, title, and evidence refs for system surfaces. Deliverable
+events carry client-safe deliverable ids, artifact ids, label, and status
+without exposing internal provenance, storage, job, or policy details.
 
 ## Ephemeral Event Catalog
 

@@ -11,6 +11,7 @@ import {
   conversationQueues,
   queueRowsForRole,
   sampleConversationDetails,
+  type ArtifactBriefCard,
   type ConversationDetail,
   type ConversationMessage,
   type ConversationQueueRow,
@@ -151,6 +152,7 @@ function ConversationExperience({
         <ConversationHeader detail={detail} gatewayStatus={gatewayStatus} gatewayRoute={CONVERSATION_GATEWAY_ROUTE} />
         <RecoveryBanner gatewayStatus={gatewayStatus} message={recoveryMessage} onReconnect={onReconnect} onSimulateOffline={onSimulateOffline} />
         <NarrativeBrief detail={detail} isStaff={isStaff} />
+        <ArtifactCards cards={detail.artifactCards} isStaff={isStaff} />
         <div className="timeline-toolbar" aria-label="Timeline navigation">
           <button type="button" className="button-secondary compact-button" onClick={jumpToFirstUnread}>
             Jump to first unread
@@ -342,6 +344,64 @@ function NarrativeBrief({ detail, isStaff }: { detail: ConversationDetail; isSta
         <BriefBlock title="Why it matters" text={detail.narrativeBrief.whyItMatters} />
         <BriefBlock title="Evidence" text={detail.narrativeBrief.evidence} />
         <BriefBlock title="Limitations" text={detail.narrativeBrief.limitation} />
+      </div>
+    </section>
+  );
+}
+
+function ArtifactCards({ cards, isStaff }: { cards: readonly ArtifactBriefCard[]; isStaff: boolean }) {
+  if (cards.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="artifact-card-panel" aria-label={isStaff ? "Artifact cards" : "Deliverable cards"}>
+      <div className="brief-heading-row">
+        <div>
+          <span className="eyebrow">{isStaff ? "Artifacts" : "Deliverables"}</span>
+          <h2 className="panel-title">{isStaff ? "Artifact briefs" : "Your deliverables"}</h2>
+        </div>
+        <span className="status-pill">{cards.length}</span>
+      </div>
+      <div className="artifact-card-grid">
+        {cards.map((card) => (
+          <article key={card.id} className="artifact-card">
+            <header>
+              <span className="eyebrow">{isStaff ? "Artifact" : "Deliverable"}</span>
+              <h3>{isStaff ? card.systemLabel : card.clientLabel}</h3>
+            </header>
+            <dl>
+              <div>
+                <dt>Value</dt>
+                <dd>{card.value}</dd>
+              </div>
+              <div>
+                <dt>Use</dt>
+                <dd>{card.use}</dd>
+              </div>
+              <div>
+                <dt>Next action</dt>
+                <dd>{card.nextAction}</dd>
+              </div>
+              {isStaff ? (
+                <>
+                  <div>
+                    <dt>Producing job</dt>
+                    <dd>{card.producingJob}</dd>
+                  </div>
+                  <div>
+                    <dt>Provenance</dt>
+                    <dd>{card.provenance}</dd>
+                  </div>
+                  <div>
+                    <dt>Storage health</dt>
+                    <dd>{card.storageHealth}</dd>
+                  </div>
+                </>
+              ) : null}
+            </dl>
+          </article>
+        ))}
       </div>
     </section>
   );

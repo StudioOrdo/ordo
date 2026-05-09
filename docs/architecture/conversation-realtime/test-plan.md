@@ -680,11 +680,25 @@ Phase 8 simulator contract coverage now includes:
   output with raw provider secrets, raw persona narrative, emails, phone
   numbers, configured private terms, fake referrals, fake metrics, fake
   urgency, fake scarcity, fake reviews, and unsupported social proof absent.
+- admin/staff handoff and moderation journey execution with no provider keys
+  and no network by default;
+- governed handoff creation from durable conversation/message evidence;
+- staff `My Handoffs` and manager `Team Queue` evidence;
+- durable handoff transitions through accepted, assigned, in progress,
+  returned-to-agent, and closed;
+- human-led active mode blocking untagged public agent posts, scoped delegation
+  allowing agent posting, and returned-to-agent mode allowing agent resumption;
+- review moderation that keeps reviews private before consent and approval and
+  publishes only after approval evidence exists;
+- affiliate management evidence that creates a scoped grant, revokes it, and
+  denies access after revocation;
+- admin/staff packet, scorecard, harness manifest, and journey manifest output
+  with staff/admin internals, policy/provider mechanics, raw provider secrets,
+  raw persona narrative, emails, phone numbers, and configured private terms
+  absent from client/public-safe artifacts.
 
 0.1.5 live product journey eval coverage should still add:
 
-- staff/admin handoff, delegation, review approval, affiliate management, and
-  client-safe versus staff-only visibility evidence;
 - cross-persona analyzed report with conversion, trial, review, referral,
   handoff, privacy, persuasion, token, and artifact-review summaries.
 

@@ -88,6 +88,18 @@ Implemented journey execution:
 - The default #167 path remains provider-free and network-free. It asserts the
   affiliate can inspect the scoped referred conversation and is denied unrelated
   conversation access.
+- #168 adds deterministic admin/staff handoff and moderation journey coverage
+  in `live_eval_runner.rs`. It selects the dissatisfied-trial persona, creates
+  a relationship conversation, creates and transitions a governed handoff
+  through staff/admin states, verifies staff `My Handoffs` and manager `Team
+  Queue` evidence, proves human-led active mode blocks untagged public agent
+  posting, proves scoped delegation and returned-to-agent mode allow agent
+  posting, moderates a review through consent and approval before publication,
+  and creates/revokes an affiliate grant to prove scoped access is reversible.
+- The default #168 path remains provider-free and network-free. It writes
+  redacted packet, scorecard, harness manifest, and admin/staff journey
+  manifest artifacts without exposing staff/admin internals, policy/provider
+  mechanics, raw persona narrative, or configured private terms.
 
 Known gaps:
 
@@ -187,8 +199,8 @@ and validate personas, then write a skipped manifest. A budget overrun blocks
 before any provider or journey execution. Unknown persona ids are rejected as
 configuration errors. QR scan, visitor session, deterministic conversation,
 offer acceptance, trial, and attribution execution are implemented by #165.
-Review-return, affiliate, handoff, and cross-run report workflows remain in
-#166-#169.
+Review-return, affiliate-referral, and admin/staff journey execution are
+implemented by #166-#168. Cross-run reporting remains in #169.
 
 ## QR-To-Trial Journey Eval
 
@@ -286,6 +298,38 @@ The affiliate-referral journey manifest is schema
 `ordo.affiliate_referral_journey_eval.v1`. It stores durable ids and evidence
 refs only. Affiliate payout/finance automation remains out of scope.
 
+## Admin/Staff Handoff And Moderation Journey Contract
+
+Status: implemented by #168.
+
+The first admin/staff journey eval runs a deterministic one-persona journey for
+`dissatisfied_trial_user`. It creates a relationship conversation, records a
+persona-backed visitor message, creates a governed staff handoff from that
+message evidence, verifies queue visibility for staff and manager/admin roles,
+and exercises durable handoff transitions through accepted, assigned, in
+progress, returned-to-agent, and closed states.
+
+The case records:
+
+- relationship conversation and visitor message evidence;
+- handoff request with allowed context and policy decision evidence;
+- staff `My Handoffs` and manager `Team Queue` visibility;
+- handoff lifecycle replay through closed status;
+- human-led active mode blocking an untagged public agent post;
+- scoped delegation allowing an agent post while staff owns the conversation;
+- returned-to-agent mode allowing the agent to resume;
+- private feedback and review candidate evidence;
+- review publication only after consent and approval;
+- active affiliate connection and scoped conversation grant;
+- grant revocation followed by denied affiliate access;
+- redacted packet, scorecard, harness manifest, and admin/staff journey
+  manifest.
+
+The admin/staff journey manifest is schema
+`ordo.admin_staff_journey_eval.v1`. It stores durable ids and boolean boundary
+results only. Broad admin UI, affiliate finance automation, and cross-persona
+moderation reporting remain out of scope.
+
 ## Ethical Persuasion Boundary
 
 The journey can test whether Ordo helps a person decide whether OrdoStudio is a
@@ -361,6 +405,10 @@ GitHub issues until a governed filing path is implemented and accepted.
    offer acceptance, trial, referral record, referral-linked outcome,
    referral/affiliate attribution, and trust-boundary checks.
 7. #168 Implement admin/staff handoff and moderation journey evals.
+   Implemented with a deterministic relationship conversation, governed
+   handoff lifecycle, staff/manager queue evidence, human-led/delegated/returned
+   agent-post boundaries, review moderation, affiliate grant revocation, and
+   redacted artifacts.
 8. #169 Add cross-persona analyzed journey report.
 9. #170 Decide whether simulated review-request email remains enough or a
    governed outbound email adapter should become follow-on work.

@@ -30,10 +30,21 @@ export type ConversationCommandType =
   | "typing.start"
   | "typing.stop"
   | "presence.update"
+  | "conversation.handoff.create"
+  | "conversation.handoff.accept"
+  | "conversation.handoff.decline"
+  | "conversation.handoff.assign"
+  | "conversation.handoff.return_to_agent"
+  | "conversation.handoff.close"
   | "handoff.accept"
   | "handoff.decline"
   | "handoff.assign"
   | "handoff.return_to_agent"
+  | "conversation.mode.set"
+  | "conversation.mode.human_led_active"
+  | "conversation.mode.return_to_agent"
+  | "conversation.agent.delegate"
+  | "conversation.agent.delegation_revoke"
   | "agent.delegate"
   | "agent.takeover"
   | "llm.run.request"
@@ -137,10 +148,21 @@ export const conversationCommandCapabilities: Record<ConversationCommandType, st
   "typing.start": "conversation.presence.write",
   "typing.stop": "conversation.presence.write",
   "presence.update": "conversation.presence.write",
+  "conversation.handoff.create": "conversation.handoff.manage",
+  "conversation.handoff.accept": "conversation.handoff.manage",
+  "conversation.handoff.decline": "conversation.handoff.manage",
+  "conversation.handoff.assign": "conversation.handoff.manage",
+  "conversation.handoff.return_to_agent": "conversation.handoff.manage",
+  "conversation.handoff.close": "conversation.handoff.manage",
   "handoff.accept": "conversation.handoff.manage",
   "handoff.decline": "conversation.handoff.manage",
   "handoff.assign": "conversation.handoff.manage",
   "handoff.return_to_agent": "conversation.handoff.manage",
+  "conversation.mode.set": "conversation.agent.delegate",
+  "conversation.mode.human_led_active": "conversation.agent.delegate",
+  "conversation.mode.return_to_agent": "conversation.agent.delegate",
+  "conversation.agent.delegate": "conversation.agent.delegate",
+  "conversation.agent.delegation_revoke": "conversation.agent.delegate",
   "agent.delegate": "conversation.agent.delegate",
   "agent.takeover": "conversation.agent.delegate",
   "llm.run.request": "llm.invoke",

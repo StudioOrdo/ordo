@@ -100,12 +100,17 @@ Initial command catalog:
 | `tool.approve` | durable approval event | `llm.tool.approve` |
 | `tool.reject` | durable rejection event | `llm.tool.reject` |
 | `tool.execute` | durable executing/completed or failed event after approval | `llm.tool.execute` |
-| `handoff.accept` | `handoff.item.accepted` | `conversation.handoff.manage` |
-| `handoff.decline` | `handoff.item.declined` | `conversation.handoff.manage` |
-| `handoff.assign` | `handoff.item.assigned` | `conversation.handoff.manage` |
-| `handoff.return_to_agent` | `handoff.item.returned_to_agent` | `conversation.handoff.manage` |
-| `agent.delegate` | `agent.delegation.changed` | `conversation.agent.delegate` |
-| `agent.takeover` | `conversation.mode.changed` | `conversation.agent.delegate` |
+| `conversation.handoff.create` | `conversation.handoff.requested` | `conversation.handoff.manage` |
+| `conversation.handoff.accept` / `handoff.accept` | `conversation.handoff.accepted` | `conversation.handoff.manage` |
+| `conversation.handoff.decline` / `handoff.decline` | `conversation.handoff.declined` | `conversation.handoff.manage` |
+| `conversation.handoff.assign` / `handoff.assign` | `conversation.handoff.assigned` | `conversation.handoff.manage` |
+| `conversation.handoff.return_to_agent` / `handoff.return_to_agent` | `conversation.handoff.returned_to_agent` | `conversation.handoff.manage` |
+| `conversation.handoff.close` | `conversation.handoff.closed` | `conversation.handoff.manage` |
+| `conversation.mode.set` | `conversation.mode.changed` | `conversation.agent.delegate` |
+| `conversation.mode.human_led_active` / `agent.takeover` | `conversation.mode.changed` | `conversation.agent.delegate` |
+| `conversation.mode.return_to_agent` | `conversation.mode.changed` | `conversation.agent.delegate` |
+| `conversation.agent.delegate` / `agent.delegate` | `conversation.mode.changed` | `conversation.agent.delegate` |
+| `conversation.agent.delegation_revoke` | `conversation.mode.changed` | `conversation.agent.delegate` |
 
 All commands should include `clientId`. Mutating commands should be idempotent
 for a bounded retry window using `clientId`, actor id, and conversation id.

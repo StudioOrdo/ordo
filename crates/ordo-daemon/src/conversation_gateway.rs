@@ -17,8 +17,10 @@ use crate::conversation_protocol::{
     CONVERSATION_GATEWAY_SCHEMA_VERSION,
 };
 use crate::conversations::{
-    ConversationMessageCreateRequest, ConversationMutationActor, ConversationPresenceUpdateRequest,
-    ConversationService, ReactionAction,
+    create_conversation_handoff, transition_conversation_handoff, upsert_conversation_mode,
+    ConversationHandoffCreateRequest, ConversationMessageCreateRequest, ConversationMode,
+    ConversationMutationActor, ConversationPresenceUpdateRequest, ConversationService,
+    HandoffStatus, ReactionAction,
 };
 use crate::policy::{ActorContext, ActorKind};
 
@@ -360,6 +362,65 @@ fn command(
         "message.react" => message_react(db_path, session, envelope),
         "presence.update" => presence_update(db_path, session, envelope),
         "typing.start" | "typing.stop" => typing(session, envelope),
+        "conversation.handoff.create" => handoff_create(db_path, session, envelope),
+        "conversation.handoff.accept" | "handoff.accept" => handoff_transition(
+            db_path,
+            session,
+            envelope,
+            HandoffStatus::Accepted,
+            "conversation.handoff.accept.ack",
+        ),
+        "conversation.handoff.decline" | "handoff.decline" => handoff_transition(
+            db_path,
+            session,
+            envelope,
+            HandoffStatus::Declined,
+            "conversation.handoff.decline.ack",
+        ),
+        "conversation.handoff.assign" | "handoff.assign" => handoff_transition(
+            db_path,
+            session,
+            envelope,
+            HandoffStatus::Assigned,
+            "conversation.handoff.assign.ack",
+        ),
+        "conversation.handoff.return_to_agent" | "handoff.return_to_agent" => handoff_transition(
+            db_path,
+            session,
+            envelope,
+            HandoffStatus::ReturnedToAgent,
+            "conversation.handoff.return_to_agent.ack",
+        ),
+        "conversation.handoff.close" => handoff_transition(
+            db_path,
+            session,
+            envelope,
+            HandoffStatus::Closed,
+            "conversation.handoff.close.ack",
+        ),
+        "conversation.mode.set" => conversation_mode_set(db_path, session, envelope),
+        "conversation.mode.human_led_active" | "agent.takeover" => conversation_mode_fixed(
+            db_path,
+            session,
+            envelope,
+            ConversationMode::HumanLedActive,
+            false,
+            "conversation.mode.human_led_active.ack",
+        ),
+        "conversation.mode.return_to_agent" => conversation_mode_fixed(
+            db_path,
+            session,
+            envelope,
+            ConversationMode::ReturnedToAgent,
+            false,
+            "conversation.mode.return_to_agent.ack",
+        ),
+        "conversation.agent.delegate" | "agent.delegate" => {
+            agent_delegation(db_path, session, envelope, true)
+        }
+        "conversation.agent.delegation_revoke" => {
+            agent_delegation(db_path, session, envelope, false)
+        }
         _ => Ok(error_output(command_rejected_error(
             envelope.client_id.as_deref(),
             envelope.conversation_id.as_deref(),
@@ -776,6 +837,228 @@ fn typing(
     })
 }
 
+fn handoff_create(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct HandoffCreatePayload {
+        segment_id: Option<String>,
+        connection_id: Option<String>,
+        requested_by_actor_id: Option<String>,
+        assigned_to_actor_id: Option<String>,
+        reason: String,
+        urgency: Option<String>,
+        required_capability_id: Option<String>,
+        evidence_summary: String,
+        allowed_context: Option<Vec<String>>,
+        policy_decision_id: Option<String>,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: HandoffCreatePayload = serde_json::from_value(envelope.payload.clone())?;
+    let connection = Connection::open(db_path)?;
+    let handoff = create_conversation_handoff(
+        &connection,
+        &ConversationHandoffCreateRequest {
+            conversation_id: conversation_id.clone(),
+            segment_id: payload.segment_id,
+            connection_id: payload.connection_id,
+            requested_by_actor_id: payload
+                .requested_by_actor_id
+                .or_else(|| session.actor_id.clone()),
+            assigned_to_actor_id: payload.assigned_to_actor_id,
+            reason: payload.reason,
+            urgency: payload.urgency.unwrap_or_else(|| "normal".to_string()),
+            required_capability_id: payload
+                .required_capability_id
+                .unwrap_or_else(|| "conversation.handoff.manage".to_string()),
+            evidence_summary: payload.evidence_summary,
+            allowed_context: payload.allowed_context.unwrap_or_default(),
+            policy_decision_id: payload.policy_decision_id,
+        },
+    )?;
+    ack_and_latest_conversation_event(
+        &envelope,
+        "conversation.handoff.create.ack",
+        json!({ "handoffId": handoff.id, "status": "requested" }),
+        "conversation.handoff.requested",
+        Some(&handoff.id),
+        db_path,
+    )
+}
+
+fn handoff_transition(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+    next_status: HandoffStatus,
+    ack_type: &str,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct HandoffTransitionPayload {
+        handoff_id: String,
+        actor_id: Option<String>,
+        assigned_to_actor_id: Option<String>,
+        reason: Option<String>,
+    }
+
+    let payload: HandoffTransitionPayload = serde_json::from_value(envelope.payload.clone())?;
+    let actor_id = payload
+        .actor_id
+        .or(payload.assigned_to_actor_id)
+        .or_else(|| session.actor_id.clone());
+    let reason = payload.reason.unwrap_or_else(|| {
+        format!(
+            "gateway command {}",
+            envelope.frame_type.trim_start_matches("conversation.")
+        )
+    });
+    let connection = Connection::open(db_path)?;
+    let handoff = transition_conversation_handoff(
+        &connection,
+        &payload.handoff_id,
+        next_status,
+        actor_id.as_deref(),
+        &reason,
+    )?;
+    let event_type = handoff_status_event_type(next_status);
+    ack_and_latest_conversation_event(
+        &envelope,
+        ack_type,
+        json!({ "handoffId": handoff.id, "status": next_status }),
+        event_type,
+        Some(&handoff.id),
+        db_path,
+    )
+}
+
+fn conversation_mode_set(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ModePayload {
+        mode: String,
+        led_by_actor_id: Option<String>,
+        delegated_to_agent: Option<bool>,
+        delegation_scope: Option<Vec<String>>,
+        idle_after: Option<String>,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: ModePayload = serde_json::from_value(envelope.payload.clone())?;
+    let mode = ConversationMode::try_from(payload.mode.as_str())?;
+    let led_by_actor_id = payload.led_by_actor_id.or_else(|| session.actor_id.clone());
+    let connection = Connection::open(db_path)?;
+    let mode_view = upsert_conversation_mode(
+        &connection,
+        &conversation_id,
+        mode,
+        led_by_actor_id.as_deref(),
+        payload.delegated_to_agent.unwrap_or(false),
+        payload.delegation_scope.unwrap_or_default(),
+        payload.idle_after.as_deref(),
+    )?;
+    ack_and_latest_conversation_event(
+        &envelope,
+        "conversation.mode.set.ack",
+        json!({ "mode": mode_view }),
+        "conversation.mode.changed",
+        None,
+        db_path,
+    )
+}
+
+fn conversation_mode_fixed(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+    mode: ConversationMode,
+    delegated_to_agent: bool,
+    ack_type: &str,
+) -> Result<ConversationGatewayOutput> {
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let connection = Connection::open(db_path)?;
+    let mode_view = upsert_conversation_mode(
+        &connection,
+        &conversation_id,
+        mode,
+        session.actor_id.as_deref(),
+        delegated_to_agent,
+        vec![],
+        None,
+    )?;
+    ack_and_latest_conversation_event(
+        &envelope,
+        ack_type,
+        json!({ "mode": mode_view }),
+        "conversation.mode.changed",
+        None,
+        db_path,
+    )
+}
+
+fn agent_delegation(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+    delegated_to_agent: bool,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DelegationPayload {
+        delegation_scope: Option<Vec<String>>,
+        reason: Option<String>,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: DelegationPayload = serde_json::from_value(envelope.payload.clone())?;
+    if delegated_to_agent {
+        ensure!(
+            payload
+                .delegation_scope
+                .as_ref()
+                .is_some_and(|scope| !scope.is_empty()),
+            "delegationScope is required for agent delegation"
+        );
+    }
+    let _reason = payload.reason;
+    let scope = if delegated_to_agent {
+        payload.delegation_scope.unwrap_or_default()
+    } else {
+        vec![]
+    };
+    let connection = Connection::open(db_path)?;
+    let mode_view = upsert_conversation_mode(
+        &connection,
+        &conversation_id,
+        ConversationMode::HumanLedActive,
+        session.actor_id.as_deref(),
+        delegated_to_agent,
+        scope,
+        None,
+    )?;
+    let ack_type = if delegated_to_agent {
+        "conversation.agent.delegate.ack"
+    } else {
+        "conversation.agent.delegation_revoke.ack"
+    };
+    ack_and_latest_conversation_event(
+        &envelope,
+        ack_type,
+        json!({ "mode": mode_view }),
+        "conversation.mode.changed",
+        None,
+        db_path,
+    )
+}
+
 fn command_ack_and_dispatch(
     envelope: &ConversationGatewayEnvelope,
     ack_type: &str,
@@ -833,47 +1116,98 @@ fn ack_with_optional_message_dispatch(
     })
 }
 
+fn ack_and_latest_conversation_event(
+    envelope: &ConversationGatewayEnvelope,
+    ack_type: &str,
+    payload: Value,
+    event_type: &str,
+    payload_marker: Option<&str>,
+    db_path: &Path,
+) -> Result<ConversationGatewayOutput> {
+    let conversation_id = required_conversation_id(envelope)?.to_string();
+    let dispatch =
+        latest_conversation_event(db_path, &conversation_id, event_type, payload_marker)?;
+    Ok(ConversationGatewayOutput {
+        frames: vec![ack_envelope(
+            required_client_id(envelope)?,
+            Some(&conversation_id),
+            ack_type,
+            payload,
+            &Utc::now().to_rfc3339(),
+        )],
+        broadcast: vec![dispatch],
+    })
+}
+
 fn latest_message_event(
     db_path: &Path,
     conversation_id: &str,
     message_id: &str,
     event_type: &str,
 ) -> Result<ConversationGatewayEnvelope> {
+    latest_conversation_event(db_path, conversation_id, event_type, Some(message_id))
+}
+
+fn latest_conversation_event(
+    db_path: &Path,
+    conversation_id: &str,
+    event_type: &str,
+    payload_marker: Option<&str>,
+) -> Result<ConversationGatewayEnvelope> {
     let connection = Connection::open(db_path)?;
-    let like_message = format!("%{message_id}%");
-    connection
-        .query_row(
-            "SELECT sequence, event_type, payload_json, realtime_cursor, occurred_at
-             FROM conversation_events
-             WHERE conversation_id = ?1
-               AND event_type = ?2
-               AND payload_json LIKE ?3
-             ORDER BY sequence DESC
-             LIMIT 1",
-            params![conversation_id, event_type, like_message],
-            |row| {
-                let sequence: i64 = row.get(0)?;
-                let event_type: String = row.get(1)?;
-                let payload_json: String = row.get(2)?;
-                let cursor: Option<i64> = row.get(3)?;
-                let occurred_at: String = row.get(4)?;
-                let payload = serde_json::from_str(&payload_json).unwrap_or_else(|_| json!({}));
-                Ok(dispatch_envelope(
-                    &event_type,
-                    conversation_id,
-                    sequence,
-                    cursor,
-                    payload,
-                    &occurred_at,
-                ))
-            },
-        )
-        .optional()?
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "durable command completed without replayable {event_type} event for {message_id}"
-            )
-        })
+    let mut sql = String::from(
+        "SELECT sequence, event_type, payload_json, realtime_cursor, occurred_at
+         FROM conversation_events
+         WHERE conversation_id = ?1
+           AND event_type = ?2",
+    );
+    let marker = payload_marker.map(|marker| format!("%{marker}%"));
+    if marker.is_some() {
+        sql.push_str(" AND payload_json LIKE ?3");
+    }
+    sql.push_str(" ORDER BY sequence DESC LIMIT 1");
+    let mut statement = connection.prepare(&sql)?;
+    let map_row = |row: &rusqlite::Row<'_>| {
+        let sequence: i64 = row.get(0)?;
+        let event_type: String = row.get(1)?;
+        let payload_json: String = row.get(2)?;
+        let cursor: Option<i64> = row.get(3)?;
+        let occurred_at: String = row.get(4)?;
+        let payload = serde_json::from_str(&payload_json).unwrap_or_else(|_| json!({}));
+        Ok(dispatch_envelope(
+            &event_type,
+            conversation_id,
+            sequence,
+            cursor,
+            payload,
+            &occurred_at,
+        ))
+    };
+    let event = if let Some(marker) = marker {
+        statement
+            .query_row(params![conversation_id, event_type, marker], map_row)
+            .optional()?
+    } else {
+        statement
+            .query_row(params![conversation_id, event_type], map_row)
+            .optional()?
+    };
+    event.ok_or_else(|| {
+        anyhow::anyhow!("durable command completed without replayable {event_type} event")
+    })
+}
+
+fn handoff_status_event_type(status: HandoffStatus) -> &'static str {
+    match status {
+        HandoffStatus::Suggested => "conversation.handoff.suggested",
+        HandoffStatus::Requested => "conversation.handoff.requested",
+        HandoffStatus::Accepted => "conversation.handoff.accepted",
+        HandoffStatus::Declined => "conversation.handoff.declined",
+        HandoffStatus::Assigned => "conversation.handoff.assigned",
+        HandoffStatus::InProgress => "conversation.handoff.in_progress",
+        HandoffStatus::ReturnedToAgent => "conversation.handoff.returned_to_agent",
+        HandoffStatus::Closed => "conversation.handoff.closed",
+    }
 }
 
 fn replay_conversation_events(
@@ -1442,6 +1776,253 @@ mod tests {
         assert_eq!(
             typing.broadcast[0].durability,
             ConversationGatewayDurability::Ephemeral
+        );
+    }
+
+    #[test]
+    fn handoff_lifecycle_commands_ack_persist_and_replay_in_order() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+
+        let create = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.handoff.create",
+                "client_handoff_create",
+                &conversation_id,
+                json!({
+                    "reason": "client needs a human decision",
+                    "urgency": "high",
+                    "evidenceSummary": "message msg_1 asked for staff follow-up",
+                    "allowedContext": ["conversation", "latest_message"]
+                }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(create.frames[0].op, ConversationGatewayOp::Ack);
+        assert_eq!(
+            create.frames[0].client_id.as_deref(),
+            Some("client_handoff_create")
+        );
+        assert_eq!(
+            create.broadcast[0].frame_type,
+            "conversation.handoff.requested"
+        );
+        let handoff_id = create.frames[0].payload["handoffId"].as_str().unwrap();
+
+        let accept = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.handoff.accept",
+                "client_handoff_accept",
+                &conversation_id,
+                json!({ "handoffId": handoff_id, "reason": "staff accepted" }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            accept.frames[0].client_id.as_deref(),
+            Some("client_handoff_accept")
+        );
+        assert_eq!(
+            accept.broadcast[0].frame_type,
+            "conversation.handoff.accepted"
+        );
+
+        let assign = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "handoff.assign",
+                "client_handoff_assign",
+                &conversation_id,
+                json!({
+                    "handoffId": handoff_id,
+                    "assignedToActorId": "actor_staff",
+                    "reason": "assign to current staff"
+                }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            assign.broadcast[0].frame_type,
+            "conversation.handoff.assigned"
+        );
+
+        let returned = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.handoff.return_to_agent",
+                "client_handoff_return",
+                &conversation_id,
+                json!({ "handoffId": handoff_id, "reason": "agent may resume" }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            returned.broadcast[0].frame_type,
+            "conversation.handoff.returned_to_agent"
+        );
+
+        let close = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.handoff.close",
+                "client_handoff_close",
+                &conversation_id,
+                json!({ "handoffId": handoff_id, "reason": "complete" }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(close.broadcast[0].frame_type, "conversation.handoff.closed");
+
+        let replay = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.replay_after_cursor",
+                "client_replay_handoff",
+                &conversation_id,
+                json!({ "afterSequence": 0, "limit": 50 }),
+            ),
+        )
+        .unwrap();
+        let durable_types = replay
+            .frames
+            .iter()
+            .map(|frame| frame.frame_type.as_str())
+            .collect::<Vec<_>>();
+        let requested_index = durable_types
+            .iter()
+            .position(|event_type| *event_type == "conversation.handoff.requested")
+            .unwrap();
+        let closed_index = durable_types
+            .iter()
+            .position(|event_type| *event_type == "conversation.handoff.closed")
+            .unwrap();
+        assert!(requested_index < closed_index);
+        assert!(durable_types.contains(&"conversation.handoff.accepted"));
+        assert!(durable_types.contains(&"conversation.handoff.assigned"));
+        assert!(durable_types.contains(&"conversation.handoff.returned_to_agent"));
+    }
+
+    #[test]
+    fn mode_and_delegation_commands_are_durable_scoped_and_non_leaking() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+
+        let human_led = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.mode.human_led_active",
+                "client_mode_human",
+                &conversation_id,
+                json!({}),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            human_led.frames[0].client_id.as_deref(),
+            Some("client_mode_human")
+        );
+        assert_eq!(
+            human_led.broadcast[0].frame_type,
+            "conversation.mode.changed"
+        );
+        assert_eq!(human_led.broadcast[0].payload["delegatedToAgent"], false);
+
+        let delegate = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.agent.delegate",
+                "client_agent_delegate",
+                &conversation_id,
+                json!({ "delegationScope": ["draft_reply"], "reason": "staff tagged Ordo" }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            delegate.frames[0].client_id.as_deref(),
+            Some("client_agent_delegate")
+        );
+        assert_eq!(delegate.broadcast[0].payload["delegatedToAgent"], true);
+        assert_eq!(
+            delegate.broadcast[0].payload["delegationScope"][0],
+            "draft_reply"
+        );
+        let dispatch_json = serde_json::to_string(&delegate.broadcast[0].payload).unwrap();
+        assert!(!dispatch_json.contains("provider"));
+        assert!(!dispatch_json.contains("privacyTransform"));
+        assert!(!dispatch_json.contains("policyDecision"));
+
+        let revoke = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.agent.delegation_revoke",
+                "client_agent_revoke",
+                &conversation_id,
+                json!({ "reason": "staff resumed manually" }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(revoke.broadcast[0].payload["delegatedToAgent"], false);
+
+        let returned = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.mode.return_to_agent",
+                "client_mode_return",
+                &conversation_id,
+                json!({}),
+            ),
+        )
+        .unwrap();
+        assert_eq!(returned.broadcast[0].payload["mode"], "returned_to_agent");
+
+        let rejected = handle_gateway_text_frame(
+            &db_path,
+            &mut session,
+            &serde_json::to_string(&command(
+                "conversation.agent.delegate",
+                "client_agent_delegate_bad",
+                &conversation_id,
+                json!({}),
+            ))
+            .unwrap(),
+        );
+        assert_eq!(rejected.frames[0].op, ConversationGatewayOp::Error);
+        assert_eq!(rejected.frames[0].payload["code"], "command_failed");
+        assert!(rejected.frames[0].payload["message"]
+            .as_str()
+            .unwrap()
+            .contains("delegationScope"));
+
+        let replay = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.replay_after_cursor",
+                "client_replay_mode",
+                &conversation_id,
+                json!({ "afterSequence": 0, "limit": 50 }),
+            ),
+        )
+        .unwrap();
+        assert!(
+            replay
+                .frames
+                .iter()
+                .filter(|frame| frame.frame_type == "conversation.mode.changed")
+                .count()
+                >= 4
         );
     }
 

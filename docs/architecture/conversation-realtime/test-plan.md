@@ -525,6 +525,24 @@ includes:
   first durable surface contract instead of adding dedicated billboard/intent
   tables before eval evidence requires them.
 
+Phase 3D handoff, mode, and delegation gateway command coverage now includes:
+
+- gateway command tests for `conversation.handoff.create` and the durable
+  handoff lifecycle transitions accepted, assigned, returned to agent, and
+  closed, including ack client-id preservation and replay order;
+- support for current short handoff aliases such as `handoff.assign` while the
+  explicit `conversation.handoff.*` command names become the preferred product
+  contract;
+- gateway command tests for `conversation.mode.human_led_active`,
+  `conversation.mode.return_to_agent`, `conversation.agent.delegate`, and
+  `conversation.agent.delegation_revoke`;
+- scoped delegation validation that rejects delegation without an explicit
+  `delegationScope`;
+- non-leakage assertions that mode/delegation dispatch payloads do not expose
+  provider, privacy-transform, or policy-decision internals;
+- continued provider-free and network-free execution, with SQLite
+  `conversation_events` remaining the replay source of truth.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

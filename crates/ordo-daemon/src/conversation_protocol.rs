@@ -281,6 +281,60 @@ pub fn policy_denied_error(
     }
 }
 
+pub fn command_rejected_error(
+    client_id: Option<&str>,
+    conversation_id: Option<&str>,
+    code: &str,
+    message: &str,
+    retryable: bool,
+    occurred_at: &str,
+) -> ConversationGatewayEnvelope {
+    ConversationGatewayEnvelope {
+        schema_version: CONVERSATION_GATEWAY_SCHEMA_VERSION.to_string(),
+        op: ConversationGatewayOp::Error,
+        frame_type: "command.rejected".to_string(),
+        client_id: client_id.map(ToString::to_string),
+        server_id: None,
+        conversation_id: conversation_id.map(ToString::to_string),
+        segment_id: None,
+        sequence: None,
+        cursor: None,
+        durability: ConversationGatewayDurability::Ephemeral,
+        scope: ConversationGatewayScope::User,
+        payload: json!(ConversationGatewayErrorPayload {
+            code: code.to_string(),
+            message: message.to_string(),
+            policy_decision_id: None,
+            retryable,
+        }),
+        occurred_at: occurred_at.to_string(),
+    }
+}
+
+pub fn ack_envelope(
+    client_id: &str,
+    conversation_id: Option<&str>,
+    ack_type: &str,
+    payload: Value,
+    occurred_at: &str,
+) -> ConversationGatewayEnvelope {
+    ConversationGatewayEnvelope {
+        schema_version: CONVERSATION_GATEWAY_SCHEMA_VERSION.to_string(),
+        op: ConversationGatewayOp::Ack,
+        frame_type: ack_type.to_string(),
+        client_id: Some(client_id.to_string()),
+        server_id: None,
+        conversation_id: conversation_id.map(ToString::to_string),
+        segment_id: None,
+        sequence: None,
+        cursor: None,
+        durability: ConversationGatewayDurability::Ephemeral,
+        scope: ConversationGatewayScope::User,
+        payload,
+        occurred_at: occurred_at.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

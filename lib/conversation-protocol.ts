@@ -57,6 +57,10 @@ export type ConversationGatewayErrorPayload = {
   code:
     | "invalid_envelope"
     | "unsupported_protocol_version"
+    | "unsupported_operation"
+    | "unsupported_command"
+    | "command_failed"
+    | "client_lagged"
     | "auth_required"
     | "policy_denied"
     | "review_required"

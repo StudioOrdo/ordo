@@ -14,7 +14,8 @@ The backend is ready for UI planning against the 0.1.2 contracts when the UI
 agent treats these facts as fixed:
 
 - SQLite is the source of truth.
-- WebSocket is a live projection only.
+- `/ws` is a system live projection only; `/chat/ws` is the protected
+  bidirectional conversation gateway.
 - MCP is a governed projection over the capability catalog, not an execution
   spine.
 - Docker packages one appliance image and `.data` is the durable boundary.
@@ -43,6 +44,7 @@ daemon-token access.
 | `GET` | `/logs` | protected | `DiagnosticLogsResponse` | Local diagnostic log inspection. |
 | `GET` | `/policy-decisions` | protected | `PolicyDecisionAuditResponse` | Local policy/audit inspection. |
 | `GET` | `/ws` | public local | WebSocket `RealtimeEvent` stream | Live projection for system activity. |
+| `GET` | `/chat/ws` | protected | WebSocket `conversation.gateway.v1` envelopes | Bidirectional conversation gateway for subscribe, replay, message submit/edit/delete/undo, and ephemeral typing. |
 | `POST` | `/mcp` | local MCP JSON-RPC | `McpResponse` | Governed MCP projection only. |
 
 Core response signals:

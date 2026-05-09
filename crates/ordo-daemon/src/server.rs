@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -47,6 +47,8 @@ use crate::connections::{
     ConnectionGrantCreateRequest, ConnectionGrantListResponse, ConnectionGrantRevokeRequest,
     ConnectionGrantView, ConnectionListResponse, ConnectionView, ConnectionWriteRequest,
 };
+use crate::conversation_gateway::handle_conversation_socket;
+use crate::conversation_protocol::ConversationGatewayEnvelope;
 use crate::corpus::{
     create_corpus_item, create_corpus_source, list_corpus_items, list_corpus_sources,
     read_corpus_item, read_corpus_source, retrieve_corpus, update_corpus_item,
@@ -119,6 +121,7 @@ type SharedNextSupervisorStatus = Arc<Mutex<NextSupervisorStatus>>;
 struct AppState {
     db_path: Arc<PathBuf>,
     event_sender: broadcast::Sender<RealtimeEvent>,
+    conversation_sender: broadcast::Sender<ConversationGatewayEnvelope>,
     next_supervisor_status: Option<SharedNextSupervisorStatus>,
     access_policy: DaemonAccessPolicy,
 }
@@ -183,12 +186,14 @@ pub async fn serve(
     let _generated_briefs = run_due_system_brief_schedules(&db_path)?;
 
     let (event_sender, _) = broadcast::channel(128);
+    let (conversation_sender, _) = broadcast::channel(256);
     let next_supervisor_status = next_supervisor
         .as_ref()
         .map(|_| Arc::new(Mutex::new(NextSupervisorStatus::starting())));
     let state = AppState {
         db_path: Arc::new(db_path),
         event_sender,
+        conversation_sender,
         next_supervisor_status,
         access_policy: DaemonAccessPolicy::new(access_token),
     };
@@ -338,6 +343,7 @@ pub async fn serve(
         )
         .route("/mcp", post(mcp_handler))
         .route("/ws", get(ws_handler))
+        .route("/chat/ws", get(chat_ws_handler))
         .with_state(state.clone());
 
     emit_system_event(
@@ -2457,6 +2463,34 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl
     ws.on_upgrade(move |socket| handle_socket(socket, state.event_sender.subscribe()))
 }
 
+async fn chat_ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    match authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Read,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/chat/ws"),
+        Some("conversation.read"),
+    ) {
+        Ok(_) => ws
+            .on_upgrade(move |socket| {
+                handle_conversation_socket(
+                    socket,
+                    state.db_path.clone(),
+                    state.conversation_sender.clone(),
+                )
+            })
+            .into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
 async fn handle_socket(
     mut socket: WebSocket,
     mut event_receiver: broadcast::Receiver<RealtimeEvent>,
@@ -2764,6 +2798,51 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn chat_ws_route_uses_protected_conversation_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/chat/ws"),
+            Some("conversation.read"),
+        );
+        assert!(denied.is_err());
+
+        let loopback_allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/chat/ws"),
+            Some("conversation.read"),
+        );
+        assert!(loopback_allowed.is_ok());
+
+        let token_policy = DaemonAccessPolicy::new(Some("secret".to_string()));
+        let mut token_headers = HeaderMap::new();
+        token_headers.insert(DAEMON_ACCESS_TOKEN_HEADER, "secret".parse().unwrap());
+        let token_allowed = authorize_protected_daemon_route(
+            &token_policy,
+            &db_path,
+            &token_headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Read,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/chat/ws"),
+            Some("conversation.read"),
+        );
+        assert!(token_allowed.is_ok());
     }
 
     #[test]

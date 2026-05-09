@@ -1,105 +1,482 @@
-import { conversationQueues, queueRowsForRole, type ConversationQueueRow } from "@/lib/conversation-product";
+"use client";
+
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+
+import {
+  CONVERSATION_GATEWAY_ROUTE,
+  CONVERSATION_GATEWAY_SCHEMA_VERSION,
+  type ConversationCommandType,
+} from "@/lib/conversation-protocol";
+import {
+  conversationQueues,
+  queueRowsForRole,
+  sampleConversationDetails,
+  type ConversationDetail,
+  type ConversationMessage,
+  type ConversationQueueRow,
+} from "@/lib/conversation-product";
 import { type ProductRole } from "@/lib/product-navigation";
 
+type GatewayStatus = "connected" | "pending" | "rejected";
+type ComposerStatus = "idle" | "sending" | "failed";
+
+interface GatewayState {
+  selectedConversationId: string;
+  detail: ConversationDetail;
+  gatewayStatus: GatewayStatus;
+  composerStatus: ComposerStatus;
+  lastClientId?: string;
+  lastError?: string;
+  sequence: number;
+}
+
 export function ClientConversationBrief() {
+  const detail = useGatewayConversation("conv_ava", "client");
+
   return (
-    <section className="brief-panel narrative-brief" aria-labelledby="client-conversation-title">
-      <span className="eyebrow">Chat</span>
-      <h2 id="client-conversation-title" className="panel-title">
-        Your conversation with Studio Ordo
-      </h2>
-      <div className="brief-grid">
-        <BriefBlock title="What is happening" text="This is the single relationship conversation for your work with Studio Ordo." />
-        <BriefBlock title="What changed" text="Internal episodes, handoffs, and staff notes stay behind the scenes unless they become useful deliverables." />
-        <BriefBlock title="What to do next" text="Ask a question, review your latest deliverable, or continue the offer conversation already in progress." />
-        <BriefBlock title="Why it matters" text="Context stays together so you do not have to choose between support tickets, sales threads, and project notes." />
-        <BriefBlock title="Evidence" text="Future messages, offers, asks, artifacts, and handoff receipts will cite durable Ordo evidence." />
-        <BriefBlock title="Limitations" text="Realtime messaging is planned in the 0.1.3 implementation arc; this surface is the product contract." />
-      </div>
-    </section>
+    <ConversationExperience
+      detail={detail.detail}
+      rows={[]}
+      selectedConversationId={detail.selectedConversationId}
+      role="client"
+      gatewayStatus={detail.gatewayStatus}
+      composerStatus={detail.composerStatus}
+      lastError={detail.lastError}
+      onSelectConversation={detail.selectConversation}
+      onSendMessage={detail.sendMessage}
+      onEditMessage={detail.editMessage}
+      onUndoMessage={detail.undoMessage}
+      onMarkRead={detail.markRead}
+      onMarkUnread={detail.markUnread}
+      onReact={detail.toggleReaction}
+      onRetry={detail.retryLastMessage}
+    />
   );
 }
 
 export function StaffConversationQueues({ role }: { role: ProductRole }) {
   const rows = queueRowsForRole(role);
+  const initialConversationId = rows[0]?.id ?? "conv_ava";
+  const detail = useGatewayConversation(initialConversationId, role);
 
   return (
-    <div className="work-surface">
-      <aside className="record-list" aria-label="Conversation queues">
-        <span className="eyebrow">Conversations</span>
-        <h2>Queues</h2>
-        <div className="queue-tabs" role="list" aria-label="Queue availability">
-          {conversationQueues.map((queue) => (
-            <span key={queue.id} className="queue-pill" data-queue={queue.id}>
-              {queue.label}
-            </span>
-          ))}
+    <ConversationExperience
+      detail={detail.detail}
+      rows={rows}
+      selectedConversationId={detail.selectedConversationId}
+      role={role}
+      gatewayStatus={detail.gatewayStatus}
+      composerStatus={detail.composerStatus}
+      lastError={detail.lastError}
+      onSelectConversation={detail.selectConversation}
+      onSendMessage={detail.sendMessage}
+      onEditMessage={detail.editMessage}
+      onUndoMessage={detail.undoMessage}
+      onMarkRead={detail.markRead}
+      onMarkUnread={detail.markUnread}
+      onReact={detail.toggleReaction}
+      onRetry={detail.retryLastMessage}
+    />
+  );
+}
+
+function ConversationExperience({
+  detail,
+  rows,
+  selectedConversationId,
+  role,
+  gatewayStatus,
+  composerStatus,
+  lastError,
+  onSelectConversation,
+  onSendMessage,
+  onEditMessage,
+  onUndoMessage,
+  onMarkRead,
+  onMarkUnread,
+  onReact,
+  onRetry,
+}: {
+  detail: ConversationDetail;
+  rows: readonly ConversationQueueRow[];
+  selectedConversationId: string;
+  role: ProductRole;
+  gatewayStatus: GatewayStatus;
+  composerStatus: ComposerStatus;
+  lastError?: string;
+  onSelectConversation: (conversationId: string) => void;
+  onSendMessage: (body: string) => void;
+  onEditMessage: (messageId: string, body: string) => void;
+  onUndoMessage: (messageId: string) => void;
+  onMarkRead: () => void;
+  onMarkUnread: () => void;
+  onReact: (messageId: string, reactionKey: string) => void;
+  onRetry: () => void;
+}) {
+  const isStaff = role === "staff" || role === "manager" || role === "owner" || role === "admin";
+
+  return (
+    <section className="conversation-core" aria-label="Conversation workspace">
+      <ConversationList
+        rows={rows}
+        selectedConversationId={selectedConversationId}
+        detail={detail}
+        isStaff={isStaff}
+        onSelectConversation={onSelectConversation}
+      />
+      <section className="conversation-detail" aria-labelledby="conversation-title">
+        <ConversationHeader detail={detail} gatewayStatus={gatewayStatus} gatewayRoute={CONVERSATION_GATEWAY_ROUTE} />
+        <NarrativeBrief detail={detail} isStaff={isStaff} />
+        <MessageTimeline
+          detail={detail}
+          isStaff={isStaff}
+          lastError={lastError}
+          onEditMessage={onEditMessage}
+          onUndoMessage={onUndoMessage}
+          onMarkUnread={onMarkUnread}
+          onReact={onReact}
+          onRetry={onRetry}
+        />
+        <ConversationComposer status={composerStatus} onSendMessage={onSendMessage} onTypingStart={() => undefined} />
+        <div className="conversation-actions" aria-label="Read state actions">
+          <button type="button" className="button-secondary compact-button" onClick={onMarkRead}>
+            Mark read
+          </button>
+          <button type="button" className="button-secondary compact-button" onClick={onMarkUnread}>
+            Mark unread
+          </button>
         </div>
-        <div className="queue-list">
-          {rows.map((row) => (
-            <QueueRow key={row.id} row={row} />
-          ))}
+      </section>
+    </section>
+  );
+}
+
+function ConversationList({
+  rows,
+  selectedConversationId,
+  detail,
+  isStaff,
+  onSelectConversation,
+}: {
+  rows: readonly ConversationQueueRow[];
+  selectedConversationId: string;
+  detail: ConversationDetail;
+  isStaff: boolean;
+  onSelectConversation: (conversationId: string) => void;
+}) {
+  if (!isStaff) {
+    return (
+      <aside className="conversation-list" aria-label="Relationship conversation">
+        <span className="eyebrow">Chat</span>
+        <h2>Your conversation</h2>
+        <button type="button" className="conversation-row active" aria-current="true">
+          <span>
+            <strong>{detail.connectionLabel}</strong>
+            <small>single relationship conversation</small>
+          </span>
+          <b>{detail.messages.length}</b>
+        </button>
+        <div className="client-tools" aria-label="Account conversation tools">
+          <span>My conversation</span>
+          <span>My offers</span>
+          <span>My deliverables</span>
+          <span>My requests</span>
         </div>
       </aside>
+    );
+  }
 
-      <section className="brief-panel narrative-brief" aria-labelledby="handoff-brief-title">
-        <span className="eyebrow">Handoff Brief</span>
-        <h2 id="handoff-brief-title" className="panel-title">
-          {rows[0]?.connectionLabel ?? "No active handoff"}
-        </h2>
-        {rows[0] ? <HandoffBrief row={rows[0]} /> : <p className="muted">No queue item is selected.</p>}
-      </section>
-    </div>
-  );
-}
-
-function QueueRow({ row }: { row: ConversationQueueRow }) {
   return (
-    <article className="queue-row">
-      <div>
-        <strong>{row.connectionLabel}</strong>
-        <span>{row.whyHere}</span>
+    <aside className="conversation-list" aria-label="Conversation queues">
+      <span className="eyebrow">Conversations</span>
+      <h2>Queues</h2>
+      <div className="queue-tabs" role="list" aria-label="Queue availability">
+        {conversationQueues.map((queue) => (
+          <span key={queue.id} className="queue-pill" data-queue={queue.id}>
+            {queue.label}
+          </span>
+        ))}
       </div>
-      <dl>
-        <div>
-          <dt>Urgency</dt>
-          <dd>{row.handoff.urgency}</dd>
-        </div>
-        <div>
-          <dt>Status</dt>
-          <dd>{row.handoff.status.replaceAll("_", " ")}</dd>
-        </div>
-        <div>
-          <dt>Actions</dt>
-          <dd>{row.actionCount}</dd>
-        </div>
-      </dl>
-    </article>
+      <div className="queue-list">
+        {rows.map((row) => (
+          <button
+            type="button"
+            key={row.id}
+            className={row.id === selectedConversationId ? "conversation-row active" : "conversation-row"}
+            aria-current={row.id === selectedConversationId ? "true" : undefined}
+            onClick={() => onSelectConversation(row.id)}
+          >
+            <span>
+              <strong>{row.connectionLabel}</strong>
+              <em>Why this is here</em>
+              <small>{row.whyHere}</small>
+            </span>
+            <b>{row.unreadCount || row.actionCount}</b>
+            <dl>
+              <div>
+                <dt>Urgency</dt>
+                <dd>{row.handoff.urgency}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{row.handoff.status.replaceAll("_", " ")}</dd>
+              </div>
+              <div>
+                <dt>Changed</dt>
+                <dd>{row.lastMeaningfulChange}</dd>
+              </div>
+            </dl>
+          </button>
+        ))}
+      </div>
+    </aside>
   );
 }
 
-function HandoffBrief({ row }: { row: ConversationQueueRow }) {
+function ConversationHeader({
+  detail,
+  gatewayStatus,
+  gatewayRoute,
+}: {
+  detail: ConversationDetail;
+  gatewayStatus: GatewayStatus;
+  gatewayRoute: string;
+}) {
+  return (
+    <header className="conversation-header">
+      <div>
+        <span className="eyebrow">Relationship Conversation</span>
+        <h1 id="conversation-title">{detail.title}</h1>
+        <p>{detail.subtitle}</p>
+      </div>
+      <div className="connection-state" aria-label="Gateway and presence">
+        <span className={`status-pill ${gatewayStatus === "rejected" ? "status-error" : "status-ok"}`}>
+          {gatewayStatus === "rejected" ? "Command rejected" : "Gateway connected"}
+        </span>
+        <span className="status-pill">{CONVERSATION_GATEWAY_SCHEMA_VERSION}</span>
+        <span className="status-pill">{gatewayRoute}</span>
+      </div>
+    </header>
+  );
+}
+
+function NarrativeBrief({ detail, isStaff }: { detail: ConversationDetail; isStaff: boolean }) {
+  return (
+    <section className="brief-panel narrative-brief conversation-brief" aria-label="Narrative brief">
+      <div className="brief-heading-row">
+        <div>
+          <span className="eyebrow">{isStaff ? "Handoff Brief" : "Brief"}</span>
+          <h2 className="panel-title">{detail.connectionLabel}</h2>
+        </div>
+        <span className="status-pill">{detail.mode.replaceAll("_", " ")}</span>
+      </div>
+      <div className="brief-grid">
+        <BriefBlock title="What is happening" text={detail.narrativeBrief.whatIsHappening} />
+        <BriefBlock title="What changed" text={detail.narrativeBrief.whatChanged} />
+        <BriefBlock title="What to do next" text={detail.narrativeBrief.nextStep} />
+        <BriefBlock title="Why it matters" text={detail.narrativeBrief.whyItMatters} />
+        <BriefBlock title="Evidence" text={detail.narrativeBrief.evidence} />
+        <BriefBlock title="Limitations" text={detail.narrativeBrief.limitation} />
+      </div>
+    </section>
+  );
+}
+
+function MessageTimeline({
+  detail,
+  isStaff,
+  lastError,
+  onEditMessage,
+  onUndoMessage,
+  onMarkUnread,
+  onReact,
+  onRetry,
+}: {
+  detail: ConversationDetail;
+  isStaff: boolean;
+  lastError?: string;
+  onEditMessage: (messageId: string, body: string) => void;
+  onUndoMessage: (messageId: string) => void;
+  onMarkUnread: () => void;
+  onReact: (messageId: string, reactionKey: string) => void;
+  onRetry: () => void;
+}) {
+  return (
+    <section className="timeline-panel" aria-label="Conversation timeline" aria-live="polite">
+      {lastError ? (
+        <div className="gateway-error" role="status">
+          <strong>Gateway rejected command</strong>
+          <span>{lastError}</span>
+          <button type="button" className="button-secondary compact-button" onClick={onRetry}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {detail.messages.map((message) => (
+        <MessageBubble
+          key={message.id}
+          message={message}
+          showUnreadDivider={detail.unreadFromSequence === message.sequence}
+          isStaff={isStaff}
+          onEditMessage={onEditMessage}
+          onUndoMessage={onUndoMessage}
+          onMarkUnread={onMarkUnread}
+          onReact={onReact}
+        />
+      ))}
+
+      <div className="presence-row" aria-label="Typing and presence">
+        {detail.typing.length > 0 ? <span className="typing-pill">{detail.typing.join(", ")}...</span> : null}
+        {detail.presence.map((presence) => (
+          <span key={presence} className="status-pill">
+            {presence}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MessageBubble({
+  message,
+  showUnreadDivider,
+  isStaff,
+  onEditMessage,
+  onUndoMessage,
+  onMarkUnread,
+  onReact,
+}: {
+  message: ConversationMessage;
+  showUnreadDivider: boolean;
+  isStaff: boolean;
+  onEditMessage: (messageId: string, body: string) => void;
+  onUndoMessage: (messageId: string) => void;
+  onMarkUnread: () => void;
+  onReact: (messageId: string, reactionKey: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.body);
+  const mine = message.author === "staff";
+
   return (
     <>
-      <div className="brief-grid">
-        <BriefBlock title="Why this is here" text={row.whyHere} />
-        <BriefBlock title="What changed" text={row.lastMeaningfulChange} />
-        <BriefBlock title="Suggested reply" text={row.handoff.suggestedReply} />
-        <BriefBlock title="Risk or constraint" text={row.handoff.riskOrConstraint} />
-        <BriefBlock title="Evidence" text={row.handoff.evidenceSummary} />
-        <BriefBlock title="Allowed context" text={row.handoff.allowedContext.join(", ")} />
-      </div>
-      <section className="plain-panel compact-panel" aria-labelledby="episode-title">
-        <span className="eyebrow">Episode Candidate</span>
-        <h3 id="episode-title" className="panel-title">
-          {row.episode.title}
-        </h3>
-        <p className="muted">
-          {row.episode.kind} · {row.episode.status} · confidence {Math.round(row.episode.confidence * 100)}%
-        </p>
-        <p className="muted">Evidence: {row.episode.evidenceRefs.join(", ")}</p>
-      </section>
+      {showUnreadDivider ? <div className="unread-divider">Unread</div> : null}
+      <article className={`message-bubble ${mine ? "mine" : ""} ${message.state}`} aria-label={`${message.authorLabel} message`}>
+        <header>
+          <strong>{message.authorLabel}</strong>
+          <span>{message.occurredAt}</span>
+        </header>
+        {message.state === "deleted" ? (
+          <p className="message-tombstone">Message undone. Tombstone retained for conversation integrity.</p>
+        ) : editing ? (
+          <form
+            className="edit-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onEditMessage(message.id, draft);
+              setEditing(false);
+            }}
+          >
+            <textarea className="text-input text-area compact" value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="Edit message" />
+            <div className="inline-actions">
+              <button type="submit" className="button-primary compact-button">
+                Save edit
+              </button>
+              <button type="button" className="button-secondary compact-button" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p>{message.body}</p>
+        )}
+        <footer>
+          <span>{message.edited ? "Edited · " : ""}{message.receiptLabel}</span>
+          <div className="message-actions">
+            {message.reactions.map((reaction) => (
+              <button
+                type="button"
+                key={reaction.key}
+                className={reaction.selectedByViewer ? "reaction-button selected" : "reaction-button"}
+                onClick={() => onReact(message.id, reaction.key)}
+              >
+                {reaction.label} {reaction.count}
+              </button>
+            ))}
+            <button type="button" className="reaction-button" onClick={() => onReact(message.id, "ack")}>
+              Ack
+            </button>
+            {isStaff && message.canEdit && message.state !== "deleted" ? (
+              <button type="button" className="message-action-button" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+            ) : null}
+            {isStaff && message.canUndo && message.state !== "deleted" ? (
+              <button type="button" className="message-action-button" onClick={() => onUndoMessage(message.id)}>
+                Undo
+              </button>
+            ) : null}
+            {isStaff ? (
+              <button type="button" className="message-action-button" onClick={onMarkUnread}>
+                Mark unread
+              </button>
+            ) : null}
+          </div>
+        </footer>
+      </article>
     </>
+  );
+}
+
+function ConversationComposer({
+  status,
+  onSendMessage,
+  onTypingStart,
+}: {
+  status: ComposerStatus;
+  onSendMessage: (body: string) => void;
+  onTypingStart: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const disabled = status === "sending";
+
+  return (
+    <form
+      className="conversation-composer"
+      aria-label="Conversation composer"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (draft.trim().length === 0) {
+          return;
+        }
+        onSendMessage(draft.trim());
+        setDraft("");
+      }}
+    >
+      <textarea
+        className="text-input composer-input"
+        value={draft}
+        disabled={disabled}
+        placeholder="Write a reply"
+        aria-label="Write a reply"
+        onFocus={onTypingStart}
+        onChange={(event) => {
+          onTypingStart();
+          setDraft(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }
+        }}
+      />
+      <button type="submit" className="button-primary send-button" disabled={disabled || draft.trim().length === 0}>
+        {status === "sending" ? "Sending" : "Send"}
+      </button>
+      <span className={status === "failed" ? "composer-state failed" : "composer-state"}>{status === "failed" ? "Retry needed" : "Local echo ready"}</span>
+    </form>
   );
 }
 
@@ -110,4 +487,182 @@ function BriefBlock({ title, text }: { title: string; text: string }) {
       <p>{text}</p>
     </div>
   );
+}
+
+function useGatewayConversation(initialConversationId: string, role: ProductRole) {
+  const initialDetail = sampleConversationDetails[initialConversationId] ?? sampleConversationDetails.conv_ava;
+  const [state, setState] = useState<GatewayState>({
+    selectedConversationId: initialDetail.conversationId,
+    detail: initialDetail,
+    gatewayStatus: "connected",
+    composerStatus: "idle",
+    sequence: initialDetail.messages.at(-1)?.sequence ?? 0,
+  });
+
+  return useMemo(
+    () => ({
+      ...state,
+      selectConversation(conversationId: string) {
+        const nextDetail = sampleConversationDetails[conversationId] ?? state.detail;
+        setState({
+          selectedConversationId: nextDetail.conversationId,
+          detail: nextDetail,
+          gatewayStatus: "connected",
+          composerStatus: "idle",
+          sequence: nextDetail.messages.at(-1)?.sequence ?? 0,
+        });
+      },
+      sendMessage(body: string) {
+        const clientId = createClientId("message.submit");
+        const failed = body.toLowerCase().includes("fail");
+        const nextSequence = state.sequence + 1;
+        const sentByStaff = role === "staff" || role === "manager" || role === "owner" || role === "admin";
+        const pendingMessage: ConversationMessage = {
+          id: failed ? clientId : `message_${nextSequence}`,
+          clientId,
+          author: sentByStaff ? "staff" : "client",
+          authorLabel: sentByStaff ? "Keith" : "You",
+          body,
+          occurredAt: "Now",
+          sequence: nextSequence,
+          state: failed ? "failed" : "pending",
+          edited: false,
+          canEdit: !failed,
+          canUndo: !failed,
+          receiptLabel: failed ? "Failed" : "Pending",
+          reactions: [],
+        };
+        setState((current) => ({
+          ...current,
+          detail: { ...current.detail, messages: [...current.detail.messages, pendingMessage], typing: failed ? [] : current.detail.typing },
+          gatewayStatus: failed ? "rejected" : "pending",
+          composerStatus: failed ? "failed" : "sending",
+          lastClientId: clientId,
+          lastError: failed ? "The mock gateway returned command.rejected for this body." : undefined,
+          sequence: nextSequence,
+        }));
+        if (!failed) {
+          window.setTimeout(() => {
+            updateMessage(setState, pendingMessage.id, (message) => ({
+              ...message,
+              state: "persisted",
+              receiptLabel: `Ack ${clientId}`,
+            }));
+            setState((current) => ({ ...current, gatewayStatus: "connected", composerStatus: "idle" }));
+          }, 80);
+        }
+      },
+      editMessage(messageId: string, body: string) {
+        updateMessage(setState, messageId, (message) => ({
+          ...message,
+          body,
+          edited: true,
+          receiptLabel: `Edited · ${createClientId("message.edit")}`,
+        }));
+      },
+      undoMessage(messageId: string) {
+        updateMessage(setState, messageId, (message) => ({
+          ...message,
+          body: "",
+          state: "deleted",
+          canEdit: false,
+          canUndo: false,
+          receiptLabel: `Undone · ${createClientId("message.undo")}`,
+        }));
+      },
+      markRead() {
+        setState((current) => ({
+          ...current,
+          detail: {
+            ...current.detail,
+            lastReadSequence: current.sequence,
+            unreadFromSequence: 0,
+            messages: current.detail.messages.map((message) => ({ ...message, receiptLabel: message.state === "deleted" ? message.receiptLabel : "Read" })),
+          },
+        }));
+      },
+      markUnread() {
+        setState((current) => ({
+          ...current,
+          detail: {
+            ...current.detail,
+            unreadFromSequence: Math.max(1, current.sequence),
+            lastReadSequence: Math.max(0, current.sequence - 1),
+          },
+        }));
+      },
+      toggleReaction(messageId: string, reactionKey: string) {
+        updateMessage(setState, messageId, (message) => {
+          const existing = message.reactions.find((reaction) => reaction.key === reactionKey);
+          if (!existing) {
+            return {
+              ...message,
+              reactions: [...message.reactions, { key: reactionKey, label: labelForReaction(reactionKey), count: 1, selectedByViewer: true }],
+            };
+          }
+          return {
+            ...message,
+            reactions: message.reactions.map((reaction) =>
+              reaction.key === reactionKey
+                ? {
+                    ...reaction,
+                    selectedByViewer: !reaction.selectedByViewer,
+                    count: reaction.selectedByViewer ? Math.max(0, reaction.count - 1) : reaction.count + 1,
+                  }
+                : reaction,
+            ),
+          };
+        });
+      },
+      retryLastMessage() {
+        setState((current) => ({
+          ...current,
+          gatewayStatus: "connected",
+          composerStatus: "idle",
+          lastError: undefined,
+          detail: {
+            ...current.detail,
+            messages: current.detail.messages.map((message) =>
+              message.state === "failed"
+                ? { ...message, state: "persisted", canEdit: true, canUndo: true, receiptLabel: `Retried · ${message.clientId ?? "client_retry"}` }
+                : message,
+            ),
+          },
+        }));
+      },
+    }),
+    [role, state],
+  );
+}
+
+function updateMessage(
+  setState: Dispatch<SetStateAction<GatewayState>>,
+  messageId: string,
+  updater: (message: ConversationMessage) => ConversationMessage,
+) {
+  setState((current) => ({
+    ...current,
+    detail: {
+      ...current.detail,
+      messages: current.detail.messages.map((message) => (message.id === messageId ? updater(message) : message)),
+    },
+  }));
+}
+
+function createClientId(commandType: ConversationCommandType): string {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${commandType.replaceAll(".", "_")}_${suffix}`;
+}
+
+function labelForReaction(reactionKey: string): string {
+  if (reactionKey === "ack") {
+    return "Ack";
+  }
+  if (reactionKey === "clear") {
+    return "Clear";
+  }
+  if (reactionKey === "useful") {
+    return "Useful";
+  }
+  return reactionKey;
 }

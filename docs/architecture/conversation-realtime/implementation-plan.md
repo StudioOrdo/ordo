@@ -1,7 +1,8 @@
 # Conversation Realtime Implementation Plan
 
-Status: Staged delivery plan with protocol, schema, core service, and first
-bidirectional gateway slice implemented.
+Status: Staged delivery plan with protocol, schema, core service,
+bidirectional gateway, receipts/presence, and the first premium UI core
+implemented.
 
 This plan keeps the first implementation small enough to validate while
 preserving the architecture needed for premium realtime chat, brief-first
@@ -121,6 +122,15 @@ Exit criteria:
 - UI can show unread divider and global attention badge from daemon state.
 
 ## Phase 4: Premium Chat UI
+
+Implementation status: implemented for the first local UI core. `/chat` and
+`/conversations` now render a brief-first conversation workspace with role-aware
+client/staff surfaces, queue rows, narrative brief, timeline, composer,
+optimistic send/retry, edit, undo tombstones, reactions, read/unread controls,
+typing/presence, and browser smoke coverage. The UI uses deterministic
+`conversation.gateway.v1` fixture behavior for smoke tests; live browser
+WebSocket binding, provider streaming, artifacts, and full multi-device receipt
+precision remain later slices.
 
 Deliverables:
 

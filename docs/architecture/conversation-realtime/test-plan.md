@@ -612,9 +612,18 @@ Phase 8 simulator contract coverage now includes:
 - proof that default simulator contract tests require no provider keys and no
   network.
 
-0.1.5 live product journey eval coverage should add:
+0.1.5 live product journey eval coverage now includes:
 
 - persona markdown parsing and validation with no real private data;
+- ten committed synthetic persona fixtures for event QR, trial, review,
+  referral, privacy, budget, handoff, and dissatisfaction pressure;
+- deterministic persona id ordering and library content hashing;
+- validator rejection for missing required fields, unknown pressure subsystems,
+  duplicate ids, raw emails, phone numbers, API-key-shaped strings, bearer
+  tokens, and configured private terms.
+
+0.1.5 live product journey eval coverage should still add:
+
 - multi-case live runner guards for max cases, budget, provider/model/key, and
   no default network;
 - QR/event entry point to visitor session to relationship conversation evidence;

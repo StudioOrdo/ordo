@@ -10,6 +10,14 @@ provider, and realtime event foundations.
 
 ## Current Tables To Reuse
 
+0.1.6 Product Onboarding Surfaces should reuse the current durable tables before
+adding schema. The expected product surfaces are mostly route/read-model work on
+top of tracked entry points, visitor sessions, offers/trials, conversations,
+feedback/reviews, affiliate connections/grants, referrals, outcomes,
+attributions, artifacts, and journey reports. Each implementation issue should
+begin with fresh diagnosis and add schema only when the existing contract cannot
+represent the evidence safely.
+
 | Table | Conversation role |
 | --- | --- |
 | `actors`, `roles`, `actor_role_memberships` | Local operator, browser session, MCP client, future public/session actors. |

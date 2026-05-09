@@ -67,6 +67,15 @@ remain evidence-backed and agency-preserving. Ordo should help a person decide
 whether trying OrdoStudio fits their situation; it must not invent proof,
 manufacture urgency, hide pressure, or treat model persuasion as truth.
 
+The next product arc after those evals is 0.1.6 Product Onboarding Surfaces.
+The doctrine for this arc is simple: turn proven journeys into real surfaces
+before expanding automation. QR/event landing, public Home/About and Offer
+context, OrdoStudio trial acceptance, relationship conversation onboarding,
+review-return links, affiliate/referral landing, and staff/admin review work
+should all use the durable backend evidence already exercised by 0.1.5. The
+frontend is not allowed to substitute marketing copy, fake proof, or hidden
+automation for evidence-backed product state.
+
 ## Navigation And Information Architecture
 
 The primary flow is:

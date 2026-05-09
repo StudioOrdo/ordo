@@ -59,6 +59,13 @@ The current codebase already provides the spine this work should extend:
   defines the 0.1.4 validation arc: deterministic product workflow evals,
   transcript artifacts, role lifecycle coverage, replay fixtures, guarded live
   provider evals, and artifact-review-driven follow-up work.
+- [Live Product Journey Evals](live-product-journey-evals.md) defines the
+  completed 0.1.5 persona-backed QR-to-trial, review-return, affiliate,
+  admin/staff, and analyzed report eval arc.
+- [Product Onboarding Surfaces](product-onboarding-surfaces.md) defines the
+  accepted 0.1.6 arc for turning that evidence into real QR/event landing,
+  offer/trial, client conversation, review-return, referral, and staff review
+  surfaces.
 
 ## Design Doctrine
 

@@ -46,6 +46,43 @@ git diff --check
 For Docker/runtime evidence, use a unique Compose project name, verify health,
 readiness, affected UI/API behavior, and clean up disposable state.
 
+## Product Onboarding Surface Tests
+
+0.1.6 implementation issues should use the completed 0.1.5 journey evals as
+acceptance evidence, then add route/UI tests for the real surfaces being built.
+
+Coverage:
+
+- QR/event landing resolves only active tracked entry points and creates
+  visitor sessions with durable evidence;
+- public Home/About and Offer context comes from public-safe read models and
+  evidence-backed claims;
+- OrdoStudio trial acceptance creates offer acceptance, trial, outcome, and
+  attribution evidence without fake urgency, scarcity, reviews, metrics, or
+  unsupported proof;
+- anonymous/client onboarding creates or resumes one relationship conversation
+  and hides staff routing, policy, prompt, provider, confidence, token, and
+  privacy-placeholder internals;
+- simulated review-return links are durable, redacted, non-delivered artifacts
+  and feedback remains private until review consent and approval permit public
+  proof;
+- affiliate/referral landing preserves scoped referral attribution and denies
+  unrelated customer/staff/admin visibility;
+- staff/admin onboarding review surfaces are role-gated and inspect handoff,
+  review moderation, affiliate, and journey report evidence without exposing
+  appliance internals to ordinary staff;
+- frontend smoke coverage exercises public/client/staff paths without live
+  provider calls or real outbound email by default.
+
+Evidence:
+
+- Rust tests for backend route/domain contracts changed by each issue;
+- route or component tests for public/client/staff read models;
+- Playwright smoke screenshots where UI changes are material;
+- 0.1.5 journey eval compatibility for QR-to-trial, review-return,
+  affiliate-referral, admin/staff, and report-backed surfaces;
+- redaction assertions over packets, reports, logs, and UI-facing protocol.
+
 ## Schema Tests
 
 Coverage:

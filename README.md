@@ -120,16 +120,20 @@ Implemented now:
 - daemon-owned LLM foundations for deterministic provider runs, prompt slots,
   tool approval, privacy egress, token ledger accounting, analysis candidates,
   knowledge graph candidates, attribution evidence, and the
-  `ethical_business_persuasion` prompt slot.
+  `ethical_business_persuasion` prompt slot;
+- deterministic and guarded-live eval foundations for product workflows,
+  transcript artifact packets, replay fixtures, an OpenAI-compatible
+  non-streaming provider adapter, opt-in live eval guards, persona-backed
+  QR-to-trial/review-return/referral/admin journeys, artifact review, and
+  cross-journey reports.
 
 Not implemented yet:
 
 - production-ready public Chat, About, Offers, Asks, and Feed portals;
 - authentication UI, hosted identity, public portals, and product-depth access
   enforcement;
-- real network LLM provider adapters, live-provider evals, embeddings, vector
-  search, provider-backed answer generation, chat retrieval UI, and content
-  packs;
+- broad live-provider orchestration, embeddings, vector search,
+  provider-backed answer generation, chat retrieval UI, and content packs;
 - hosted trial orchestration;
 - Worker Ordos, A2A networking, external report submission, support packet
   transport, and arbitrary third-party MCP execution.
@@ -140,22 +144,8 @@ reports to GitHub, support systems, or other Ordos yet.
 
 ## Near-Term Product Direction
 
-The next product layer should prove the conversation and LLM spine under
-realistic workflows before expanding product breadth:
-
-- backend-only eval workflows should pressure-test canonical conversation
-  creation, message/replay, privacy egress, prompt slots, token ledger,
-  analysis candidates, handoffs, tool approval, and public/client boundaries;
-- transcript artifact packets should make each run inspectable through redacted
-  transcripts, event ledgers, database ledgers, prompt-slot ledgers, privacy
-  ledgers, token ledgers, analysis candidates, handoff ledgers, replay checks,
-  and scorecards;
-- live provider adapters should be opt-in, guarded by environment flags and
-  spend caps, and should only receive privacy-transformed payloads from the
-  Rust-owned LLM gateway.
-
-After that proof loop, the product layers should connect the working appliance
-spine to the solopreneur operating system:
+The next product layer should connect the completed eval proof loop to usable
+onboarding surfaces:
 
 - Chat becomes the primary interface: clients get one persistent relationship
   conversation, staff work handoff queues and briefs, and admins operate the
@@ -170,6 +160,9 @@ spine to the solopreneur operating system:
 - Knowledge/RAG grounds answers in approved corpus material with provenance.
 - Brief-first surfaces and evidence-backed recommendations guide the next useful
   action without becoming a generic CRM, dashboard, or support inbox.
+- QR/event landing, OrdoStudio 30-day trial acceptance, review-return links,
+  affiliate/referral landing, and the first staff/admin review cockpit become
+  real product paths validated against journey eval evidence.
 - Content packs become portable, human-approved knowledge products.
 - Worker Ordos and A2A remain future architecture for scaling bounded work while
   one Home Ordo owns canonical truth.
@@ -197,13 +190,12 @@ working process.
 ## Repository Status
 
 This repository has completed the 0.1.0 Appliance Specimen pass, the 0.1.1
-appliance trust-boundary stabilization pass, and the 0.1.2 backend readiness
-foundation. It has also completed the 0.1.3 Conversation Realtime Spine: the
-local conversation/product foundation, realtime gateway, first premium UI,
-LLM-governance spine, and evidence-backed business candidate layers. The
-current work is still not production business automation; it is the inspectable
-local appliance and conversation contract foundation that later product-depth UI
-and hosted surfaces will use.
+appliance trust-boundary stabilization pass, the 0.1.2 backend readiness
+foundation, the 0.1.3 Conversation Realtime Spine, the 0.1.4 product workflow
+eval foundation, and the 0.1.5 live product journey eval arc. The current work
+is still not production business automation; it is the inspectable local
+appliance, conversation, eval, and journey evidence foundation that product
+onboarding surfaces and later hosted surfaces will use.
 
 The product is not ready for production use yet.
 

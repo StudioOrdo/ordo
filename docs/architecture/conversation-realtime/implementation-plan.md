@@ -474,3 +474,39 @@ Phase boundaries:
   before any real delivery path exists.
 - Cross-run report issue drafts remain local artifacts until governed GitHub
   filing is implemented.
+
+## Phase 12: Product Onboarding Surfaces
+
+Status: accepted planning arc for 0.1.6. The full contract is documented in
+`docs/architecture/conversation-realtime/product-onboarding-surfaces.md`.
+
+This phase turns the completed 0.1.5 journey eval foundation into usable
+product surfaces. It intentionally comes before real outbound email, broader
+live LLM orchestration, or a full admin cockpit because the repository already
+has backend evidence for QR/event entry, offers/trials, conversations,
+feedback/reviews, affiliate attribution, handoffs, and reports, while the
+public/client/staff frontend paths remain mostly shell or fixture-driven.
+
+Delivery order:
+
+1. #180 Align product onboarding surface canon and GitHub manufacturing setup.
+2. #181 Add QR/event landing surface contract and route.
+3. #182 Implement OrdoStudio trial offer page and acceptance flow.
+4. #183 Wire client-safe relationship conversation onboarding.
+5. #184 Add review-return surface for simulated review-request links.
+6. #185 Add affiliate/referral landing and attribution surface.
+7. #186 Add staff/admin onboarding review cockpit slice.
+8. #187 Add frontend/e2e smoke coverage tied to live journey eval evidence.
+
+Phase boundaries:
+
+- Each implementation issue begins with fresh code diagnosis.
+- Default tests remain deterministic, provider-free, email-provider-free,
+  network-free, and CI-safe.
+- Review-request email remains simulated unless a later governed delivery issue
+  adds real outbound email.
+- Public/client UI must not expose staff/admin internals, policy/provider
+  mechanics, prompt contents, token/cost internals, or privacy placeholder maps.
+- Product copy must remain evidence-backed and agency-preserving.
+- Live journey evals are acceptance evidence, not a substitute for route,
+  browser, and trust-boundary validation.

@@ -18,6 +18,14 @@ Conversation clients use `/chat/ws`, a separate protected local daemon route.
 This keeps system-shell realtime consumers on the simple stream while chat
 clients use the richer bidirectional protocol.
 
+0.1.6 Product Onboarding Surfaces should not invent a second conversation
+protocol for public onboarding. QR/event landing, offer acceptance,
+review-return, affiliate/referral, and staff/admin review surfaces should use
+HTTP route/read-model contracts for public surface state and `/chat/ws` for
+relationship conversation commands and replay where realtime interaction is
+needed. Any new event semantics should persist through the existing SQLite
+domain tables and conversation/realtime event logs.
+
 ## Envelope
 
 Every bidirectional frame should use a versioned envelope:

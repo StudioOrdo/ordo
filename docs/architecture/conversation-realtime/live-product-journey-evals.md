@@ -77,6 +77,17 @@ Implemented journey execution:
 - The default #166 path remains provider-free, network-free, and real-email
   free. It writes redacted packet, scorecard, harness manifest, QR setup, and
   review-return journey artifacts.
+- #167 adds a deterministic affiliate referral journey case in
+  `live_eval_runner.rs`. It selects the affiliate/referrer persona, creates an
+  active affiliate connection, creates a scoped connection grant for only the
+  referred conversation, creates an affiliate referral entry point and referred
+  visitor session, runs the referred visitor through the deterministic daemon
+  LLM path, accepts a public 30-day trial offer, records a referral, records a
+  referral-linked business outcome, and proposes referral/affiliate
+  attributions only after concrete referral and connection ids exist.
+- The default #167 path remains provider-free and network-free. It asserts the
+  affiliate can inspect the scoped referred conversation and is denied unrelated
+  conversation access.
 
 Known gaps:
 
@@ -84,8 +95,6 @@ Known gaps:
   planning and journey execution remain deterministic by default;
 - no outbound email adapter exists; review-request email should start as a
   redacted simulated artifact/link;
-- no affiliate referral journey eval ties affiliate connection, referral entry
-  point, referred visitor, and outcome attribution together;
 - no cross-persona analyzed journey report aggregates conversion, review,
   referral, handoff, privacy, persuasion, and token evidence.
 
@@ -245,6 +254,38 @@ The review-return journey manifest is schema
 `ordo.review_return_journey_eval.v1`. It stores durable ids and evidence refs
 only. Real outbound email delivery remains owned by #170.
 
+## Affiliate Referral Journey Contract
+
+Status: implemented by #167.
+
+The first affiliate referral eval runs a deterministic one-persona journey for
+`affiliate_referrer_community`. It creates an active affiliate connection,
+creates a public referral link to a 30-day OrdoStudio trial offer, starts a
+referred visitor session, opens a relationship conversation, and runs the
+deterministic daemon LLM path with privacy egress, prompt-slot accounting, and
+token ledger evidence.
+
+The case records:
+
+- active affiliate connection and scoped connection grant;
+- affiliate referral entry point and referred visitor session;
+- referred visitor relationship conversation and message;
+- deterministic assistant response with affiliate/referral prompt evidence;
+- public offer acceptance and started 30-day trial;
+- referral record citing affiliate, entry point, visitor session,
+  conversation, offer acceptance, and trial evidence;
+- referral-linked business outcome;
+- proposed referral and affiliate-connection attributions only after concrete
+  referral/source ids exist;
+- allowed policy evidence for the scoped referred conversation;
+- denied policy evidence for an unrelated conversation;
+- redacted packet, scorecard, harness manifest, and affiliate-referral journey
+  manifest.
+
+The affiliate-referral journey manifest is schema
+`ordo.affiliate_referral_journey_eval.v1`. It stores durable ids and evidence
+refs only. Affiliate payout/finance automation remains out of scope.
+
 ## Ethical Persuasion Boundary
 
 The journey can test whether Ordo helps a person decide whether OrdoStudio is a
@@ -315,6 +356,10 @@ GitHub issues until a governed filing path is implemented and accepted.
    consent/approval/publication guard, publish/feature/retire lifecycle, and
    redacted artifacts.
 6. #167 Implement affiliate referral journey eval.
+   Implemented with a deterministic active affiliate connection, scoped grant,
+   referral entry point, referred visitor session, conversation, LLM gateway,
+   offer acceptance, trial, referral record, referral-linked outcome,
+   referral/affiliate attribution, and trust-boundary checks.
 7. #168 Implement admin/staff handoff and moderation journey evals.
 8. #169 Add cross-persona analyzed journey report.
 9. #170 Decide whether simulated review-request email remains enough or a

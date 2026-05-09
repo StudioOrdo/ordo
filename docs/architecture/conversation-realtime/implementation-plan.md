@@ -411,8 +411,8 @@ Phase boundaries:
 
 Status: accepted planning arc for 0.1.5. Phase 1 persona library/validator,
 Phase 2 multi-case runner planning foundation, Phase 3 QR-to-trial journey
-eval, and Phase 4 review-return journey eval are implemented. The full
-contract is documented in
+eval, Phase 4 review-return journey eval, and Phase 5 affiliate-referral
+journey eval are implemented. The full contract is documented in
 `docs/architecture/conversation-realtime/live-product-journey-evals.md`.
 
 Delivery order:
@@ -433,7 +433,12 @@ Delivery order:
    creates a return session, resumes the relationship conversation, captures
    private feedback, creates a review candidate, blocks publication before
    consent and approval, and exercises publish, feature, and retire visibility.
-6. #167 Implement affiliate referral journey eval.
+6. #167 Implement affiliate referral journey eval. Implemented as a
+   deterministic eval that creates an active affiliate connection, scoped
+   conversation grant, referral entry point, referred visitor session,
+   relationship conversation, privacy/accounted daemon LLM response, offer
+   acceptance, 30-day trial, referral record, referral-linked outcome,
+   referral/affiliate attribution, and allow/deny visibility evidence.
 7. #168 Implement admin/staff handoff and moderation journey evals.
 8. #169 Add cross-persona analyzed journey report.
 9. #170 Decide the governed email simulation or adapter path.

@@ -46,6 +46,13 @@ artifact, resume the relationship conversation through a return visitor
 session, capture private feedback, create a review candidate, prove publication
 is blocked before consent and approval, and exercise publish, feature, and
 retire visibility boundaries without real email delivery or network calls.
+The 0.1.5 Phase 5 affiliate-referral journey eval is implemented in
+`crates/ordo-daemon/src/live_eval_runner.rs`; default tests create an active
+affiliate connection, scoped conversation grant, referral entry point, referred
+visitor session, deterministic conversation/LLM response, offer acceptance,
+started trial, referral record, referral-linked business outcome, and
+referral/affiliate attribution while proving unrelated conversation access is
+denied.
 
 ## Current Assessment
 
@@ -1388,11 +1395,14 @@ compare quality across providers and prompt revisions.
    `test_fixture_gap`. Implemented as a local deterministic packet classifier
    with JSON and Markdown outputs and no automatic GitHub filing.
 13. Add live product journey evals. The initial implemented cases are
-   QR-to-trial and review-return. QR-to-trial covers event QR, visitor session,
-   relationship conversation, privacy/accounted daemon LLM response, offer
-   acceptance, trial, outcome, and attribution. Review-return covers simulated
-   review-request email/link evidence, return session, private feedback, review
-   candidate, consent/approval publication guard, and publish/feature/retire
-   visibility.
+   QR-to-trial, review-return, and affiliate-referral. QR-to-trial covers event
+   QR, visitor session, relationship conversation, privacy/accounted daemon LLM
+   response, offer acceptance, trial, outcome, and attribution. Review-return
+   covers simulated review-request email/link evidence, return session, private
+   feedback, review candidate, consent/approval publication guard, and
+   publish/feature/retire visibility. Affiliate-referral covers affiliate
+   connection/grant, referral entry/session, referred conversation,
+   offer/trial, referral record, referral-linked outcome, attribution, and
+   scoped visibility boundaries.
 14. Add Anthropic and DeepSeek provider coverage.
 15. Add SSE streaming normalization once non-streaming passes.

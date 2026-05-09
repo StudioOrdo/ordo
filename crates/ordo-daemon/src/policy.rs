@@ -145,8 +145,11 @@ pub enum PolicyAction {
     Execute,
     Generate,
     Create,
+    Update,
     Validate,
     Prepare,
+    Export,
+    Approve,
     CallTool,
 }
 
@@ -158,8 +161,11 @@ impl PolicyAction {
             Self::Execute => "execute",
             Self::Generate => "generate",
             Self::Create => "create",
+            Self::Update => "update",
             Self::Validate => "validate",
             Self::Prepare => "prepare",
+            Self::Export => "export",
+            Self::Approve => "approve",
             Self::CallTool => "call_tool",
         }
     }

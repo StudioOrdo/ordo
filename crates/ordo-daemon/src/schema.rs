@@ -18,6 +18,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "diagnostic_logs",
     "job_artifacts",
     "issue_report_artifacts",
+    "issue_report_exports",
+    "issue_report_status_events",
+    "support_packets",
+    "support_packet_receipts",
     "actors",
     "roles",
     "actor_role_memberships",
@@ -54,7 +58,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 14;
+pub const CURRENT_SCHEMA_VERSION: i64 = 15;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -134,6 +138,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 14,
         name: "add_availability_and_handoff_inbox",
         apply: add_availability_and_handoff_inbox,
+    },
+    SchemaMigration {
+        version: 15,
+        name: "add_report_exports_and_support_packets",
+        apply: add_report_exports_and_support_packets,
     },
 ];
 
@@ -1171,6 +1180,77 @@ fn add_availability_and_handoff_inbox(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_report_exports_and_support_packets(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS issue_report_exports (
+            id TEXT PRIMARY KEY,
+            report_id TEXT NOT NULL,
+            export_format TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            content_bytes INTEGER NOT NULL,
+            content_text TEXT NOT NULL,
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (report_id) REFERENCES issue_report_artifacts(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_issue_report_exports_report ON issue_report_exports(report_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS issue_report_status_events (
+            id TEXT PRIMARY KEY,
+            report_id TEXT NOT NULL,
+            from_status TEXT,
+            to_status TEXT NOT NULL,
+            reason TEXT,
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (report_id) REFERENCES issue_report_artifacts(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_issue_report_status_events_report ON issue_report_status_events(report_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS support_packets (
+            id TEXT PRIMARY KEY,
+            report_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            destination_kind TEXT NOT NULL,
+            destination_id TEXT,
+            destination_label TEXT,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            payload_hash TEXT NOT NULL,
+            approval_required INTEGER NOT NULL,
+            approved_by_actor_id TEXT,
+            approved_at TEXT,
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (report_id) REFERENCES issue_report_artifacts(id) ON DELETE CASCADE,
+            FOREIGN KEY (approved_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_support_packets_report ON support_packets(report_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_support_packets_status ON support_packets(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS support_packet_receipts (
+            id TEXT PRIMARY KEY,
+            packet_id TEXT NOT NULL,
+            receipt_kind TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (packet_id) REFERENCES support_packets(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_support_packet_receipts_packet ON support_packet_receipts(packet_id, created_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1274,9 +1354,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 14);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 15);
     }
 
     #[test]
@@ -1372,6 +1452,10 @@ mod tests {
         assert!(table_exists(&connection, "handoff_inbox_items"));
         assert!(table_exists(&connection, "handoff_events"));
         assert!(table_exists(&connection, "handoff_receipts"));
+        assert!(table_exists(&connection, "issue_report_exports"));
+        assert!(table_exists(&connection, "issue_report_status_events"));
+        assert!(table_exists(&connection, "support_packets"));
+        assert!(table_exists(&connection, "support_packet_receipts"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -1700,6 +1784,47 @@ mod tests {
         assert!(column_exists(
             &connection,
             "handoff_receipts",
+            "receipt_kind"
+        ));
+    }
+
+    #[test]
+    fn report_export_and_support_packet_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "issue_report_exports"));
+        assert!(column_exists(
+            &connection,
+            "issue_report_exports",
+            "content_hash"
+        ));
+        assert!(column_exists(
+            &connection,
+            "issue_report_exports",
+            "content_text"
+        ));
+        assert!(table_exists(&connection, "issue_report_status_events"));
+        assert!(column_exists(
+            &connection,
+            "issue_report_status_events",
+            "to_status"
+        ));
+        assert!(table_exists(&connection, "support_packets"));
+        assert!(column_exists(
+            &connection,
+            "support_packets",
+            "approval_required"
+        ));
+        assert!(column_exists(
+            &connection,
+            "support_packets",
+            "payload_hash"
+        ));
+        assert!(table_exists(&connection, "support_packet_receipts"));
+        assert!(column_exists(
+            &connection,
+            "support_packet_receipts",
             "receipt_kind"
         ));
     }

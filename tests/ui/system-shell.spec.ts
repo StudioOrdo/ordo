@@ -111,6 +111,55 @@ test("Reports can prepare and display local evidence packages", async ({ page })
   }
 });
 
+test("Client chat keeps one relationship conversation and hides staff rails", async ({ page }) => {
+  await page.goto("/chat?role=client");
+
+  await expect(page.getByRole("navigation", { name: "Public and member navigation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your conversation with Studio Ordo" })).toBeVisible();
+  await expect(page.locator("main")).toContainText("single relationship conversation");
+  await expect(page.getByRole("navigation", { name: "Staff business navigation" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText("Logs");
+  await expect(page.locator("body")).not.toContainText("Backup");
+});
+
+test("Staff navigation defaults to handoff work before relationship memory", async ({ page }) => {
+  await page.goto("/conversations?role=staff");
+
+  const staffNav = page.getByRole("navigation", { name: "Staff business navigation" });
+  await expect(staffNav).toBeVisible();
+  await expect(staffNav.getByRole("link", { name: /Conversations/ })).toBeVisible();
+  await expect(staffNav.getByRole("link", { name: /Connections/ })).toBeVisible();
+  await expect(staffNav.getByRole("link", { name: /Conversations/ })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Queues" })).toBeVisible();
+  await expect(page.locator("main")).toContainText("My Handoffs");
+  await expect(page.locator("main")).toContainText("Why this is here");
+  await expect(page.locator("main")).toContainText("Handoff Brief");
+});
+
+test("Admin role can access appliance system rail without leaking it to clients", async ({ page }) => {
+  await page.goto("/chat?role=admin");
+
+  const systemNav = page.getByRole("navigation", { name: "Admin system navigation" });
+  await expect(systemNav).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /System/ })).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /Logs/ })).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /Backup/ })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Staff business navigation" })).toBeVisible();
+});
+
+test("Account tools are role-specific and keep affiliates outside the staff rail", async ({ page }) => {
+  await page.goto("/account?role=affiliate");
+
+  await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible();
+  await expect(page.locator("main")).toContainText("Affiliate dashboard");
+  await expect(page.locator("main")).toContainText("Referral links");
+  await expect(page.locator("main")).toContainText("Approved materials");
+  await expect(page.getByRole("navigation", { name: "Staff business navigation" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
+});
+
 function startMockDaemon(): Promise<{ close: () => Promise<void>; state: MockDaemonState }> {
   const state: MockDaemonState = { backupCreated: false, reportCreated: false, requests: [] };
   const server = createServer((request, response) => handleRequest(request, response, state));

@@ -55,6 +55,9 @@ The current codebase already provides the spine this work should extend:
   analysis, and briefs.
 - [Test Plan](test-plan.md) defines schema, policy, realtime, recovery,
   privacy, token ledger, LLM gateway, UI, and smoke validation.
+- [Real LLM E2E Evals](real-llm-e2e-evals.md) assesses the current live-provider
+  gap, defines the opt-in eval harness, and lists business use cases for real
+  model validation across providers.
 
 ## Design Doctrine
 

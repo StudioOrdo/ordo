@@ -34,5 +34,6 @@ pub mod route_contracts;
 pub mod scheduler;
 pub mod schema;
 pub mod server;
+pub mod surface_briefs;
 pub mod templates;
 pub mod vault;

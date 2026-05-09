@@ -7,6 +7,14 @@ export default async function AsksPage({ searchParams }: { searchParams?: Search
     topItemId: "asks",
     eyebrow: "Asks",
     title: "Asks",
+    surfaceBrief: {
+      title: "Ask surface brief",
+      generatedAt: "2026-05-09T09:50:00Z",
+      refreshStatus: "queued",
+      body: "Asks are ready for evidence-backed responses and referral outcomes, but the ask model remains intentionally lightweight.",
+      evidenceRefs: ["ask_beta", "referral_records_v24"],
+      limitations: ["No affiliate payout automation or external analytics are included."],
+    },
     brief: [
       "Asks describe ways to refer, provide, sell to, or support Studio Ordo.",
       "Future ask briefs will measure responses, referrals, and useful outcomes.",

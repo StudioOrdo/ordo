@@ -62,6 +62,7 @@ pub fn built_in_templates() -> Vec<ProcessTemplate> {
     vec![
         system_health_check_template(),
         system_brief_template(),
+        surface_brief_template(),
         backup_create_template(),
         restore_execute_template(),
         issue_report_prepare_template(),
@@ -222,6 +223,51 @@ fn system_brief_template() -> ProcessTemplate {
                 "artifact.save",
                 "brief.artifact.save",
                 "Save brief artifact",
+                &["claims.validate"],
+            ),
+        ],
+    }
+}
+
+fn surface_brief_template() -> ProcessTemplate {
+    ProcessTemplate {
+        id: "surface.brief.generate".to_string(),
+        capability_id: "surface.brief.generate".to_string(),
+        kind: "surface.brief.generate".to_string(),
+        name: "Generate Surface Brief".to_string(),
+        version: 1,
+        description:
+            "Write an evidence-backed surface brief artifact without blocking the surface."
+                .to_string(),
+        tasks: vec![
+            task(
+                "scope.validate",
+                "brief.scope.validate",
+                "Validate surface brief scope",
+                &[],
+            ),
+            task(
+                "evidence.collect",
+                "brief.evidence.collect",
+                "Collect surface evidence",
+                &["scope.validate"],
+            ),
+            task(
+                "draft.generate",
+                "brief.draft.generate",
+                "Generate deterministic surface brief",
+                &["evidence.collect"],
+            ),
+            task(
+                "claims.validate",
+                "brief.claims.validate",
+                "Validate surface brief claims",
+                &["draft.generate"],
+            ),
+            task(
+                "artifact.save",
+                "artifacts.brief.generate",
+                "Save surface brief artifact",
                 &["claims.validate"],
             ),
         ],
@@ -447,6 +493,7 @@ mod tests {
 
         assert!(template_ids.contains(&"system.health.check".to_string()));
         assert!(template_ids.contains(&"brief.system.generate".to_string()));
+        assert!(template_ids.contains(&"surface.brief.generate".to_string()));
         assert!(template_ids.contains(&"backup.create".to_string()));
         assert!(template_ids.contains(&"restore.execute".to_string()));
         assert!(template_ids.contains(&"issue.report.prepare".to_string()));

@@ -972,6 +972,27 @@ input:focus-visible {
   min-width: 0;
 }
 
+.surface-brief-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(15, 118, 110, 0.24);
+  border-radius: var(--radius);
+  background: #f8fbf8;
+  padding: 16px;
+  min-width: 0;
+}
+
+.surface-brief-panel > p,
+.surface-brief-panel small {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.surface-brief-panel small {
+  color: var(--muted);
+}
+
 .artifact-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));

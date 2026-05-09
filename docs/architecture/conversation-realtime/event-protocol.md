@@ -246,7 +246,10 @@ Analysis and briefs:
 - `knowledge_graph.candidate.superseded`
 - `brief.candidate.created`
 - `memory.candidate.created`
-- `surface.brief.generated`
+- `surface.brief.refresh.requested`
+- `surface.brief.completed`
+- `surface.brief.failed`
+- `surface.brief.superseded`
 - `ethical.recommendation.candidate.created`
 - `handoff.eligibility.recorded`
 - `handoff.item.created`

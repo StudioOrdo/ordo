@@ -76,6 +76,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "artifact_versions",
     "artifact_links",
     "artifact_deliverables",
+    "surface_briefs",
     "referral_records",
     "business_outcomes",
     "business_outcome_attributions",
@@ -92,7 +93,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 25;
+pub const CURRENT_SCHEMA_VERSION: i64 = 26;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -227,6 +228,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 25,
         name: "add_artifact_deliverable_contract_schema",
         apply: add_artifact_deliverable_contract_schema,
+    },
+    SchemaMigration {
+        version: 26,
+        name: "add_surface_brief_schema",
+        apply: add_surface_brief_schema,
     },
 ];
 
@@ -2245,6 +2251,42 @@ fn add_artifact_deliverable_contract_schema(connection: &Connection) -> Result<(
     Ok(())
 }
 
+fn add_surface_brief_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS surface_briefs (
+            id TEXT PRIMARY KEY,
+            surface_kind TEXT NOT NULL,
+            subject_kind TEXT,
+            subject_id TEXT,
+            status TEXT NOT NULL,
+            artifact_id TEXT,
+            title TEXT NOT NULL,
+            brief_markdown TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            limitations_json TEXT NOT NULL DEFAULT '[]',
+            created_by_job_id TEXT,
+            generated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            superseded_at TEXT,
+            failure_message TEXT,
+            FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE SET NULL,
+            FOREIGN KEY (created_by_job_id) REFERENCES jobs(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_surface_briefs_subject_status_generated
+            ON surface_briefs(surface_kind, subject_kind, subject_id, status, generated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_surface_briefs_artifact
+            ON surface_briefs(artifact_id);
+        CREATE INDEX IF NOT EXISTS idx_surface_briefs_job
+            ON surface_briefs(created_by_job_id);
+        "#,
+    )?;
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -2350,10 +2392,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25,
+                24, 25, 26,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 25);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 26);
     }
 
     #[test]
@@ -3139,6 +3181,18 @@ mod tests {
             &connection,
             "artifact_deliverables",
             "client_label"
+        ));
+        assert!(table_exists(&connection, "surface_briefs"));
+        assert!(column_exists(&connection, "surface_briefs", "artifact_id"));
+        assert!(column_exists(
+            &connection,
+            "surface_briefs",
+            "limitations_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_briefs",
+            "superseded_at"
         ));
     }
 

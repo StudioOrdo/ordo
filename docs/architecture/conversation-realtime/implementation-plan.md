@@ -409,13 +409,15 @@ Phase boundaries:
 
 ## Phase 11: Live Product Journey Evals
 
-Status: accepted planning arc for 0.1.5. The full contract is documented in
+Status: accepted planning arc for 0.1.5. Phase 1 persona library and validator
+are implemented. The full contract is documented in
 `docs/architecture/conversation-realtime/live-product-journey-evals.md`.
 
 Delivery order:
 
 1. #162 Align live product journey eval canon and GitHub manufacturing setup.
-2. #163 Add persona markdown library and parser/validator.
+2. #163 Add persona markdown library and parser/validator. Implemented with ten
+   synthetic personas and `eval_personas` validation.
 3. #164 Add multi-case live journey runner foundation.
 4. #165 Implement QR event to 30-day trial journey.
 5. #166 Implement review-request return journey with simulated email/link

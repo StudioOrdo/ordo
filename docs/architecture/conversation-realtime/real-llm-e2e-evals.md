@@ -27,6 +27,8 @@ The next eval arc is documented in
 artifact-review foundations to validate persona-driven QR/event journeys,
 30-day trials, review-return loops, affiliate referrals, staff handoffs, and
 cross-persona analyzed reports.
+The 0.1.5 Phase 1 persona library and validator are implemented under
+`docs/evals/personas/` and `crates/ordo-daemon/src/eval_personas.rs`.
 
 ## Current Assessment
 
@@ -148,7 +150,8 @@ evidence rather than live-model impressions:
     workflow pressure.
 11. Live product journey evals that run persona-driven QR-to-trial,
     review-return, affiliate-referral, and staff/admin handoff paths behind
-    explicit live-provider guards.
+    explicit live-provider guards. Phase 1 now provides the committed synthetic
+    persona library and deterministic validator.
 
 Every implementation phase should begin by re-reading the issue, current docs,
 and current code because earlier eval work may change the best implementation

@@ -80,30 +80,46 @@ The runner should then produce durable evidence for:
 
 ## Persona Library Contract
 
-Persona profiles should live under `docs/evals/personas/` as markdown files
-with YAML front matter. Phase 1 owns the full library and parser, but the
-contract should support:
+Status: implemented by #163.
 
-- `id`
-- `display_name`
-- `person_type`
-- `event_context`
-- `business_context`
-- `personality`
-- `goals`
-- `objections`
-- `budget_sensitivity`
-- `urgency`
-- `privacy_sensitivity`
-- `referral_tendency`
-- `review_likelihood`
-- `handoff_triggers`
-- `unsafe_or_edge_case_behavior`
-- `expected_pressure_subsystems`
-- `evidence_seed_refs`
+Persona profiles live under `docs/evals/personas/` as synthetic markdown files
+with constrained YAML front matter and a narrative body. The backend validator
+in `crates/ordo-daemon/src/eval_personas.rs` parses the committed library,
+validates required fields, rejects duplicate ids, rejects unsupported pressure
+subsystems, and blocks raw emails, phone numbers, API-key-shaped strings,
+bearer tokens, and configured private terms.
 
-Personas are fixtures, not truth. Their messages can create realistic pressure,
-but deterministic assertions and durable evidence remain authoritative.
+The implemented schema is `ordo.live_eval_persona.v1` and supports:
+
+- `persona_id`;
+- `display_name`;
+- `person_type`;
+- `event_context`;
+- `business_context`;
+- `personality_traits`;
+- `communication_style`;
+- `goals`;
+- `objections`;
+- `budget_sensitivity`;
+- `urgency_level`;
+- `privacy_sensitivity`;
+- `referral_tendency`;
+- `review_likelihood`;
+- `handoff_likelihood`;
+- `unsafe_or_edge_case_behaviors`;
+- `offer_interest`;
+- `trial_success_criteria`;
+- `expected_eval_pressure_subsystems`;
+- `ethical_persuasion_allowed_principles`;
+- `redaction_notes`.
+
+The committed library includes ten personas covering a solo consultant, local
+service business owner, creative freelancer, agency operator, nonprofit
+organizer, skeptical technical founder, privacy-sensitive professional,
+budget-constrained early adopter, affiliate/referrer, and dissatisfied trial
+user. Personas are fixtures, not truth. Their messages can create realistic
+pressure, but deterministic assertions and durable evidence remain
+authoritative.
 
 ## Ethical Persuasion Boundary
 

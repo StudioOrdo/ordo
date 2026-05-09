@@ -9,6 +9,10 @@ These docs turn the product thesis into system shape.
 - [Briefs](briefs.md)
 - [Scheduler](scheduler.md)
 - [Realtime Events](realtime-events.md)
+- [Conversation Realtime Architecture](conversation-realtime/README.md)
+  includes the product doctrine for one client relationship conversation,
+  staff handoff queues, role-aware navigation, brief-first surfaces, ethical
+  persuasion prompt slots, and realtime protocol/schema/UI implementation.
 - [System Shell](system-shell.md)
 - [Backup And Restore](backup-restore.md)
 - [Diagnostics And Reports](diagnostics-and-reports.md)

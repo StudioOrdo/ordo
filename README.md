@@ -131,13 +131,19 @@ reports to GitHub, support systems, or other Ordos yet.
 The next product layers should connect the working appliance spine to the
 solopreneur operating system:
 
-- Chat becomes the primary interface.
+- Chat becomes the primary interface: clients get one persistent relationship
+  conversation, staff work handoff queues and briefs, and admins operate the
+  appliance.
 - About becomes the public business story.
 - Offers describe what can be bought.
+- Asks, referrals, outcomes, artifacts, and conversations become measurable
+  parts of the business loop instead of disconnected content.
 - Feed publishes composite public artifacts for people and machines.
 - Future product-depth RBAC keeps public, signed-in, owner/admin, and per-user
   private data separate on top of the local access foundation.
 - Knowledge/RAG grounds answers in approved corpus material with provenance.
+- Brief-first surfaces and evidence-backed recommendations guide the next useful
+  action without becoming a generic CRM, dashboard, or support inbox.
 - Content packs become portable, human-approved knowledge products.
 - Worker Ordos and A2A remain future architecture for scaling bounded work while
   one Home Ordo owns canonical truth.

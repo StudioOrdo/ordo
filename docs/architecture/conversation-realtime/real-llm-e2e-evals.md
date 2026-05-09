@@ -1,0 +1,936 @@
+# Real LLM E2E Evals
+
+Status: Draft eval contract and current-code assessment
+
+This document defines how Ordo should start validating business functionality
+with real LLM providers while keeping deterministic tests, privacy guarantees,
+token accounting, and local appliance governance intact.
+
+Real-provider evals must be opt-in. They spend money, touch live external
+systems, and exercise the privacy egress boundary. They should never run as part
+of the default local test matrix unless an explicit environment flag enables
+them.
+
+## Current Assessment
+
+The current codebase can already validate much of the business spine without a
+live model:
+
+- `crates/ordo-daemon/src/conversation_protocol.rs` defines the
+  `conversation.gateway.v1` envelope and `/chat/ws` route contract.
+- `crates/ordo-daemon/src/conversation_gateway.rs` handles bidirectional
+  gateway frames, identify, subscribe, replay, message submit/edit/delete/undo,
+  mark read/unread, reactions, presence, and typing.
+- `crates/ordo-daemon/src/conversations.rs` owns conversation, participant,
+  message, receipt, read-state, handoff, mode, queue, and mutation behavior.
+- `crates/ordo-daemon/src/conversation_analysis.rs` queues and runs
+  deterministic local analysis for summaries, open questions, action-needed
+  signals, handoff signals, brief candidates, and memory candidates.
+- `crates/ordo-daemon/src/llm_gateway.rs` owns prompt slots, LLM policy
+  decisions, privacy egress, deterministic provider streaming, final assistant
+  message persistence, tool request lifecycle, and token accounting hooks.
+- `crates/ordo-daemon/src/privacy_egress.rs` transforms emails, phone numbers,
+  API-key-shaped values, bearer tokens, and configured private terms into
+  placeholders, then reconstructs only in scope.
+- `crates/ordo-daemon/src/llm_accounting.rs` records invocation starts,
+  prompt-slot estimates, privacy transform ids, provider-reported usage, and
+  token ledger rollups.
+- `crates/ordo-daemon/src/install.rs` recognizes provider secret env keys for
+  Anthropic, OpenAI, and DeepSeek and exposes redacted provider configuration.
+
+The current codebase does not yet have a real network provider adapter:
+
+- `LlmProviderAdapter` exists, but the implemented adapter is
+  `DeterministicLlmProvider`.
+- `answer_drafts.rs` still records local scaffold behavior for answer drafts
+  and does not call providers.
+- The Rust workspace currently has no HTTP/SSE provider dependency such as
+  `reqwest`, `reqwest-eventsource`, or provider SDK crates.
+- There is no dedicated eval script, eval dataset, live-provider test harness,
+  or scorecard writer in `package.json`, `scripts/`, or `tests/`.
+
+That means Ordo can run high-value deterministic E2E tests today, but real LLM
+E2E requires one implementation slice first: a live provider adapter and an
+explicit eval harness.
+
+## Environment Readiness
+
+The local `.env.local` file now contains real provider-related keys. Do not
+print or commit secret values.
+
+Current code-recognized provider key names:
+
+- `ANTHROPIC_API_KEY`
+- `API__ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `API__OPENAI_API_KEY`
+- `DEEPSEEK_API_KEY`
+
+Observed local key names include Anthropic and OpenAI keys plus a lowercase
+DeepSeek-shaped key. The provider catalog expects `DEEPSEEK_API_KEY`, so a
+lowercase `deepseek` key will not be recognized by current Rust provider config
+resolution unless normalized by shell tooling or renamed.
+
+Recommended live-eval guard variables:
+
+- `ORDO_LIVE_LLM_EVALS=1` enables live-provider evals.
+- `ORDO_LIVE_LLM_PROVIDER=anthropic|openai|deepseek` selects provider.
+- `ORDO_LIVE_LLM_MODEL=<model>` overrides provider default.
+- `ORDO_LIVE_LLM_MAX_CASES=<n>` caps spend per run.
+- `ORDO_LIVE_LLM_BUDGET_USD=<amount>` sets a hard budget guard.
+- `ORDO_LIVE_LLM_RECORD_REPLAY=1` stores redacted replay fixtures.
+- `ORDO_LIVE_LLM_ALLOW_NETWORK=1` is required by tests that would otherwise be
+  deterministic-only.
+
+Live evals should refuse to run if either `ORDO_LIVE_LLM_EVALS` or
+`ORDO_LIVE_LLM_ALLOW_NETWORK` is missing.
+
+## Sibling Patterns To Borrow
+
+Nearby projects show useful patterns, but no drop-in Ordo eval runner.
+
+Reusable ideas:
+
+- keep replay fixtures separate from live provider calls;
+- write structured review/eval packets to disk;
+- validate response contracts and retry or coerce when safe;
+- expose runtime provider status before generation;
+- support fake provider fallback for deterministic tests;
+- capture usage and latency per provider call;
+- never log request secrets.
+
+These map directly to Ordo's needs: deterministic CI remains stable, while
+opt-in live evals produce redacted artifacts for review and regression replay.
+
+## Backend-Only Early Proof Evals
+
+Backend-only evals should be the first implementation stage. They prove the
+appliance brain before Ordo spends money on live providers or time on frontend
+polish.
+
+The goal is not to simulate the UI. The goal is to prove that a business
+conversation can move through the Rust daemon spine and leave behind the right
+durable evidence:
+
+```text
+Seed SQLite -> Conversation Command -> Policy Decision -> Prompt Slots -> Privacy Transform -> Provider Adapter -> Message/Event/Artifact -> Accounting -> Analysis -> Replay
+```
+
+These evals should run against an isolated SQLite database, use the existing
+deterministic provider by default, and drive the same backend services or
+HTTP/WebSocket routes that production uses. They should not depend on
+Playwright, screenshots, browser timing, or real provider keys.
+
+Backend-only evals should answer these questions early:
+
+- can Ordo create or resolve the one canonical relationship conversation for a
+  user, visitor, or connection;
+- can a message submit flow persist the message, receipts, read model, and
+  realtime events atomically;
+- can the LLM gateway assemble prompt slots from the right evidence and record
+  slot hashes and token estimates;
+- can the privacy egress firewall placeholder sensitive values before the
+  provider boundary;
+- can the deterministic provider exercise the same completion path that a live
+  provider will use later;
+- can the assistant response, invocation status, accounting rows, and durable
+  events be replayed into a coherent projection;
+- can deterministic conversation analysis create summaries, open questions,
+  handoff signals, brief candidates, and memory candidates when expected;
+- can scorecards show token and event evidence without raw secrets or private
+  fixture text.
+
+Recommended backend eval layout:
+
+```text
+tests/evals/backend/
+  cases/
+    relationship_conversation_message.json
+    privacy_gateway_roundtrip.json
+    token_slot_rollup.json
+    deterministic_analysis_handoff.json
+    replay_projection_rebuild.json
+  scorecards/
+    <timestamped backend eval packets>
+```
+
+Each backend scorecard should include:
+
+- seeded fixture ids and hashes;
+- command ids and correlation ids;
+- policy decision ids and outcomes;
+- durable event ids, types, cursors, and conversation sequences;
+- prompt slot ids, slot names, hashes, visibility class, and estimated tokens;
+- privacy transform id and placeholder counts by detector type;
+- invocation id, provider id, model id, status, and usage if available;
+- token ledger deltas by conversation, capability, provider, model, and slot;
+- analysis job ids and candidate ids created;
+- replay cursor used and rebuilt projection checksum;
+- pass/fail assertions and redacted failure notes.
+
+Backend-only evals should become the default proof loop for early development:
+
+1. Add or change backend behavior.
+2. Run focused backend eval cases with deterministic provider.
+3. Review scorecard deltas for events, prompt slots, privacy, accounting, and
+   analysis.
+4. Promote stable live-provider outputs into replay fixtures only after the
+   deterministic path is trustworthy.
+
+This keeps the live model as a later variable instead of the first unknown. It
+also matches Ordo's architecture: SQLite is the source of truth, Rust is the
+control point, and WebSocket/UI state is a projection that can be validated
+after the durable spine is proven.
+
+## Workflow Pressure Tests
+
+The eval suite should work like a pressure test for the application. A coding
+agent should be able to run realistic workflows, collect transcript artifacts,
+review the artifacts, and then work through the surfaced failures one by one.
+The point is to make hidden product and architecture problems visible: missing
+events, weak handoff boundaries, awkward prompt slots, privacy leakage,
+incorrect unread state, incomplete queues, token waste, and places where the
+backend cannot yet express the product contract.
+
+Each workflow should bundle several lower-level cases into one real-world
+scenario. The suite should still record every assertion separately so a failed
+workflow tells the agent exactly which subsystem failed.
+
+Workflow evals should use three kinds of actors:
+
+- deterministic seeded actors for system invariants and policy checks;
+- LLM-simulated customer actors for varied customer language, urgency, tone,
+  confusion, objections, and follow-up behavior;
+- LLM-simulated human operator actors for handoff acceptance, staff replies,
+  delegation to Ordo, idle behavior, and return-to-agent behavior.
+
+The customer and operator simulators are test drivers, not authority. Their
+messages create realistic pressure, but pass/fail remains grounded in durable
+backend evidence: rows, events, policy decisions, prompt slots, accounting,
+analysis candidates, handoff state, replay behavior, and redacted transcript
+artifacts.
+
+Current implementation grounding:
+
+- `/chat/ws` currently supports identify, subscribe, replay, message submit,
+  edit, delete, undo, mark read/unread, reactions, presence, typing, and
+  heartbeat.
+- `conversations.rs` already supports canonical conversations, participants,
+  message idempotency, receipts, read state, reactions, presence snapshots,
+  handoff records, handoff transitions, conversation modes, queue scopes,
+  agent public-post etiquette decisions, and episode candidates.
+- `llm_gateway.rs` already supports deterministic provider runs, prompt slots,
+  privacy transform, assistant message persistence, invocation/accounting
+  events, cancellation, and governed tool request approval/execution lifecycle.
+- `conversation_analysis.rs` already queues message analysis and creates
+  summary, open-question, action-needed, handoff-signal, brief, and memory
+  candidates.
+- Handoff commands are named in the protocol, but the current gateway command
+  switch only wires message, read, reaction, presence, typing, subscribe, and
+  replay commands. Handoff and agent-mode workflow evals should initially drive
+  backend domain functions directly, then move to gateway tests as commands are
+  wired.
+
+### Transcript Test Artifacts
+
+Every workflow should produce a transcript artifact packet. The packet is the
+object that the coding agent and reviewers inspect after the run.
+
+Recommended layout:
+
+```text
+tests/evals/artifacts/<run-id>/
+  manifest.json
+  transcript.redacted.jsonl
+  timeline.md
+  scorecard.json
+  event-ledger.json
+  db-ledger.json
+  prompt-slots.json
+  privacy-ledger.json
+  token-ledger.json
+  analysis-candidates.json
+  handoff-ledger.json
+  replay-check.json
+  artifact-review.md
+```
+
+Artifact rules:
+
+- `transcript.redacted.jsonl` contains actor labels, message ids, timestamps,
+  message hashes, redacted excerpts, and generated simulator intent labels.
+- `timeline.md` is human-readable and ordered by durable sequence/cursor, not
+  by local test timing.
+- `event-ledger.json` records expected and actual event types, sequence order,
+  cursor continuity, durability, and broadcast/replay visibility.
+- `db-ledger.json` records the rows created or updated by table and id.
+- `prompt-slots.json` records slot ids, labels, visibility ceilings, source
+  refs, content hashes, estimated tokens, inclusion decisions, and truncation
+  reasons.
+- `privacy-ledger.json` records detector counts and placeholders, never raw
+  sensitive fixture values.
+- `token-ledger.json` records usage by run, provider, model, capability,
+  conversation, and prompt slot.
+- `analysis-candidates.json` records candidate kinds, states, confidence,
+  evidence refs, visibility, and content hashes.
+- `handoff-ledger.json` records handoff status transitions, actor ids, mode
+  changes, assignment, allowed context, and brief evidence.
+- `replay-check.json` records the cursor/sequence replay request and a checksum
+  of the rebuilt projection.
+- `artifact-review.md` is produced after the run by deterministic checks plus,
+  optionally, an LLM reviewer over the redacted artifacts.
+
+The artifact packet should be red-team friendly. If a transcript contains a
+phone number, email, token-like value, private business term, unsupported tool
+request, duplicate command, or staff-only note, the packet should make it easy
+to prove whether Ordo contained it correctly.
+
+### Artifact Review Loop
+
+After each workflow run, the coding agent should analyze the artifact packet
+before editing code.
+
+Review procedure:
+
+1. Confirm the workflow completed or failed at an expected boundary.
+2. Diff expected and actual durable events by event type, sequence, cursor, and
+   payload hash.
+3. Check database row counts and required foreign-key links.
+4. Scan redacted transcript excerpts for customer/operator realism and missing
+   product behavior.
+5. Verify no raw private fixture value appears outside allowed local storage.
+6. Inspect prompt slots for missing evidence, over-broad visibility, stale
+   context, or token bloat.
+7. Inspect token ledger rollups for the largest cost drivers.
+8. Inspect analysis candidates for false positives, false negatives, missing
+   evidence refs, and unsafe visibility.
+9. Inspect handoff state for correct assignment, mode, queue visibility, and
+   agent-silence behavior.
+10. File or implement fixes against the smallest responsible subsystem.
+
+The review output should classify findings:
+
+- `schema_gap`: required durable noun or index is missing;
+- `event_gap`: durable or ephemeral event is missing, duplicated, unordered, or
+  not replayable;
+- `policy_gap`: role, visibility, queue, or tool authority is wrong;
+- `privacy_gap`: sensitive value left the allowed boundary;
+- `prompt_gap`: slot selection, evidence, visibility, or truncation is wrong;
+- `handoff_gap`: mode, assignment, allowed context, queue, or agent etiquette is
+  wrong;
+- `analysis_gap`: candidate, brief, memory, or action count is wrong;
+- `accounting_gap`: invocation, usage, slot, rollup, or budget accounting is
+  wrong;
+- `ux_contract_gap`: backend cannot yet support the desired product experience;
+- `provider_gap`: live/replay provider response handling is wrong.
+
+### Real-World Workflow Eval Suite
+
+These workflows bundle the 100-plus atomic cases into product journeys. The
+initial runner can execute the backend-only portions with deterministic actors;
+later runs can swap customer/operator turns to LLM simulators and replay/live
+provider adapters.
+
+1. `workflow_new_visitor_service_intake`
+   - Customer simulator asks what the business does, shares a need, budget, and
+     timing.
+   - Assert canonical conversation, participants, message events, unread count,
+     prompt slots, assistant response, analysis summary, intake/action
+     candidate, brief candidate, memory candidate, and replay checksum.
+2. `workflow_returning_connection_continuity`
+   - Seed an existing connection and prior message, then customer returns with a
+     follow-up.
+   - Assert same relationship conversation or correct linked conversation,
+     recent context slot, no duplicate active conversation, memory candidate
+     evidence, and continuity in transcript artifact.
+3. `workflow_privacy_contact_details_roundtrip`
+   - Customer provides email, phone, and a private project codename.
+   - Assert local message keeps policy-controlled original, provider payload is
+     placeholdered, output reconstructs only in scope, scorecard has no raw
+     private values, and privacy ledger records detector counts.
+4. `workflow_urgent_human_request_handoff`
+   - Customer says they need a human urgently.
+   - Assert analysis creates `handoff_signal`, action count increments, a
+     handoff record can be created with reason/urgency/allowed context, queue
+     row appears for authorized staff, and handoff brief cites message evidence.
+5. `workflow_handoff_accept_staff_reply`
+   - Staff/operator simulator accepts the handoff and replies publicly.
+   - Assert handoff transition to accepted/in progress, mode becomes
+     `human_led_active`, read/unread states update, staff message is durable,
+     client-visible transcript excludes internal handoff reasoning, and replay
+     rebuilds the same state.
+6. `workflow_human_led_agent_silence`
+   - Customer asks another question while staff owns the conversation.
+   - Assert `may_agent_post_publicly` blocks public agent response unless the
+     operator tags/delegates Ordo or policy requires intervention.
+7. `workflow_operator_delegates_ordo`
+   - Operator simulator asks `@Ordo` for a private draft or specific public
+     answer.
+   - Assert delegation scope is recorded, prompt slots include only allowed
+     context, assistant behavior matches scope, and public/private visibility is
+     correct.
+8. `workflow_staff_idle_private_reminder`
+   - Staff accepts handoff, then no staff response occurs after the configured
+     idle boundary.
+   - Assert human-led idle mode, private reminder event, no public holding
+     message before policy allows it, and staff-only visibility.
+9. `workflow_return_to_agent`
+   - Staff returns the conversation to Ordo with allowed context.
+   - Assert handoff transition, `returned_to_agent` mode, allowed context in
+     prompt slots, and agent can resume public posting.
+10. `workflow_handoff_decline_recovery`
+    - Staff declines a handoff with reason.
+    - Assert declined terminal state, queue removal, conversation mode recovery,
+      client-safe response, and no stale handoff in staff queue.
+11. `workflow_multi_staff_queue_authorization`
+    - Seed assigned and unassigned handoffs for staff, manager, admin, and
+      client roles.
+    - Assert staff sees only `My Handoffs`, manager sees `Team Queue`, admin sees
+      `All Conversations`, and client cannot access staff queues.
+12. `workflow_two_clients_isolation`
+    - Two customer simulators converse concurrently with overlapping topics and
+      private data.
+    - Assert conversation ids, participants, read states, privacy transforms,
+      analysis candidates, and prompt slots never cross-contaminate.
+13. `workflow_read_unread_receipts_reconnect`
+    - Customer sends multiple messages, staff marks read/unread, then reconnects
+      from a cursor.
+    - Assert unread counts, manual unread boundary, receipt rows, replay order,
+      and optimistic/lost-ack reconciliation.
+14. `workflow_typing_presence_luxury_signals`
+    - Customer and operator simulators send typing and presence updates during a
+      live handoff.
+    - Assert typing is ephemeral, draft text is absent, presence visibility is
+      policy-filtered, and reconnect snapshots do not invent durable events.
+15. `workflow_message_edit_delete_undo_analysis_boundary`
+    - Customer sends, edits, undoes, and deletes messages around analysis jobs.
+    - Assert revisions, tombstones, undo grace behavior, read counts, and future
+      prompt slots do not use deleted content.
+16. `workflow_reaction_and_micro_acknowledgement`
+    - Staff reacts to a customer message and customer reacts to staff.
+    - Assert reaction idempotency, remove/toggle behavior, event visibility, and
+      no unread inflation from reaction-only changes unless intended.
+17. `workflow_offer_recommendation_evidence_backed`
+    - Customer describes a need that matches a seeded offer.
+    - Assert ethical recommendation slot, visible business facts only,
+      offer-interest candidate, evidence refs, agency-preserving language, and
+      token attribution.
+18. `workflow_missing_evidence_refusal`
+    - Customer asks for a claim that no approved corpus/business fact supports.
+    - Assert answer states limitation, asks clarifying question or routes to
+      handoff, and does not invent facts.
+19. `workflow_conflicting_customer_memory`
+    - Customer contradicts an earlier preference.
+    - Assert memory candidate remains proposed, contradiction/clarification
+      signal is recorded when supported, and prompt slots do not promote
+      unapproved truth.
+20. `workflow_sensitive_topic_safe_handoff`
+    - Customer shares sensitive personal or business information that should not
+      be handled casually.
+    - Assert privacy transform, handoff signal, staff-private candidate
+      visibility, client-safe response, and no external leakage.
+21. `workflow_tool_request_requires_approval`
+    - Assistant needs a governed capability during a conversation.
+    - Assert tool request recorded, unknown/dangerous tools rejected,
+      review-required execution blocks until approval, approval records policy,
+      and result returns through gateway only.
+22. `workflow_tool_rejection_customer_recovery`
+    - Operator rejects a tool request.
+    - Assert assistant receives refusal context, customer response remains
+      helpful, no tool side effect occurs, and policy audit explains why.
+23. `workflow_provider_failure_no_bad_state`
+    - Deterministic/replay provider fails mid-run.
+    - Assert invocation failure, no final assistant message, transcript marks
+      safe failure, accounting records what it can, and retry/fallback policy is
+      explicit.
+24. `workflow_cancel_llm_run`
+    - Operator cancels an in-flight run.
+    - Assert policy decision, provider cancellation call, `llm.run.cancelled`, no
+      duplicate assistant message, and clean transcript state.
+25. `workflow_token_budget_pressure`
+    - Seed a long history and retrieval evidence that exceeds the configured
+      budget.
+    - Assert deterministic truncation, slot-level token accounting, largest-cost
+      scorecard section, and refusal or compacting behavior when budget is
+      exceeded.
+26. `workflow_replay_after_client_lag`
+    - Simulate a lagged client and replay after cursor/sequence.
+    - Assert client receives replay guidance, replay returns durable events in
+      order, ephemeral typing is not treated as durable, and projection checksum
+      matches.
+27. `workflow_duplicate_command_idempotency`
+    - Submit duplicate `clientMessageId` and lost-ack retry patterns.
+    - Assert one message row, one canonical event sequence, stable ack/replay
+      reconciliation, and no duplicate analysis jobs.
+28. `workflow_public_client_boundary`
+    - Client attempts to access staff/admin-visible handoff, policy, prompt, or
+      logs state through conversation views.
+    - Assert denied or filtered data, no staff rail leakage, and transcript only
+      shows client-appropriate language.
+29. `workflow_report_generation_after_failure`
+    - Force a workflow failure and then prepare diagnostic/report evidence.
+    - Assert issue report captures relevant event/accounting/health evidence
+      without secrets and gives a useful repair trail.
+30. `workflow_backup_restore_preserves_conversation_spine`
+    - Run conversation activity, create backup, restore preflight/safe restore
+      boundary, then inspect conversation state.
+    - Assert durable messages, events, accounting, candidates, and handoff rows
+      remain consistent across the backup/restore proof boundary.
+31. `workflow_live_provider_smoke_customer_operator_sim`
+    - With live guards enabled, use a tiny prompt to simulate customer and
+      operator turns against one provider.
+    - Assert provider auth, model, usage, latency, redaction, and transcript
+      scorecard without judging full business quality yet.
+32. `workflow_cross_provider_business_regression`
+    - Replay the same redacted workflow against OpenAI, Anthropic, and DeepSeek
+      adapters when available.
+    - Assert contract equivalence, compare rubric scores, compare token/cost
+      profile, and identify provider-specific failures.
+
+These workflows should be implemented gradually, but the inventory should stay
+larger than the immediate implementation. The suite is a map of where pressure
+belongs, not a promise that every product surface is already wired through one
+public route.
+
+### Simulator Design
+
+Customer simulator prompts should be scenario-specific and constrained. They
+should produce messages, not assertions. Include traits such as impatience,
+budget sensitivity, uncertainty, urgency, objection, typo-prone mobile style,
+and privacy-sensitive disclosure.
+
+Human operator simulator prompts should model staff behavior that Ordo must
+support: accepting handoffs, sending concise replies, asking Ordo for a draft,
+delegating a scoped task, going idle, returning to agent, declining handoff,
+and rejecting unsafe tool requests.
+
+Simulator output should be stored as redacted transcript turns with:
+
+- `actorKind`: `customer_simulator`, `operator_simulator`, `ordo_agent`,
+  `system`, or `reviewer`;
+- `intentLabel`: short label such as `asks_for_human`, `shares_contact`,
+  `accepts_handoff`, or `delegates_private_draft`;
+- `messageHash` and redacted excerpt;
+- `expectedPressure`: subsystem expected to react, such as privacy, handoff,
+  accounting, read-state, or replay.
+
+The LLM reviewer should only see redacted artifacts. It should produce finding
+labels and suggested investigation targets, not direct code changes.
+
+## Live Provider Adapter Slice
+
+Before true real-LLM E2E can run, add a Rust adapter behind
+`LlmProviderAdapter`.
+
+Minimum adapter contract:
+
+1. Load provider config from the existing provider catalog and vault/env secret
+   resolution path.
+2. Compile Ordo prompt slots through `LlmGateway`, not inside the adapter.
+3. Receive privacy-transformed prompt and user message only.
+4. Call provider APIs over HTTPS.
+5. Normalize provider streaming or non-streaming response into:
+   - `TextDelta` events where streaming is available;
+   - `Completed { text, usage }`;
+   - `Failed { code, message }`.
+6. Never log raw prompts, raw secrets, or raw provider response bodies by
+   default.
+7. Respect cancellation where provider transport allows it.
+8. Record provider status and retry/fallback reason in metadata.
+
+Recommended order:
+
+1. Implement OpenAI-compatible non-streaming adapter first because DeepSeek can
+   be made OpenAI-compatible and the shape is easiest to validate.
+2. Add SSE streaming once non-streaming evals pass.
+3. Add Anthropic adapter with native event normalization.
+4. Add provider fallback and per-provider response contract validation.
+
+Dependencies to evaluate for Rust:
+
+- `reqwest` for HTTPS;
+- `reqwest-eventsource` or `eventsource-stream` for SSE;
+- provider SDKs only if they simplify usage without hiding important event and
+  accounting details.
+
+## Eval Harness Shape
+
+Add a separate harness rather than overloading unit tests.
+
+Proposed layout:
+
+```text
+tests/evals/
+  README.md
+  backend/
+    cases/
+    scorecards/
+  artifacts/
+    <run-id>/
+  simulators/
+    customer.md
+    operator.md
+    reviewer.md
+  cases/
+    conversation_intake.json
+    retrieval_grounded_answer.json
+    privacy_placeholder_roundtrip.json
+    handoff_detection.json
+    offer_recommendation.json
+  replays/
+    <redacted provider fixtures>
+  scorecards/
+    <timestamped eval packets>
+scripts/
+  run-live-llm-evals.mjs
+```
+
+Each eval case should include:
+
+- stable id;
+- business purpose;
+- setup records to seed into SQLite;
+- actor plan and simulator prompts when the workflow uses LLM-simulated turns;
+- conversation messages to submit;
+- route under test: backend service, gateway frame, replay fixture, or live
+  provider;
+- provider and model policy;
+- prompt-slot expectations;
+- privacy expectations;
+- transcript artifact expectations;
+- output contract;
+- deterministic assertions;
+- optional LLM-graded rubric;
+- token budget;
+- expected artifacts/events;
+- whether live network is required.
+
+Each eval run should write a scorecard:
+
+```json
+{
+  "schemaVersion": "ordo.eval.scorecard.v1",
+  "runId": "eval_run_...",
+  "providerId": "anthropic",
+  "modelId": "...",
+  "caseCount": 12,
+  "passed": 11,
+  "failed": 1,
+  "totalTokens": 12345,
+  "estimatedCostMicros": 0,
+  "cases": []
+}
+```
+
+Scorecards may include hashes, ids, event types, rubric scores, and redacted
+excerpts. They must not include API keys, raw sensitive fixtures, or raw
+provider prompts.
+
+## Evaluation Layers
+
+Use four layers. Do not jump straight to live providers for every assertion.
+
+### Layer 1: Deterministic Domain E2E
+
+Uses SQLite, conversation gateway handlers, deterministic provider, local
+analysis, privacy transform, and token ledger. Runs in normal CI.
+
+Validates:
+
+- conversation state changes;
+- event sequencing;
+- read/unread;
+- privacy transform;
+- token ledger writes;
+- deterministic analysis outputs;
+- brief and memory candidates.
+
+### Layer 2: Replay Provider E2E
+
+Uses recorded redacted provider responses. Runs in normal CI after fixtures are
+approved.
+
+Validates:
+
+- provider event normalization;
+- response parser behavior;
+- usage parsing;
+- reconstruction from placeholders;
+- output contract validation;
+- regression stability.
+
+### Layer 3: Live Provider Smoke
+
+Uses real keys and very small prompts. Runs only with live eval env guards.
+
+Validates:
+
+- provider auth works;
+- model name works;
+- latency and usage are captured;
+- privacy transform runs before network;
+- minimal output contract can pass.
+
+### Layer 4: Business Scenario Live Evals
+
+Uses realistic seeded business data and conversation flows. Runs manually or in
+controlled nightly jobs with spend caps.
+
+Validates:
+
+- business usefulness;
+- groundedness;
+- handoff judgment;
+- offer/ask recommendation quality;
+- conversation summary quality;
+- token economics.
+
+## Core Assertions
+
+Every real-LLM E2E case should check these invariants:
+
+- provider call goes through `LlmGateway`;
+- policy decision exists for the LLM invocation;
+- prompt slots are recorded with content hashes and token estimates;
+- privacy transform runs before provider call;
+- provider-bound payload contains placeholders for sensitive fixtures;
+- final assistant message is persisted as a conversation message;
+- `llm.run.completed` or `llm.run.failed` is recorded;
+- token ledger entries exist when provider usage is available;
+- no raw secret fixture appears in realtime event payloads, diagnostic logs,
+  policy audit metadata, or token ledger metadata;
+- output cites or references durable evidence when the case requires grounding;
+- scorecard records pass/fail without leaking secrets.
+
+## Use-Case Matrix
+
+### Provider And Gateway Health
+
+1. OpenAI-compatible minimal answer returns exact short text.
+2. Anthropic minimal answer returns exact short text.
+3. DeepSeek minimal answer returns exact short text.
+4. Provider missing key fails with structured `provider_unavailable`.
+5. Invalid model fails with structured provider error and no assistant message.
+6. Timeout or cancellation emits `llm.run.cancelled` or `llm.run.failed`.
+7. Provider usage maps into token ledger entries.
+8. Provider latency and model id are recorded in scorecard metadata.
+
+### Prompt Slots And Accounting
+
+9. System policy slot is included and hashed.
+10. Actor context slot is included only for authorized actor.
+11. Business truth slot includes approved visible facts only.
+12. Retrieval evidence slot is omitted when no evidence is visible.
+13. Recent conversation window truncates deterministically under budget.
+14. Tool schema slot records estimated tokens.
+15. Ethical business persuasion slot is present only for recommendation cases.
+16. Slot token rollup approximately reconciles to provider input usage.
+
+### Privacy Egress
+
+17. Email address is placeholdered before provider call.
+18. Phone number is placeholdered before provider call.
+19. API-key-shaped value is placeholdered before provider call.
+20. Bearer token is placeholdered before provider call.
+21. Configured private term is placeholdered before provider call.
+22. Provider output containing known placeholder reconstructs locally.
+23. Wrong-scope placeholder does not reconstruct.
+24. Provider output containing unknown placeholder fails safely.
+25. Scorecard contains hashes/placeholders, not raw sensitive values.
+
+### Conversation Basics
+
+26. Create canonical visitor conversation from entry point/session.
+27. Attach known connection to existing visitor conversation.
+28. Submit human message and receive assistant response.
+29. Assistant response is persisted with correct participant id.
+30. Message edit updates revision history and analysis input boundary.
+31. Delete/tombstone prevents deleted content from future prompt slots.
+32. Undo send works before undo expiry.
+33. Reaction add/remove is reflected in read model and events.
+34. Typing events never persist raw draft text.
+35. Presence update is policy-filtered for visitor view.
+
+### Read, Unread, And Receipts
+
+36. New visitor message increments staff unread count.
+37. Staff read advances last read boundary.
+38. Mark unread from message moves unread boundary backward.
+39. Mention count updates separately from unread count.
+40. Action-needed count updates when analysis finds a request.
+41. Delivered/displayed/read receipts do not leak staff-only metadata to client.
+42. Reconnect replays missed durable message and read-state events.
+
+### Governed Retrieval And Grounded Answers
+
+43. Answer uses only approved corpus evidence.
+44. Private owner-only corpus item is hidden from visitor answer.
+45. Missing evidence response states limitation instead of inventing facts.
+46. Answer cites source item ids or artifact refs.
+47. Retrieval evidence token cost is attributed to retrieval slot.
+48. Conflicting evidence produces uncertainty and asks for clarification.
+49. Stale evidence is described as stale when metadata marks it stale.
+
+### Business Intake
+
+50. Visitor asks about services; Ordo summarizes need and asks next best
+    qualifying question.
+51. Visitor gives budget and timing; Ordo extracts structured intake candidate.
+52. Visitor asks for unavailable service; Ordo responds honestly and routes to
+    alternative offer or handoff.
+53. Visitor provides contact details; privacy egress protects details while
+    conversation stores them locally under policy.
+54. Visitor expresses urgency; handoff signal candidate is created.
+55. Visitor asks for human; handoff request is created when eligibility allows.
+
+### Offers, Asks, And Ethical Recommendations
+
+56. Ordo recommends an offer based on stated need and visible business facts.
+57. Ordo refuses to recommend an offer when evidence is insufficient.
+58. Ordo distinguishes public offer language from staff-private reasoning.
+59. Ordo records offer interest candidate with evidence refs.
+60. Ordo records accepted offer attribution to entry point/session when present.
+61. Ordo suggests an ask only when aligned with user intent.
+62. Recommendation uses respectful, agency-preserving language.
+
+### Handoff And Staff Operations
+
+63. Agent detects human-needed request and creates handoff signal.
+64. Handoff eligibility respects availability schedule and operator presence.
+65. Staff accepts handoff and conversation mode becomes human-led active.
+66. Staff declines handoff and conversation returns to agent-led or screening.
+67. Staff idle triggers assistive/private reminder behavior.
+68. Staff returns conversation to agent with allowed context.
+69. Handoff brief includes reason, urgency, allowed context, and evidence refs.
+70. Client never sees staff-only handoff reasoning.
+
+### Continuous Analysis And Briefs
+
+71. Message queues analysis job.
+72. Analysis creates conversation summary signal.
+73. Question creates open-question candidate.
+74. Request creates action-needed candidate and count increment.
+75. Sensitive or human request creates handoff signal.
+76. Brief candidate cites durable message evidence.
+77. Memory candidate is proposed, not automatically promoted to truth.
+78. Analysis failure records safe hash and does not block message delivery.
+
+### Knowledge Graph Candidates
+
+79. Person node candidate is proposed from conversation evidence.
+80. Business/topic node candidate is proposed from conversation evidence.
+81. Interest edge candidate links connection to offer/topic.
+82. Contradiction candidate is created for conflicting user statements.
+83. Candidate remains proposed until approved.
+84. Rejected candidate is not used in later prompt slots.
+
+### Tool Use And Approval
+
+85. Model requests supported catalog capability and tool request is recorded.
+86. Unknown tool is rejected.
+87. Dangerous capability is blocked.
+88. Review-required tool pauses until approval.
+89. Approved tool execution records result summary.
+90. Rejected tool returns refusal context to assistant.
+91. Tool result is included in final answer only through gateway.
+
+### Token Economics
+
+92. Conversation token usage rolls up by provider/model.
+93. Usage rolls up by capability.
+94. Usage rolls up by prompt slot.
+95. Usage rolls up by conversation.
+96. Failed provider call records invocation failure.
+97. Cancelled call records partial usage when provider returns it.
+98. Eval run stops when max cases is reached.
+99. Eval run stops when budget guard is exceeded.
+100. Scorecard highlights largest token consumers.
+
+### Recovery And Reliability
+
+101. WebSocket reconnect resumes durable events after sequence/cursor.
+102. Duplicate client command id does not duplicate message.
+103. Lost ack reconciles after replay.
+104. Slow client receives lag/replay guidance instead of unbounded memory.
+105. Provider transient failure retries only within configured policy.
+106. Provider fallback is recorded when used.
+107. Replay fixture can reproduce a previous live eval deterministically.
+
+### Public/Member/Client Surface Boundaries
+
+108. Public visitor cannot access staff/admin navigation through conversation.
+109. Client sees one relationship conversation, not internal episodes.
+110. Staff sees My Handoffs first.
+111. Manager/admin can inspect Team Queue where authorized.
+112. Logs, backup, readiness, and low-level events stay admin/system surfaces.
+113. Detail view opens to narrative brief before transcript/admin detail.
+
+## First Eval Cases To Implement
+
+Start small and high-signal:
+
+1. `workflow_new_visitor_service_intake`
+2. `workflow_privacy_contact_details_roundtrip`
+3. `workflow_urgent_human_request_handoff`
+4. `workflow_handoff_accept_staff_reply`
+5. `workflow_read_unread_receipts_reconnect`
+6. `workflow_duplicate_command_idempotency`
+7. `workflow_replay_after_client_lag`
+8. `workflow_token_budget_pressure`
+9. `workflow_tool_request_requires_approval`
+10. `workflow_public_client_boundary`
+
+The first ten workflows should run backend-only where possible. For handoff
+acceptance, operator delegation, and queue behavior, the first version may call
+domain functions directly because gateway commands are not fully wired yet.
+Those same workflows should later be re-run through `/chat/ws` once the command
+surface catches up.
+
+After those pass, add the first simulator and provider cases:
+
+1. `workflow_live_provider_smoke_customer_operator_sim`
+2. `workflow_returning_connection_continuity`
+3. `workflow_operator_delegates_ordo`
+4. `workflow_human_led_agent_silence`
+5. `workflow_offer_recommendation_evidence_backed`
+6. `workflow_missing_evidence_refusal`
+7. `workflow_cross_provider_business_regression`
+
+## Scoring Rubric
+
+Each business scenario should receive both deterministic assertions and a rubric
+score.
+
+Suggested rubric dimensions:
+
+- `groundedness`: answer only uses visible evidence;
+- `policy_fit`: respects role, visibility, and handoff boundaries;
+- `privacy_fit`: no leaked sensitive fixture;
+- `business_usefulness`: moves the conversation forward;
+- `clarity`: concise and understandable;
+- `tone`: warm, professional, non-manipulative;
+- `actionability`: creates or recommends the right next step;
+- `token_efficiency`: avoids wasteful prompt or output size.
+
+Use deterministic checks for pass/fail gates. Use LLM or human rubric scores to
+compare quality across providers and prompt revisions.
+
+## What To Build Next
+
+1. Add backend-only eval case schema and isolated SQLite fixture setup.
+2. Add transcript artifact packet writer with redacted transcript, timeline,
+   ledgers, scorecard, replay check, and artifact review output.
+3. Add deterministic backend eval runner and the first ten workflow cases.
+4. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
+   `policy_gap`, `privacy_gap`, `prompt_gap`, `handoff_gap`, `analysis_gap`,
+   `accounting_gap`, `ux_contract_gap`, and `provider_gap`.
+5. Wire currently direct-domain handoff/mode workflows through gateway commands
+   as those commands are implemented.
+6. Add customer and operator simulator prompts with redacted transcript turn
+   capture.
+7. Add replay fixture support for provider-shaped responses.
+8. Add real provider adapter behind `LlmProviderAdapter` with
+   OpenAI-compatible non-streaming support.
+9. Add opt-in live eval runner with env guards and spend caps.
+10. Add Anthropic and DeepSeek provider coverage.
+11. Add SSE streaming normalization once non-streaming passes.

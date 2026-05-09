@@ -78,9 +78,11 @@ Managed hosting should be convenience, not captivity.
 
 The first release target was
 [Ordo 0.1.0 Appliance Specimen](docs/process/release-0.1.0.md): a small,
-working proof of the core architecture before product depth. The current
-backend readiness map is
-[Backend Handoff Package 0.1.2](docs/process/backend-handoff-package-0.1.2.md).
+working proof of the core architecture before product depth. The backend
+readiness map is
+[Backend Handoff Package 0.1.2](docs/process/backend-handoff-package-0.1.2.md),
+and the conversation product spine is captured in
+[Conversation Realtime Architecture](docs/architecture/conversation-realtime/README.md).
 
 Read the [system architecture contract](docs/architecture/system-architecture.md)
 for the 0.1.0 design.
@@ -109,15 +111,25 @@ Implemented now:
   reports/support packets, corpus retrieval, answer drafts, and MCP pack
   metadata;
 - public-safe daemon read models for About, Offers, Asks, Feed, public entry
-  point resolution, visitor session creation, and public offer acceptance.
+  point resolution, visitor session creation, and public offer acceptance;
+- the first conversation realtime spine: durable conversations, messages,
+  edit/undo, receipts/read state, reactions, presence, handoffs, modes,
+  episodes/segments, `/chat/ws`, replay, premium `/chat` and `/conversations`
+  UI, artifact/deliverable cards, surface brief jobs, and staff-only ethical
+  persuasion guidance;
+- daemon-owned LLM foundations for deterministic provider runs, prompt slots,
+  tool approval, privacy egress, token ledger accounting, analysis candidates,
+  knowledge graph candidates, attribution evidence, and the
+  `ethical_business_persuasion` prompt slot.
 
 Not implemented yet:
 
-- public Chat, About, Offers, Asks, and Feed frontend product surfaces;
+- production-ready public Chat, About, Offers, Asks, and Feed portals;
 - authentication UI, hosted identity, public portals, and product-depth access
   enforcement;
-- embeddings, vector search, provider-backed answer generation, chat retrieval
-  UI, and content packs;
+- real network LLM provider adapters, live-provider evals, embeddings, vector
+  search, provider-backed answer generation, chat retrieval UI, and content
+  packs;
 - hosted trial orchestration;
 - Worker Ordos, A2A networking, external report submission, support packet
   transport, and arbitrary third-party MCP execution.
@@ -128,8 +140,22 @@ reports to GitHub, support systems, or other Ordos yet.
 
 ## Near-Term Product Direction
 
-The next product layers should connect the working appliance spine to the
-solopreneur operating system:
+The next product layer should prove the conversation and LLM spine under
+realistic workflows before expanding product breadth:
+
+- backend-only eval workflows should pressure-test canonical conversation
+  creation, message/replay, privacy egress, prompt slots, token ledger,
+  analysis candidates, handoffs, tool approval, and public/client boundaries;
+- transcript artifact packets should make each run inspectable through redacted
+  transcripts, event ledgers, database ledgers, prompt-slot ledgers, privacy
+  ledgers, token ledgers, analysis candidates, handoff ledgers, replay checks,
+  and scorecards;
+- live provider adapters should be opt-in, guarded by environment flags and
+  spend caps, and should only receive privacy-transformed payloads from the
+  Rust-owned LLM gateway.
+
+After that proof loop, the product layers should connect the working appliance
+spine to the solopreneur operating system:
 
 - Chat becomes the primary interface: clients get one persistent relationship
   conversation, staff work handoff queues and briefs, and admins operate the
@@ -172,9 +198,12 @@ working process.
 
 This repository has completed the 0.1.0 Appliance Specimen pass, the 0.1.1
 appliance trust-boundary stabilization pass, and the 0.1.2 backend readiness
-foundation. The current work is still not production business automation; it is
-the inspectable local appliance and backend contract foundation that later
-product-depth UI and hosted surfaces will use.
+foundation. It has also completed the 0.1.3 Conversation Realtime Spine: the
+local conversation/product foundation, realtime gateway, first premium UI,
+LLM-governance spine, and evidence-backed business candidate layers. The
+current work is still not production business automation; it is the inspectable
+local appliance and conversation contract foundation that later product-depth UI
+and hosted surfaces will use.
 
 The product is not ready for production use yet.
 

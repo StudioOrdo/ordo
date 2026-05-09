@@ -1,10 +1,11 @@
 # State Of The Project
 
-Date: 2026-05-08
+Date: 2026-05-09
 
 Ordo has completed the 0.1.0 Appliance Specimen implementation pass, the 0.1.1
 appliance trust-boundary stabilization pass, and the 0.1.2 backend readiness
-foundation before deeper product surfaces land.
+foundation. The 0.1.3 Conversation Realtime Spine is now complete as an
+inspectable local product foundation, not yet production business automation.
 
 ## What Is Real Now
 
@@ -134,18 +135,45 @@ foundation before deeper product surfaces land.
   [backend-handoff-package-0.1.2.md](process/backend-handoff-package-0.1.2.md),
   including route families, response cues, smoke seed scenarios, validation
   commands, and known non-goals for future UI work.
+- The 0.1.3 conversation realtime spine is implemented through GitHub issues
+  #82 through #107 and merged PRs #108 through #127. The milestone includes the
+  conversation product architecture canon, role-aware IA, authenticated
+  public/member/client shells, durable conversation schema, message edit/undo,
+  `/chat/ws`, receipts/read state/reactions/presence, premium conversation UI,
+  UI recovery/accessibility hardening, the Rust-owned LLM gateway foundation,
+  governed tool approval, privacy egress firewall, token ledger accounting,
+  continuous analysis, knowledge graph candidates, offer/ask attribution,
+  artifacts/deliverables, surface brief jobs, realtime hardening, and the
+  `ethical_business_persuasion` prompt slot.
+- SQLite now stores durable conversation, participant, message, event,
+  receipt/read-state, reaction, presence, mode, handoff, segment, analysis,
+  memory/brief candidate, knowledge graph candidate, attribution, artifact,
+  deliverable, surface brief, LLM invocation, prompt-slot usage, and token
+  ledger foundations.
+- The daemon exposes the protected local `/chat/ws` conversation gateway and
+  preserves `/ws` as the system event stream. The gateway uses
+  `conversation.gateway.v1` envelopes, durable replay cursors, structured
+  command rejection, and local room fanout while SQLite remains the source of
+  truth.
+- The Next.js product shell now includes the first premium conversation surfaces
+  for `/chat` and `/conversations`: brief-first layout, queue/detail flow,
+  timeline, composer, edit, undo, reactions, read/unread affordances,
+  typing/presence, recovery states, artifact/deliverable cards, surface brief
+  panels, and staff-only ethical persuasion guidance.
+- The LLM path is daemon-owned and provider-neutral: deterministic local
+  provider tests, prompt slots, policy decisions, privacy egress, token ledger
+  accounting, governed tool request approval, analysis candidates, and
+  ethical-business-persuasion guardrails are implemented without requiring live
+  provider calls.
 
 ## What Is Not Built Yet
 
-- Conversation realtime is planned but not implemented yet. The 0.1.3
-  conversation architecture packet now defines the intended product contract:
-  one client-visible relationship conversation, internal episodes/segments,
-  staff handoff queues, governed handoff objects, human-led agent etiquette,
-  role-aware navigation, brief-first surfaces, offer/ask outcome attribution,
-  artifacts/deliverables language, and an evidence-backed
-  `ethical_business_persuasion` prompt slot.
-- Full frontend product-depth surfaces such as Studio, Connections, Offers,
-  About, Asks, Feed, Today, and Conversations are not built yet.
+- Real network LLM provider adapters and live-provider evals are not built yet.
+  The current LLM gateway uses deterministic/local provider behavior for tests
+  and product-spine validation.
+- Full frontend product-depth surfaces such as Studio, Connections, About,
+  Today, full public offer/ask/feed portals, and staff candidate review
+  workbenches are not built yet.
 - Authentication UI, hosted identity, OAuth/email login, public portals, and
   multi-user product surfaces are not implemented yet.
 - Frontend install wizard UI and provider network validation are not implemented
@@ -167,9 +195,9 @@ foundation before deeper product surfaces land.
   handoff, mediated handoff chat, and external handoff delivery are not
   implemented yet; current support is backend state, policy audit, eligibility
   evidence, local inbox events, and receipt evidence only.
-- Embeddings, vector search, provider-backed RAG answer generation, chat
-  retrieval UI, provider calls for answers, and external integrations are not
-  implemented yet.
+- Embeddings, vector search, provider-backed RAG answer generation, live
+  provider calls for answers, real-provider scorecards, and external
+  integrations are not implemented yet.
 - Report submission and support packet transport to external systems are not
   implemented yet; Reports 1.0 and support packet approval remain local evidence
   and approval records only.
@@ -180,12 +208,15 @@ foundation before deeper product surfaces land.
 
 ## Current Goal
 
-Use the completed local appliance foundation and 0.1.2 backend readiness package
-as the contract for the next UI/product-depth implementation slices. The backend
-handoff package gives future UI work a single route-and-boundary map while the
-product remains explicitly pre-production: hosted identity, public portals,
-external transports, provider-backed answer generation, embeddings/vector
-search, Worker Ordos, and A2A are still future work.
+Use the completed local appliance foundation, 0.1.2 backend readiness package,
+and 0.1.3 conversation realtime spine as the contract for the next validation
+phase. The next highest-leverage work is real-LLM/backend workflow evaluation:
+prove deterministic backend workflows, transcript artifacts, privacy/accounting
+ledgers, replay fixtures, and then opt-in live provider adapters under explicit
+network and spend guards. The product remains explicitly pre-production:
+hosted identity, public portals, external transports, provider-backed answer
+generation, embeddings/vector search, Worker Ordos, and A2A are still future
+work.
 
 ## Useful Current References
 
@@ -224,9 +255,13 @@ search, Worker Ordos, and A2A are still future work.
   Offers, Asks, Feed, Connections, availability, handoff, affiliate, and sales
   loop direction without claiming they are built.
 - [Conversation Realtime Architecture](architecture/conversation-realtime/README.md)
-  describes the planned 0.1.3 conversation realtime spine, including the
+  describes the implemented 0.1.3 conversation realtime spine, including the
   product doctrine that keeps the work from becoming a generic CRM, support
   inbox, or dashboard.
+- [Real LLM E2E Evals](architecture/conversation-realtime/real-llm-e2e-evals.md)
+  defines the next validation phase: deterministic backend evals, transcript
+  artifact packets, replay fixtures, opt-in live-provider evals, and provider
+  adapter sequencing.
 - [Ordo Core](business/ordo-core.md) describes the durable product doctrine and
   how future MCP tools and packs should customize the work without bypassing the
   trust boundary.

@@ -2451,7 +2451,7 @@ fn latest_visible_message(
         .map_err(Into::into)
 }
 
-fn append_conversation_event(
+pub fn append_conversation_event(
     connection: &Connection,
     conversation_id: &str,
     segment_id: Option<&str>,
@@ -2459,7 +2459,7 @@ fn append_conversation_event(
     event_type: &str,
     payload: Value,
     policy_decision_id: Option<&str>,
-) -> Result<()> {
+) -> Result<RealtimeEvent> {
     let sequence = next_conversation_sequence(connection, conversation_id)?;
     let occurred_at = Utc::now().to_rfc3339();
     let realtime = append_realtime_event(
@@ -2494,7 +2494,7 @@ fn append_conversation_event(
             occurred_at
         ],
     )?;
-    Ok(())
+    Ok(realtime)
 }
 
 fn append_conversation_event_tx(

@@ -16,6 +16,7 @@ pub mod events;
 pub mod health;
 pub mod install;
 pub mod kernel;
+pub mod llm_gateway;
 pub mod mcp;
 pub mod mcp_packs;
 pub mod offers;

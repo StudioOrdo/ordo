@@ -154,6 +154,14 @@ Exit criteria:
 
 ## Phase 5: LLM Gateway Streaming
 
+Status: foundation implemented in PR #117. The implemented slice adds the
+Rust-owned provider adapter contract, deterministic local provider test path,
+prompt slot assembly, `llm.invoke` and `llm.cancel` capabilities, policy
+decision evidence, normalized ephemeral/durable LLM events, cancellation, and
+durable final assistant messages through the conversation event stream. External
+provider calls, tool approval execution, the privacy egress firewall, and full
+token ledger tables remain deferred to their owning phases.
+
 Deliverables:
 
 - Add provider adapter abstraction for Anthropic, OpenAI, DeepSeek, and local.

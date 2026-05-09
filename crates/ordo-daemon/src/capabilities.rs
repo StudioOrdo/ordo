@@ -652,6 +652,32 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["conversation.presence"],
         ),
         capability(
+            "llm.invoke",
+            "Invoke LLM Gateway",
+            "Run a daemon-mediated, policy-aware provider request for a conversation.",
+            "llm",
+            json!({ "type": "object", "required": ["conversationId", "providerId", "modelId"], "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["llm.run", "conversation.message"],
+        ),
+        capability(
+            "llm.cancel",
+            "Cancel LLM Run",
+            "Cancel an in-flight daemon-mediated LLM provider request.",
+            "llm",
+            json!({ "type": "object", "required": ["runId"], "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["llm.run"],
+        ),
+        capability(
             "system.health.check",
             "System Health Check",
             "Create a governed system health check job.",
@@ -1635,6 +1661,8 @@ mod tests {
             "conversation.reaction.write",
             "conversation.receipt.write",
             "conversation.presence.write",
+            "llm.invoke",
+            "llm.cancel",
         ] {
             assert!(capabilities
                 .iter()

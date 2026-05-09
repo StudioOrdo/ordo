@@ -31,8 +31,11 @@ segment/episode candidate, governed handoff, current mode, and replayable
 conversation event tables in schema version 19. Schema version 20 adds
 participants, messages, revisions, message artifact links, reactions, receipts,
 read states, and presence snapshots for the protocol layer. Tags, analysis,
-graph candidates, memory, LLM runs, and business outcome tables remain planned
-for later gateway and LLM work.
+graph candidates, memory, dedicated LLM ledger tables, and business outcome
+tables remain planned for later gateway and LLM work. The first LLM gateway
+foundation records run, prompt slot, provider start, usage, terminal state, and
+final assistant-message evidence in `conversation_events`, `realtime_events`,
+and `conversation_messages` rather than introducing the full ledger schema.
 
 ### `conversations`
 
@@ -552,6 +555,10 @@ Unique:
 
 Stores provider call metadata.
 
+Status: planned dedicated ledger table. The current Rust-owned LLM gateway
+foundation uses the conversation event stream for invocation metadata until the
+privacy egress firewall and token ledger phases add this table.
+
 Columns:
 
 - `id TEXT PRIMARY KEY`
@@ -573,6 +580,10 @@ Columns:
 ### `llm_prompt_slot_usage`
 
 Stores bill-of-materials accounting for prompt construction.
+
+Status: planned dedicated ledger table. Current prompt slot inclusion is durable
+as `llm.prompt.slot.included` conversation events with source refs, inclusion
+reason, visibility ceiling, and content hashes.
 
 Columns:
 

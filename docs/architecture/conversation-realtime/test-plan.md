@@ -543,6 +543,24 @@ Phase 3D handoff, mode, and delegation gateway command coverage now includes:
 - continued provider-free and network-free execution, with SQLite
   `conversation_events` remaining the replay source of truth.
 
+Phase 4 replay-provider fixture coverage now includes:
+
+- `ReplayLlmProvider` tests that load redacted fixtures behind
+  `LlmProviderAdapter` and replay deterministic deltas, completions, and usage
+  metadata through the normal `LlmGateway`;
+- stable request fingerprint matching from provider id, model id, prompt hash,
+  and transformed user-message hash;
+- canonical provider failure when no approved replay fixture matches;
+- fixture validation that rejects obvious raw emails, phone numbers,
+  API-key-shaped strings, bearer-token-shaped strings, and configured private
+  fixture terms before the fixture can be used;
+- a committed tiny success fixture at
+  `crates/ordo-daemon/fixtures/llm-replay/tiny-success.json`;
+- `replay_provider_fixture`, which writes packet, scorecard, and manifest
+  artifacts while preserving redaction and provider usage evidence;
+- continued network-free execution with token ledger entries populated from
+  replayed provider usage metadata.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

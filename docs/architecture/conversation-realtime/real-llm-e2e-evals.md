@@ -791,7 +791,10 @@ Validates:
 ### Layer 2: Replay Provider E2E
 
 Uses recorded redacted provider responses. Runs in normal CI after fixtures are
-approved.
+approved. The implemented Phase 4 replay layer adds
+`ordo.llm_replay_fixture.v1` fixtures, a `ReplayLlmProvider` behind
+`LlmProviderAdapter`, and a tiny approved fixture at
+`crates/ordo-daemon/fixtures/llm-replay/tiny-success.json`.
 
 Validates:
 
@@ -801,6 +804,14 @@ Validates:
 - reconstruction from placeholders;
 - output contract validation;
 - regression stability.
+
+Replay fixtures match provider requests by a stable request fingerprint derived
+from provider id, model id, prompt hash, and transformed user-message hash.
+Fixtures must include provider/model ids, expected prompt slot ids, ordered
+events, usage metadata for completed responses, redaction summary, provenance
+refs, and timestamps. Fixture validation fails closed when the fixture contains
+obvious raw emails, phone numbers, API-key-shaped strings, bearer-token-shaped
+strings, or configured private fixture terms.
 
 ### Layer 3: Live Provider Smoke
 
@@ -1149,6 +1160,24 @@ dispatch payloads. Product workflow evals can now move covered handoff, mode,
 and delegation paths through `/chat/ws` instead of direct-domain shortcuts as
 each eval is revisited.
 
+Implemented Phase 4 replay-provider fixture slice:
+
+1. `ReplayLlmProvider`
+   - Implements the existing Rust-owned `LlmProviderAdapter` boundary without
+     network access or provider keys.
+   - Loads redacted `ordo.llm_replay_fixture.v1` fixtures from JSON.
+   - Matches requests by stable fingerprint and rejects unknown requests as
+     canonical provider failures.
+   - Replays ordered text deltas, final completion, provider usage metadata, or
+     safe provider failure events through the existing `LlmGateway`.
+2. `replay_provider_fixture`
+   - Runs the committed tiny replay fixture through the eval harness.
+   - Records policy, prompt-slot accounting, privacy transform, token ledger,
+     conversation event, realtime replay, packet, scorecard, and manifest
+     evidence.
+   - Keeps packet output redacted and deterministic while preserving provider
+     id/model id and usage metadata.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`
@@ -1198,12 +1227,14 @@ compare quality across providers and prompt revisions.
    The accepted Phase 3D gateway slice now covers handoff create/lifecycle,
    mode set/human-led/return-to-agent, and scoped agent delegate/revoke
    commands through durable events and replay.
-7. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
+7. Add replay fixture support for provider-shaped responses. Implemented with
+   `ReplayLlmProvider`, `ordo.llm_replay_fixture.v1`, a committed tiny success
+   fixture, and a packet-backed `replay_provider_fixture` eval.
+8. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
    `policy_gap`, `privacy_gap`, `prompt_gap`, `handoff_gap`, `analysis_gap`,
    `accounting_gap`, `ux_contract_gap`, and `provider_gap`.
-8. Add customer and operator simulator prompts with redacted transcript turn
+9. Add customer and operator simulator prompts with redacted transcript turn
    capture.
-9. Add replay fixture support for provider-shaped responses.
 10. Add real provider adapter behind `LlmProviderAdapter` with
    OpenAI-compatible non-streaming support.
 11. Add opt-in live eval runner with env guards and spend caps.

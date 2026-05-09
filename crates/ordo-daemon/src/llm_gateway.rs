@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::fs;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -40,6 +41,7 @@ pub const LLM_TOOL_REQUEST_CAPABILITY_ID: &str = "llm.tool.request";
 pub const LLM_TOOL_APPROVE_CAPABILITY_ID: &str = "llm.tool.approve";
 pub const LLM_TOOL_REJECT_CAPABILITY_ID: &str = "llm.tool.reject";
 pub const LLM_TOOL_EXECUTE_CAPABILITY_ID: &str = "llm.tool.execute";
+pub const LLM_REPLAY_FIXTURE_SCHEMA_VERSION: &str = "ordo.llm_replay_fixture.v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -284,6 +286,149 @@ impl LlmProviderAdapter for DeterministicLlmProvider {
     fn cancel(&self, _run_id: &str) -> Result<()> {
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayFixtureRedactionSummary {
+    pub redacted_value_count: usize,
+    pub detectors: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum ReplayLlmFixtureEvent {
+    TextDelta {
+        delta: String,
+    },
+    Completed {
+        text: String,
+        usage: LlmUsageMetadata,
+    },
+    Failed {
+        code: String,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayLlmFixture {
+    pub schema_version: String,
+    pub fixture_id: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub request_fingerprint: String,
+    pub prompt_hash: String,
+    pub expected_prompt_slot_ids: Vec<String>,
+    pub events: Vec<ReplayLlmFixtureEvent>,
+    pub redaction_summary: ReplayFixtureRedactionSummary,
+    pub provenance_refs: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplayLlmProvider {
+    provider_id: String,
+    model_id: String,
+    fixtures: Vec<ReplayLlmFixture>,
+}
+
+impl ReplayLlmProvider {
+    pub fn new(fixtures: Vec<ReplayLlmFixture>) -> Result<Self> {
+        ensure!(!fixtures.is_empty(), "replay provider requires fixtures");
+        for fixture in &fixtures {
+            validate_replay_fixture(fixture)?;
+        }
+        let provider_id = fixtures[0].provider_id.clone();
+        let model_id = fixtures[0].model_id.clone();
+        ensure!(
+            fixtures
+                .iter()
+                .all(|fixture| fixture.provider_id == provider_id && fixture.model_id == model_id),
+            "replay provider fixtures must share one provider/model"
+        );
+        Ok(Self {
+            provider_id,
+            model_id,
+            fixtures,
+        })
+    }
+
+    pub fn from_fixture_file(path: &Path) -> Result<Self> {
+        let raw = fs::read_to_string(path)?;
+        let fixture: ReplayLlmFixture = serde_json::from_str(&raw)?;
+        Self::new(vec![fixture])
+    }
+}
+
+impl LlmProviderAdapter for ReplayLlmProvider {
+    fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
+    fn model_id(&self) -> &str {
+        &self.model_id
+    }
+
+    fn stream(&self, request: &LlmProviderRequest) -> Result<Vec<LlmProviderStreamEvent>> {
+        let fingerprint = replay_request_fingerprint(request);
+        let Some(fixture) = self
+            .fixtures
+            .iter()
+            .find(|fixture| fixture.request_fingerprint == fingerprint)
+        else {
+            return Ok(vec![LlmProviderStreamEvent::Failed {
+                code: "replay_fixture_not_found".to_string(),
+                message: "No approved replay fixture matched the provider request.".to_string(),
+            }]);
+        };
+        ensure!(
+            fixture.prompt_hash == request.prompt.prompt_hash,
+            "replay fixture prompt hash does not match request"
+        );
+        ensure!(
+            fixture
+                .expected_prompt_slot_ids
+                .iter()
+                .all(|slot_id| request.prompt.slots.iter().any(|slot| &slot.id == slot_id)),
+            "replay fixture expected prompt slot ids are missing from request"
+        );
+        Ok(fixture
+            .events
+            .iter()
+            .map(|event| match event {
+                ReplayLlmFixtureEvent::TextDelta { delta } => {
+                    LlmProviderStreamEvent::TextDelta(delta.clone())
+                }
+                ReplayLlmFixtureEvent::Completed { text, usage } => {
+                    LlmProviderStreamEvent::Completed {
+                        text: text.clone(),
+                        usage: usage.clone(),
+                    }
+                }
+                ReplayLlmFixtureEvent::Failed { code, message } => LlmProviderStreamEvent::Failed {
+                    code: code.clone(),
+                    message: message.clone(),
+                },
+            })
+            .collect())
+    }
+
+    fn cancel(&self, _run_id: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub fn replay_request_fingerprint(request: &LlmProviderRequest) -> String {
+    stable_content_hash(&format!(
+        "{}\0{}\0{}\0{}",
+        request.provider_id,
+        request.model_id,
+        request.prompt.prompt_hash,
+        stable_content_hash(&request.user_message)
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1341,6 +1486,94 @@ fn validate_request(request: &LlmGatewayRequest) -> Result<()> {
     Ok(())
 }
 
+fn validate_replay_fixture(fixture: &ReplayLlmFixture) -> Result<()> {
+    ensure!(
+        fixture.schema_version == LLM_REPLAY_FIXTURE_SCHEMA_VERSION,
+        "unsupported replay fixture schema version"
+    );
+    require_text("fixture_id", &fixture.fixture_id)?;
+    require_text("provider_id", &fixture.provider_id)?;
+    require_text("model_id", &fixture.model_id)?;
+    require_text("request_fingerprint", &fixture.request_fingerprint)?;
+    require_text("prompt_hash", &fixture.prompt_hash)?;
+    ensure!(
+        !fixture.expected_prompt_slot_ids.is_empty(),
+        "replay fixture expected prompt slot ids are required"
+    );
+    ensure!(
+        !fixture.events.is_empty(),
+        "replay fixture events are required"
+    );
+    ensure!(
+        !fixture.provenance_refs.is_empty(),
+        "replay fixture provenance refs are required"
+    );
+    let fixture_value = serde_json::to_value(fixture)?;
+    ensure!(
+        !json_value_contains_sensitive_fixture_text(&fixture_value),
+        "replay fixture contains raw sensitive values"
+    );
+    Ok(())
+}
+
+fn json_value_contains_sensitive_fixture_text(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text_contains_sensitive_fixture_value(text),
+        Value::Array(items) => items.iter().any(json_value_contains_sensitive_fixture_text),
+        Value::Object(map) => map.values().any(json_value_contains_sensitive_fixture_text),
+        _ => false,
+    }
+}
+
+fn text_contains_sensitive_fixture_value(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if lower.contains("project orchid") {
+        return true;
+    }
+    for token in text.split_whitespace() {
+        let trimmed = token.trim_matches(|character: char| {
+            character == ','
+                || character == '.'
+                || character == ';'
+                || character == ':'
+                || character == '"'
+                || character == '\''
+        });
+        let lowered = trimmed.to_ascii_lowercase();
+        if looks_like_fixture_email(trimmed)
+            || looks_like_fixture_phone(trimmed)
+            || lowered.starts_with("sk-")
+            || lowered.starts_with("api_")
+            || lowered.starts_with("pat_")
+            || lowered.starts_with("ghp_")
+            || lowered == "bearer"
+            || lowered.starts_with("bearer_")
+            || lowered.starts_with("bearer-")
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn looks_like_fixture_email(value: &str) -> bool {
+    let Some((local, domain)) = value.split_once('@') else {
+        return false;
+    };
+    !local.is_empty() && domain.contains('.') && !domain.ends_with('.')
+}
+
+fn looks_like_fixture_phone(value: &str) -> bool {
+    let digit_count = value
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .count();
+    digit_count >= 10
+        && value
+            .chars()
+            .all(|character| character.is_ascii_digit() || "()+-. ".contains(character))
+}
+
 fn validate_tool_request(request: &LlmToolRequestCreateRequest) -> Result<()> {
     require_text("run_id", &request.run_id)?;
     require_text("conversation_id", &request.conversation_id)?;
@@ -1487,6 +1720,77 @@ mod tests {
             model_id: "fake-chat".to_string(),
             user_message: "What should we say next?".to_string(),
             prompt_slots: prompt_slots(),
+        }
+    }
+
+    fn replay_file_request(conversation_id: &str, assistant_id: &str) -> LlmGatewayRequest {
+        LlmGatewayRequest {
+            run_id: "llm_run_replay_fixture".to_string(),
+            conversation_id: conversation_id.to_string(),
+            segment_id: None,
+            assistant_participant_id: assistant_id.to_string(),
+            client_id: Some("client_llm_replay_1".to_string()),
+            provider_id: "replay_fixture".to_string(),
+            model_id: "replay-chat".to_string(),
+            user_message: "Please draft the next step.".to_string(),
+            prompt_slots: vec![PromptSlot::new(
+                "conversation_brief",
+                "Conversation Brief",
+                "Client needs a concise next step.",
+                vec!["conversation_event_replay_1".to_string()],
+                "Replay fixture request evidence.",
+                "participants",
+            )
+            .unwrap()],
+        }
+    }
+
+    fn replay_fixture_for_request(request: &LlmGatewayRequest) -> ReplayLlmFixture {
+        let prompt = compile_prompt(&request.prompt_slots).unwrap();
+        ReplayLlmFixture {
+            schema_version: LLM_REPLAY_FIXTURE_SCHEMA_VERSION.to_string(),
+            fixture_id: "replay_success_fixture".to_string(),
+            provider_id: request.provider_id.clone(),
+            model_id: request.model_id.clone(),
+            request_fingerprint: replay_request_fingerprint(&LlmProviderRequest {
+                run_id: request.run_id.clone(),
+                provider_id: request.provider_id.clone(),
+                model_id: request.model_id.clone(),
+                prompt: prompt.clone(),
+                user_message: request.user_message.clone(),
+            }),
+            prompt_hash: prompt.prompt_hash,
+            expected_prompt_slot_ids: request
+                .prompt_slots
+                .iter()
+                .map(|slot| slot.id.clone())
+                .collect(),
+            events: vec![
+                ReplayLlmFixtureEvent::TextDelta {
+                    delta: "Replay ".to_string(),
+                },
+                ReplayLlmFixtureEvent::TextDelta {
+                    delta: "answer".to_string(),
+                },
+                ReplayLlmFixtureEvent::Completed {
+                    text: "Replay answer".to_string(),
+                    usage: LlmUsageMetadata {
+                        input_tokens: 21,
+                        output_tokens: 2,
+                    },
+                },
+            ],
+            redaction_summary: ReplayFixtureRedactionSummary {
+                redacted_value_count: 0,
+                detectors: vec![
+                    "email".to_string(),
+                    "phone".to_string(),
+                    "secret".to_string(),
+                ],
+            },
+            provenance_refs: vec!["eval_artifact_packet:replay_success_fixture".to_string()],
+            created_at: "2026-05-09T00:00:00Z".to_string(),
+            updated_at: "2026-05-09T00:00:00Z".to_string(),
         }
     }
 
@@ -1644,6 +1948,134 @@ mod tests {
             .frames
             .iter()
             .any(|frame| frame.frame_type == "llm.run.failed"));
+    }
+
+    #[test]
+    fn replay_provider_fixture_runs_through_gateway_accounting_and_events() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let request = replay_file_request(&conversation_id, &assistant_id);
+        let provider = ReplayLlmProvider::new(vec![replay_fixture_for_request(&request)]).unwrap();
+        let gateway = LlmGateway::new(provider);
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result
+                .final_message
+                .as_ref()
+                .map(|message| message.body_markdown.as_str()),
+            Some("Replay answer")
+        );
+        assert!(result.frames.iter().any(
+            |frame| frame.frame_type == "llm.text.delta" && frame.payload["delta"] == "Replay "
+        ));
+        assert!(result
+            .frames
+            .iter()
+            .any(|frame| frame.frame_type == "llm.usage.recorded"));
+
+        let usage_kinds = connection
+            .prepare(
+                "SELECT usage_kind FROM llm_token_ledger_entries
+                 WHERE invocation_id = 'llm_run_replay_fixture'
+                 ORDER BY usage_kind",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(usage_kinds.contains(&"provider_input".to_string()));
+        assert!(usage_kinds.contains(&"provider_output".to_string()));
+    }
+
+    #[test]
+    fn replay_provider_loads_committed_fixture_and_matches_stable_fingerprint() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let request = replay_file_request(&conversation_id, &assistant_id);
+        let fixture_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/llm-replay/tiny-success.json");
+        let gateway = LlmGateway::new(ReplayLlmProvider::from_fixture_file(&fixture_path).unwrap());
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result
+                .final_message
+                .as_ref()
+                .map(|message| message.body_markdown.as_str()),
+            Some("Replay fixture answer")
+        );
+    }
+
+    #[test]
+    fn replay_provider_missing_fixture_records_canonical_failure_without_network() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let mut request = replay_file_request(&conversation_id, &assistant_id);
+        let fixture = replay_fixture_for_request(&request);
+        request.user_message = "A different replay request.".to_string();
+        let gateway = LlmGateway::new(ReplayLlmProvider::new(vec![fixture]).unwrap());
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        assert!(result.final_message.is_none());
+        assert!(result.frames.iter().any(|frame| {
+            frame.frame_type == "llm.run.failed"
+                && frame.payload["code"] == "replay_fixture_not_found"
+        }));
+        let failure_code: String = connection
+            .query_row(
+                "SELECT failure_code FROM llm_invocations WHERE id = 'llm_run_replay_fixture'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(failure_code, "replay_fixture_not_found");
+    }
+
+    #[test]
+    fn replay_fixture_validation_rejects_secret_shaped_content() {
+        let request = replay_file_request("conversation_1", "participant_assistant");
+        let mut fixture = replay_fixture_for_request(&request);
+        fixture.events = vec![ReplayLlmFixtureEvent::Completed {
+            text: "Email ada@example.com with sk-test-secret-value".to_string(),
+            usage: LlmUsageMetadata {
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+        }];
+
+        let error = ReplayLlmProvider::new(vec![fixture]).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("replay fixture contains raw sensitive values"));
     }
 
     struct CountingProvider {

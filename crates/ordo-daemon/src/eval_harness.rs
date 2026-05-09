@@ -20,7 +20,9 @@ use crate::feedback::{
     propose_feedback_tag, set_feedback_starred, transition_review, CustomerFeedbackInput,
     FeedbackTagInput, ReviewCandidateInput, ReviewStatus,
 };
-use crate::llm_gateway::{DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, PromptSlot};
+use crate::llm_gateway::{
+    DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, PromptSlot, ReplayLlmProvider,
+};
 use crate::policy::{
     authorize_protected_daemon_action, authorize_resource_access, record_policy_decision,
     ActorContext, ActorKind, PolicyAction, PolicyDecisionCorrelation, ProtectedAccessEvidence,
@@ -556,6 +558,35 @@ pub fn run_privacy_gateway_roundtrip_eval(
     })
 }
 
+pub fn run_replay_provider_fixture_eval(
+    db_path: &Path,
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    let case = replay_provider_fixture_case()?;
+    let packet_path = output_dir
+        .into()
+        .join("replay_provider_fixture-packet.json");
+    let mut harness = DeterministicEvalHarness::new(DeterministicEvalClock::fixed())
+        .with_artifact_path(packet_path.to_string_lossy());
+    let scorecard = harness.run_case(connection, &case, |connection, step| {
+        run_replay_provider_fixture_step(db_path, connection, step)
+    })?;
+    let output_dir = packet_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let writer = EvalArtifactWriter::new(output_dir, source_commit)
+        .with_private_terms(vec!["Project Orchid".to_string()]);
+    let artifact_paths = writer.write_packet(connection, &case, &scorecard)?;
+    Ok(EvalWorkflowRun {
+        case,
+        scorecard,
+        artifact_paths,
+    })
+}
+
 pub fn run_role_lifecycle_anonymous_to_client_eval(
     connection: &Connection,
     output_dir: impl Into<PathBuf>,
@@ -773,6 +804,59 @@ fn privacy_gateway_roundtrip_case() -> Result<EvalCase> {
             EvalAssertion::minimum_count(
                 "privacy_transform_recorded",
                 EvalEvidenceChannel::PrivacyTransforms,
+                1,
+            )?,
+            EvalAssertion::minimum_count(
+                "token_ledger_recorded",
+                EvalEvidenceChannel::TokenLedger,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "conversation_events_recorded",
+                EvalEvidenceChannel::ConversationEvents,
+                7,
+            )?,
+        ],
+    )
+}
+
+fn replay_provider_fixture_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "replay_provider_fixture",
+        "Replay provider fixture roundtrip",
+        &json!({
+            "fixture": "tiny-success",
+            "version": 1,
+            "providerMode": "replay_fixture",
+            "fixtureSchema": crate::llm_gateway::LLM_REPLAY_FIXTURE_SCHEMA_VERSION,
+        }),
+        vec![
+            EvalActorRole::Staff,
+            EvalActorRole::OrdoAgent,
+            EvalActorRole::LlmToolProviderBoundary,
+        ],
+        vec![EvalStep::new(
+            "run_replay_llm_completion",
+            EvalActorRole::LlmToolProviderBoundary,
+            "llm.run.request.replay_fixture",
+            vec![
+                EvalEvidenceChannel::ConversationEvents,
+                EvalEvidenceChannel::PolicyDecisions,
+                EvalEvidenceChannel::PromptSlotAccounting,
+                EvalEvidenceChannel::PrivacyTransforms,
+                EvalEvidenceChannel::TokenLedger,
+                EvalEvidenceChannel::RealtimeReplay,
+            ],
+        )?],
+        vec![
+            EvalAssertion::minimum_count(
+                "policy_decision_recorded",
+                EvalEvidenceChannel::PolicyDecisions,
+                1,
+            )?,
+            EvalAssertion::minimum_count(
+                "prompt_slots_accounted",
+                EvalEvidenceChannel::PromptSlotAccounting,
                 1,
             )?,
             EvalAssertion::minimum_count(
@@ -1359,6 +1443,46 @@ fn run_privacy_gateway_roundtrip_step(
             )?;
         }
         other => anyhow::bail!("unsupported privacy workflow eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn run_replay_provider_fixture_step(
+    db_path: &Path,
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "run_replay_llm_completion" => {
+            let (conversation_id, assistant_id) = conversation_and_assistant(connection)?;
+            let fixture_path =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/llm-replay/tiny-success.json");
+            let gateway = LlmGateway::new(ReplayLlmProvider::from_fixture_file(&fixture_path)?);
+            gateway.run_completion(
+                db_path,
+                connection,
+                &ActorContext::local_owner("eval_replay_provider_fixture"),
+                LlmGatewayRequest {
+                    run_id: "eval_llm_run_replay_fixture".to_string(),
+                    conversation_id,
+                    segment_id: None,
+                    assistant_participant_id: assistant_id,
+                    client_id: Some("eval-client-replay-1".to_string()),
+                    provider_id: "replay_fixture".to_string(),
+                    model_id: "replay-chat".to_string(),
+                    user_message: "Please draft the next step.".to_string(),
+                    prompt_slots: vec![PromptSlot::new(
+                        "conversation_brief",
+                        "Conversation Brief",
+                        "Client needs a concise next step.",
+                        vec!["conversation_event_replay_1".to_string()],
+                        "Replay fixture request evidence.",
+                        "participants",
+                    )?],
+                },
+            )?;
+        }
+        other => anyhow::bail!("unsupported replay provider fixture eval step: {other}"),
     }
     Ok(())
 }
@@ -2473,7 +2597,7 @@ impl DeterministicEvalHarness {
             fixture_hash: case.fixture_hash.clone(),
             actor_roles: case.actor_roles.clone(),
             step_count: case.steps.len(),
-            provider_mode: "deterministic_only".to_string(),
+            provider_mode: provider_mode_for_case(&case.id).to_string(),
             network_enabled: false,
             evidence_before,
             evidence_after,
@@ -2482,6 +2606,14 @@ impl DeterministicEvalHarness {
             artifact_path: self.artifact_path.clone(),
             generated_at: self.clock.next_timestamp(),
         })
+    }
+}
+
+fn provider_mode_for_case(case_id: &str) -> &'static str {
+    if case_id == "replay_provider_fixture" {
+        "replay_fixture"
+    } else {
+        "deterministic_only"
     }
 }
 
@@ -3626,6 +3758,49 @@ mod tests {
         assert!(!packet.contains("Project Orchid"));
         assert!(!packet.contains("alex@example.com"));
         assert!(!packet.contains("555-123-4567"));
+        assert!(!packet.contains("sk-eval-secret"));
+    }
+
+    #[test]
+    fn replay_provider_fixture_eval_records_accounting_and_artifacts() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        let artifact_dir = temp_dir.path().join("artifacts");
+
+        let run =
+            run_replay_provider_fixture_eval(&db_path, &connection, &artifact_dir, "test-commit")
+                .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "replay_provider_fixture");
+        assert_eq!(run.scorecard.provider_mode, "replay_fixture");
+        assert!(run.artifact_paths.packet_path.exists());
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PolicyDecisions)
+                >= 1
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PromptSlotAccounting)
+                >= 1
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::TokenLedger)
+                >= 2
+        );
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"caseId\": \"replay_provider_fixture\""));
+        assert!(packet.contains("\"providerId\": \"replay_fixture\""));
+        assert!(packet.contains("\"modelId\": \"replay-chat\""));
+        assert!(packet.contains("\"tokenLedger\""));
+        assert!(!packet.contains("Project Orchid"));
+        assert!(!packet.contains("alex@example.com"));
         assert!(!packet.contains("sk-eval-secret"));
     }
 

@@ -98,6 +98,7 @@ pub enum ResourceKind {
     CorpusSource,
     CorpusItem,
     AnswerDraft,
+    McpPack,
     Connection,
 }
 
@@ -118,6 +119,7 @@ impl ResourceKind {
             Self::CorpusSource => "corpus_source",
             Self::CorpusItem => "corpus_item",
             Self::AnswerDraft => "answer_draft",
+            Self::McpPack => "mcp_pack",
             Self::Connection => "connection",
         }
     }

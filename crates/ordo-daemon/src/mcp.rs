@@ -9,6 +9,7 @@ use crate::backups::{
 use crate::briefs::{generate_system_brief, latest_system_brief};
 use crate::capabilities::{list_mcp_exported_capabilities, load_capabilities};
 use crate::health::{build_health_report, build_readiness_report};
+use crate::mcp_packs::{mcp_tool_is_enabled, validate_json_schema};
 use crate::policy::{
     authorize_mcp_capability, record_policy_decision, ActorContext, PolicyDecisionCorrelation,
     PolicyOutcome, LOCAL_OWNER_ACTOR_ID,
@@ -225,6 +226,16 @@ fn list_tools(db_path: &Path) -> McpDispatchResult<Value> {
     let tools: Vec<Value> = list_mcp_exported_capabilities(&connection)
         .map_err(McpDispatchError::internal)?
         .into_iter()
+        .filter_map(
+            |capability| match mcp_tool_is_enabled(&connection, &capability.id) {
+                Ok(true) => Some(Ok(capability)),
+                Ok(false) => None,
+                Err(error) => Some(Err(error)),
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(McpDispatchError::internal)?
+        .into_iter()
         .map(|capability| {
             json!({
                 "name": capability.id,
@@ -274,6 +285,13 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
         .ok_or_else(|| {
             McpDispatchError::invalid_params(format!("Capability is not exported to MCP: {name}"))
         })?;
+    if !mcp_tool_is_enabled(&connection, &capability.id).map_err(McpDispatchError::internal)? {
+        return Err(McpDispatchError::invalid_params(format!(
+            "MCP tool is disabled or blocked by pack metadata: {name}"
+        )));
+    }
+    validate_json_schema(&capability.input_schema, "inputSchema")
+        .map_err(|error| McpDispatchError::invalid_params(error.to_string()))?;
     let policy_decision =
         authorize_mcp_capability(&connection, ActorContext::mcp_client(), capability);
     record_policy_decision(
@@ -441,6 +459,11 @@ fn json_value_matches_type(value: &Value, expected_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capabilities::load_capability;
+    use crate::mcp_packs::{
+        disable_mcp_pack, install_mcp_pack, McpPackInstallRequest, McpPackManifest,
+        McpPackToolManifest,
+    };
     use crate::schema::init_database;
     use tempfile::TempDir;
 
@@ -674,5 +697,59 @@ mod tests {
         );
 
         assert_error(response, INVALID_PARAMS, "backupId must be string");
+    }
+
+    #[test]
+    fn disabled_pack_hides_and_blocks_mcp_tool_projection() {
+        let (_temp_dir, db_path) = test_db_path();
+        let connection = Connection::open(&db_path).unwrap();
+        let capability = load_capability(&connection, "system.status.read")
+            .unwrap()
+            .unwrap();
+        drop(connection);
+        install_mcp_pack(
+            &db_path,
+            McpPackInstallRequest {
+                manifest: McpPackManifest {
+                    id: "pack.local.status".to_string(),
+                    name: "Local Status Pack".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: None,
+                    tools: vec![McpPackToolManifest {
+                        name: "system.status.read".to_string(),
+                        capability_id: capability.id,
+                        input_schema: capability.input_schema,
+                        output_contract: capability.output_contract,
+                        side_effects: capability.side_effects,
+                        approval_requirement: capability.approval_requirement,
+                        artifact_kinds: capability.artifact_kinds,
+                    }],
+                },
+            },
+            "test",
+            None,
+        )
+        .unwrap();
+        disable_mcp_pack(&db_path, "pack.local.status", "test", None).unwrap();
+
+        let list_response = handle_mcp_request(&db_path, request("tools/list", None));
+        assert!(list_response.error.is_none());
+        let tools = list_response.result.unwrap()["tools"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert!(!tools
+            .iter()
+            .any(|tool| tool["name"] == "system.status.read"));
+
+        let call_response = handle_mcp_request(
+            &db_path,
+            request(
+                "tools/call",
+                Some(json!({ "name": "system.status.read", "arguments": {} })),
+            ),
+        );
+
+        assert_error(call_response, INVALID_PARAMS, "disabled or blocked");
     }
 }

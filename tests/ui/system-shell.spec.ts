@@ -147,6 +147,9 @@ test("Premium conversation UI supports edit, undo, retry, unread, reactions, and
   await page.goto("/conversations?role=staff");
 
   await expect(page.getByLabel("Conversation workspace")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Jump to first unread" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Jump to latest" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Simulate offline" })).toBeVisible();
   await expect(page.getByLabel("Narrative brief")).toContainText("What is happening");
   await expect(page.getByLabel("Conversation timeline")).toContainText("Ava is typing");
   await expect(page.locator(".unread-divider")).toBeVisible();
@@ -168,10 +171,36 @@ test("Premium conversation UI supports edit, undo, retry, unread, reactions, and
 
   await page.getByLabel("Write a reply").fill("fail this command");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByRole("status")).toContainText("Gateway rejected command");
+  await expect(page.locator(".gateway-error")).toContainText("Gateway rejected command");
   await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.locator(".gateway-error")).toHaveCount(0);
   await expect(page.getByLabel("Conversation timeline")).toContainText("Retried");
+});
+
+test("Conversation recovery replays missed state and reconciles pending clientId without duplicates", async ({ page }) => {
+  await page.goto("/conversations?role=staff");
+
+  await page.getByLabel("Write a reply").fill("hold this pending message");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByLabel("Conversation timeline")).toContainText("hold this pending message");
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Pending");
+
+  await page.getByRole("button", { name: "Reconnect and replay" }).click();
+  await expect(page.getByLabel("Connection status")).toContainText("Recovered");
+  await expect(page.getByLabel("Connection status")).toContainText("reconciled by clientId");
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Replayed");
+  await expect(page.getByText("hold this pending message")).toHaveCount(1);
+});
+
+test("Conversation recovery can replay missed durable state after offline gap", async ({ page }) => {
+  await page.goto("/chat?role=client");
+
+  await page.getByRole("button", { name: "Simulate offline" }).click();
+  await expect(page.getByLabel("Connection status")).toContainText("Offline");
+  await page.getByRole("button", { name: "Reconnect and replay" }).click();
+
+  await expect(page.getByLabel("Connection status")).toContainText("Recovered");
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Recovered missed durable conversation state after reconnect.");
 });
 
 test("Conversation core mobile layout avoids horizontal overflow", async ({ page }) => {
@@ -179,8 +208,21 @@ test("Conversation core mobile layout avoids horizontal overflow", async ({ page
 
   await expect(page.getByLabel("Conversation workspace")).toBeVisible();
   await expect(page.getByLabel("Conversation composer")).toBeVisible();
+  await page.getByLabel("Write a reply").fill("Mobile keyboard safe reply");
+  const composerBox = await page.getByLabel("Conversation composer").boundingBox();
+  expect(composerBox?.height ?? 0).toBeGreaterThan(80);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("Conversation reduced motion keeps state legible without smooth scroll dependency", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/conversations?role=staff");
+
+  await page.getByRole("button", { name: "Jump to latest" }).click();
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Ava is typing");
+  const scrollBehavior = await page.locator(".timeline-panel").evaluate((element) => getComputedStyle(element).scrollBehavior);
+  expect(scrollBehavior).toBe("auto");
 });
 
 test("Admin role can access appliance system rail without leaking it to clients", async ({ page }) => {

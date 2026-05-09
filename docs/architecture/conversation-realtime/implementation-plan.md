@@ -1,8 +1,8 @@
 # Conversation Realtime Implementation Plan
 
 Status: Staged delivery plan with protocol, schema, core service,
-bidirectional gateway, receipts/presence, and the first premium UI core
-implemented.
+bidirectional gateway, receipts/presence, first premium UI core, and UI
+recovery/accessibility hardening implemented.
 
 This plan keeps the first implementation small enough to validate while
 preserving the architecture needed for premium realtime chat, brief-first
@@ -127,10 +127,12 @@ Implementation status: implemented for the first local UI core. `/chat` and
 `/conversations` now render a brief-first conversation workspace with role-aware
 client/staff surfaces, queue rows, narrative brief, timeline, composer,
 optimistic send/retry, edit, undo tombstones, reactions, read/unread controls,
-typing/presence, and browser smoke coverage. The UI uses deterministic
-`conversation.gateway.v1` fixture behavior for smoke tests; live browser
-WebSocket binding, provider streaming, artifacts, and full multi-device receipt
-precision remain later slices.
+typing/presence, recovery/replay states, first-unread/latest anchors,
+safe-area composer behavior, explicit action labels, reduced-motion handling,
+and browser smoke coverage. The UI uses deterministic `conversation.gateway.v1`
+fixture behavior for smoke tests; live browser WebSocket binding, provider
+streaming, artifacts, and full multi-device receipt precision remain later
+slices.
 
 Deliverables:
 
@@ -147,6 +149,8 @@ Exit criteria:
 
 - UI smoke tests cover desktop and mobile send/read/typing/reconnect flows.
 - No layout overlap in timeline, composer, badges, or message action controls.
+- Pending optimistic messages reconcile after recovery by `clientId` without
+  duplicate timeline rows.
 
 ## Phase 5: LLM Gateway Streaming
 

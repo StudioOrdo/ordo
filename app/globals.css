@@ -45,6 +45,14 @@ textarea {
   font: inherit;
 }
 
+button:focus-visible,
+a:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .system-shell {
   display: grid;
   grid-template-columns: var(--rail-width) var(--selector-width) minmax(0, 1fr);
@@ -898,6 +906,54 @@ textarea {
   max-width: 360px;
 }
 
+.recovery-banner,
+.timeline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.recovery-banner {
+  min-height: 42px;
+  border: 1px solid rgba(22, 101, 52, 0.2);
+  border-radius: var(--radius);
+  background: #f8fbf8;
+  color: var(--muted);
+  padding: 8px 10px;
+}
+
+.recovery-banner span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.recovery-banner.offline,
+.recovery-banner.rejected {
+  border-color: rgba(167, 57, 47, 0.28);
+  background: #fff8f7;
+  color: var(--danger);
+}
+
+.recovery-banner.replaying {
+  border-color: rgba(154, 91, 16, 0.28);
+  background: #fffaf0;
+  color: var(--warn);
+}
+
+.recovery-banner.recovered {
+  border-color: rgba(22, 101, 52, 0.28);
+  background: #f2f8f3;
+  color: var(--ok);
+}
+
+.timeline-toolbar {
+  justify-content: flex-end;
+}
+
 .brief-heading-row {
   justify-content: space-between;
 }
@@ -908,6 +964,7 @@ textarea {
 
 .timeline-panel {
   display: grid;
+  grid-auto-rows: max-content;
   gap: 10px;
   min-height: 360px;
   max-height: min(62vh, 680px);
@@ -916,6 +973,7 @@ textarea {
   border-radius: var(--radius);
   background: #fbfcfb;
   padding: 14px;
+  overflow-anchor: none;
   scroll-behavior: smooth;
 }
 
@@ -1052,6 +1110,8 @@ textarea {
 }
 
 .conversation-composer {
+  position: sticky;
+  bottom: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
@@ -1059,7 +1119,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  padding: 10px;
+  padding: 10px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
 }
 
 .composer-input {
@@ -1086,6 +1146,17 @@ textarea {
 .edit-form {
   display: grid;
   gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .connection-indicator {
@@ -1291,6 +1362,16 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .recovery-banner,
+  .timeline-toolbar {
+    align-items: stretch;
+  }
+
+  .recovery-banner button,
+  .timeline-toolbar button {
+    flex: 1 1 150px;
+  }
+
   .connection-state {
     justify-content: flex-start;
     max-width: none;
@@ -1352,6 +1433,7 @@ textarea {
 
   .conversation-composer {
     grid-template-columns: 1fr;
+    bottom: env(safe-area-inset-bottom);
   }
 
   .send-button {

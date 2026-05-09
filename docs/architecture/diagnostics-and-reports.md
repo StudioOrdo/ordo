@@ -72,6 +72,10 @@ Preparing a report:
 Reports are stored locally as artifacts. They are not automatically submitted to
 GitHub, support systems, model providers, or other Ordos.
 
+Report list reads return summary rows for queue rendering and selection. Full
+markdown, diagnostics, collected evidence, redactions, exports, status events,
+and support packet derivatives remain on the report detail contract.
+
 Report detail reads include the stored artifact, local export records, status
 events, and any support packet drafts derived from the report. Markdown exports
 are durable local records with the exact reviewed markdown content and content

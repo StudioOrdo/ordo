@@ -1540,23 +1540,15 @@ mod tests {
 
     #[test]
     fn protected_route_capability_ids_are_registered() {
+        use crate::route_contracts::protected_route_capability_ids;
+
         let connection = Connection::open_in_memory().unwrap();
         init_schema(&connection).unwrap();
         seed_builtin_capabilities(&connection).unwrap();
-        let capability_ids = [
-            "install.state.read",
-            "install.complete",
-            "providers.list",
-            "providers.update",
-            "business.facts.list",
-            "business.facts.write",
-            "diagnostic.logs.list",
-            "policy.decisions.list",
-            "issue.report.list",
-        ]
-        .into_iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
+        let capability_ids = protected_route_capability_ids()
+            .into_iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
 
         assert_capability_ids_registered(&connection, &capability_ids).unwrap();
     }

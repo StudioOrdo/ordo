@@ -102,9 +102,10 @@ foundation before deeper product surfaces land.
   redaction of secret-like payload keys, query filters, and visible inspection in
   the Logs surface.
 - Local issue reports can be prepared through the shared job/task kernel and
-  stored as SQLite artifacts. Reports include health, readiness, recent events,
-  recent jobs, and structured diagnostic logs as evidence envelopes, then render
-  a local markdown draft for operator review, copy, or export.
+  stored as SQLite artifacts. Report list reads expose summary rows, while
+  report detail reads include health, readiness, recent events, recent jobs, and
+  structured diagnostic logs as evidence envelopes, then render a local markdown
+  draft for operator review, copy, or export.
 - SQLite stores durable report export records, report status events, support
   packet drafts, and support packet receipts. The daemon exposes protected local
   routes for report detail, status changes, local markdown export, support

@@ -1,13 +1,13 @@
 import { IssueReportActions } from "@/components/issue-report-actions";
 import { SystemShell } from "@/components/system-shell";
 import { PageTitle, statusClass } from "@/components/system-panels";
-import { getIssueReportsSnapshot, getSystemSnapshot, IssueReportArtifact } from "@/lib/daemon-client";
+import { getIssueReportsSnapshot, getSystemSnapshot, IssueReportSummary } from "@/lib/daemon-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
   const [snapshot, reportsSnapshot] = await Promise.all([getSystemSnapshot(), getIssueReportsSnapshot()]);
-  const latestReport = reportsSnapshot.reports[0] ?? null;
+  const latestReport = reportsSnapshot.latestReport;
   const daemonUnavailable = Boolean(snapshot.degradedReason || reportsSnapshot.degradedReason);
 
   return (
@@ -81,7 +81,7 @@ export default async function ReportsPage() {
 }
 
 
-function ReportRow({ report }: { report: IssueReportArtifact }) {
+function ReportRow({ report }: { report: IssueReportSummary }) {
   return (
     <tr>
       <td>

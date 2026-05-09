@@ -162,14 +162,34 @@ export interface IssueReportArtifact {
   externalUrl: string | null;
 }
 
+export interface IssueReportSummary {
+  id: string;
+  jobId: string | null;
+  status: IssueReportStatus;
+  severity: IssueSeverity;
+  title: string;
+  summary: string;
+  sourceRoute: string | null;
+  createdAt: string;
+  updatedAt: string;
+  exportedAt: string | null;
+  submittedAt: string | null;
+  externalUrl: string | null;
+}
+
 export interface IssueReportsResponse {
-  reports: IssueReportArtifact[];
+  reports: IssueReportSummary[];
+}
+
+interface IssueReportDetailResponse {
+  report: IssueReportArtifact;
 }
 
 export interface IssueReportsSnapshot {
   daemonUrl: string;
   createdAt: string;
-  reports: IssueReportArtifact[];
+  reports: IssueReportSummary[];
+  latestReport: IssueReportArtifact | null;
   degradedReason: string | null;
 }
 
@@ -316,12 +336,19 @@ export async function getIssueReportsSnapshot(): Promise<IssueReportsSnapshot> {
   const baseUrl = daemonUrl();
   const createdAt = new Date().toISOString();
   const reportResult = await readEndpoint<IssueReportsResponse>(baseUrl, "/reports/issues");
+  const reports = reportResult.data?.reports ?? [];
+  const latestReportId = reports[0]?.id ?? null;
+  const latestReportResult = latestReportId
+    ? await readEndpoint<IssueReportDetailResponse>(baseUrl, `/reports/issues/${latestReportId}`)
+    : { data: null, error: null };
+  const degradedReasons = [reportResult.error, latestReportResult.error].filter(Boolean);
 
   return {
     daemonUrl: baseUrl,
     createdAt,
-    reports: reportResult.data?.reports ?? [],
-    degradedReason: reportResult.error,
+    reports,
+    latestReport: latestReportResult.data?.report ?? null,
+    degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
   };
 }
 

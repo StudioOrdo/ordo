@@ -1561,8 +1561,19 @@ async fn generate_system_brief_handler(
 }
 
 async fn list_backup_restore_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Result<Json<BackupRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/backups"),
+        Some("backup.restore_jobs.list"),
+    )?;
     list_backup_restore_jobs(&state.db_path)
         .map(Json)
         .map_err(internal_error)
@@ -2484,6 +2495,8 @@ async fn send_event(socket: &mut WebSocket, event: &RealtimeEvent) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::route_contracts::{RouteProtection, DAEMON_ROUTE_CONTRACTS};
+    use std::collections::BTreeSet;
 
     fn socket_addr(value: &str) -> SocketAddr {
         value.parse().unwrap()
@@ -2599,6 +2612,115 @@ mod tests {
             &headers,
             socket_addr("192.168.1.10:4000")
         ));
+    }
+
+    #[test]
+    fn daemon_route_contracts_cover_every_registered_route_path() {
+        let source = include_str!("server.rs");
+        let mut registered_paths = BTreeSet::new();
+        let mut cursor = 0;
+        while let Some(route_start) = source[cursor..].find(".route(") {
+            let after_route = &source[cursor + route_start..];
+            let first_quote = after_route
+                .find('"')
+                .expect("registered daemon routes use string literal paths");
+            let after_first_quote = &after_route[first_quote + 1..];
+            let second_quote = after_first_quote
+                .find('"')
+                .expect("registered daemon routes use closed string literal paths");
+            let path = &after_first_quote[..second_quote];
+            if path.starts_with('/') {
+                registered_paths.insert(path.to_string());
+            }
+            cursor += route_start + first_quote + second_quote + 2;
+        }
+        let contract_paths = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .map(|contract| contract.pattern.to_string())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(registered_paths, contract_paths);
+    }
+
+    #[test]
+    fn protected_route_contracts_use_the_daemon_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let empty_headers = HeaderMap::new();
+        let token_policy = DaemonAccessPolicy::new(Some("secret".to_string()));
+        let mut token_headers = HeaderMap::new();
+        token_headers.insert(DAEMON_ACCESS_TOKEN_HEADER, "secret".parse().unwrap());
+
+        let protected_contracts = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .filter_map(|contract| match contract.protection {
+                RouteProtection::Protected {
+                    action,
+                    capability_id,
+                } => Some((contract, action, capability_id)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for (contract, action, capability_id) in &protected_contracts {
+            let denied = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &empty_headers,
+                socket_addr("192.168.1.10:4000"),
+                *action,
+                ResourceRef::new(ResourceKind::DaemonRoute, contract.sample_route),
+                Some(*capability_id),
+            );
+            assert!(
+                denied.is_err(),
+                "{} {} should deny non-loopback without token",
+                contract.method.as_str(),
+                contract.pattern
+            );
+
+            let loopback_allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &empty_headers,
+                socket_addr("127.0.0.1:4000"),
+                *action,
+                ResourceRef::new(ResourceKind::DaemonRoute, contract.sample_route),
+                Some(*capability_id),
+            );
+            assert!(
+                loopback_allowed.is_ok(),
+                "{} {} should allow loopback appliance access",
+                contract.method.as_str(),
+                contract.pattern
+            );
+
+            let token_allowed = authorize_protected_daemon_route(
+                &token_policy,
+                &db_path,
+                &token_headers,
+                socket_addr("192.168.1.10:4000"),
+                *action,
+                ResourceRef::new(ResourceKind::DaemonRoute, contract.sample_route),
+                Some(*capability_id),
+            );
+            assert!(
+                token_allowed.is_ok(),
+                "{} {} should allow configured daemon token access",
+                contract.method.as_str(),
+                contract.pattern
+            );
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM policy_decisions", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(audit_count, (protected_contracts.len() * 3) as i64);
     }
 
     #[test]

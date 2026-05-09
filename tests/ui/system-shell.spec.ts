@@ -160,7 +160,12 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
   }
 
   if (method === "GET" && path === "/reports/issues") {
-    return jsonResponse(response, { reports: issueReports(state.reportCreated) });
+    return jsonResponse(response, { reports: issueReports(state.reportCreated).map(issueReportSummary) });
+  }
+
+  if (method === "GET" && path.startsWith("/reports/issues/")) {
+    const reportId = path.split("/").pop() ?? "report_smoke_1";
+    return jsonResponse(response, { report: issueReport(reportId, reportId.includes("created") ? "job_report_created" : "job_report_smoke_1") });
   }
 
   if (method === "POST" && path === "/backups/create") {
@@ -174,7 +179,7 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
 
   if (method === "POST" && path === "/reports/issues/prepare") {
     state.reportCreated = true;
-    return jsonResponse(response, { reports: issueReports(true) });
+    return jsonResponse(response, { reports: issueReports(true).map(issueReportSummary) });
   }
 
   response.writeHead(404, { "content-type": "application/json" });
@@ -249,6 +254,23 @@ function issueReport(id: string, jobId: string) {
     exportedAt: null,
     submittedAt: null,
     externalUrl: null,
+  };
+}
+
+function issueReportSummary(report: ReturnType<typeof issueReport>) {
+  return {
+    id: report.id,
+    jobId: report.jobId,
+    status: report.status,
+    severity: report.severity,
+    title: report.title,
+    summary: report.summary,
+    sourceRoute: report.sourceRoute,
+    createdAt: report.createdAt,
+    updatedAt: report.updatedAt,
+    exportedAt: report.exportedAt,
+    submittedAt: report.submittedAt,
+    externalUrl: report.externalUrl,
   };
 }
 

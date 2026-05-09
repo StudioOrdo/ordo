@@ -1,6 +1,7 @@
 # Conversation Realtime Data Model
 
-Status: Draft schema plan
+Status: Draft schema plan with backend foundation implemented through daemon
+schema version 19
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -25,6 +26,12 @@ provider, and realtime event foundations.
 
 ## Proposed Tables
 
+The first backend foundation implements the canonical conversation, internal
+segment/episode candidate, governed handoff, current mode, and replayable
+conversation event tables. Message, participant, tag, receipt, presence,
+analysis, graph candidate, and memory tables remain planned for the realtime
+gateway and LLM work.
+
 ### `conversations`
 
 Stores the durable conversation record.
@@ -41,8 +48,9 @@ Columns:
 - `visibility TEXT NOT NULL`
 - `privacy_scope TEXT NOT NULL`
 - `current_segment_id TEXT`
-- `last_message_id TEXT`
-- `last_event_sequence INTEGER NOT NULL DEFAULT 0`
+- `last_meaningful_change TEXT NOT NULL DEFAULT ''`
+- `unread_count INTEGER NOT NULL DEFAULT 0`
+- `action_count INTEGER NOT NULL DEFAULT 0`
 - `summary_json TEXT NOT NULL DEFAULT '{}'`
 - `metadata_json TEXT NOT NULL DEFAULT '{}'`
 - `created_by_actor_id TEXT`
@@ -81,6 +89,8 @@ Columns:
 - `confidence REAL`
 - `candidate_state TEXT`
 - `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `created_by_job_id TEXT`
 - `provider_id TEXT`
 - `model_id TEXT`
 - `status TEXT NOT NULL`
@@ -99,8 +109,10 @@ Product episode candidate states use the shared candidate vocabulary:
 ### `conversation_handoffs`
 
 Stores governed staff handoff objects linked to a conversation and episode or
-segment. This may initially integrate with the existing handoff inbox tables,
-but conversation work should not treat handoff as a loose status label.
+segment. The backend foundation uses `conversation_handoffs` as the durable
+conversation product object. The older handoff inbox remains a lower-level
+availability/attention primitive and should not define the conversation product
+shape.
 
 Columns:
 
@@ -108,7 +120,7 @@ Columns:
 - `conversation_id TEXT NOT NULL`
 - `segment_id TEXT`
 - `connection_id TEXT`
-- `requested_by_participant_id TEXT`
+- `requested_by_actor_id TEXT`
 - `assigned_to_actor_id TEXT`
 - `reason TEXT NOT NULL`
 - `urgency TEXT NOT NULL`
@@ -116,7 +128,8 @@ Columns:
 - `allowed_context_json TEXT NOT NULL DEFAULT '{}'`
 - `evidence_summary TEXT NOT NULL`
 - `status TEXT NOT NULL`
-- `receipt_id TEXT`
+- `policy_decision_id TEXT`
+- `receipt_json TEXT NOT NULL DEFAULT '{}'`
 - `created_at TEXT NOT NULL`
 - `updated_at TEXT NOT NULL`
 - `closed_at TEXT`
@@ -330,12 +343,12 @@ Columns:
 - `id TEXT PRIMARY KEY`
 - `conversation_id TEXT NOT NULL`
 - `segment_id TEXT`
+- `handoff_id TEXT`
 - `sequence INTEGER NOT NULL`
 - `event_type TEXT NOT NULL`
-- `durability TEXT NOT NULL`
-- `realtime_cursor INTEGER`
-- `policy_decision_id TEXT`
 - `payload_json TEXT NOT NULL DEFAULT '{}'`
+- `policy_decision_id TEXT`
+- `realtime_cursor INTEGER`
 - `occurred_at TEXT NOT NULL`
 
 Unique:
@@ -356,9 +369,11 @@ Columns:
 
 - `conversation_id TEXT PRIMARY KEY`
 - `mode TEXT NOT NULL`
-- `led_by_participant_id TEXT`
+- `led_by_actor_id TEXT`
 - `delegated_to_agent INTEGER NOT NULL DEFAULT 0`
+- `delegation_scope_json TEXT NOT NULL DEFAULT '[]'`
 - `idle_after TEXT`
+- `private_reminder_sent_at TEXT`
 - `last_public_agent_message_at TEXT`
 - `updated_at TEXT NOT NULL`
 

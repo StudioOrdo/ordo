@@ -3,7 +3,8 @@
 Status: Staged delivery plan with protocol, schema, core service,
 bidirectional gateway, receipts/presence, first premium UI core, UI
 recovery/accessibility hardening, LLM foundations, continuous analysis,
-knowledge graph candidates, and realtime release hardening implemented.
+knowledge graph candidates, offer/ask attribution foundation, and realtime
+release hardening implemented.
 
 This plan keeps the first implementation small enough to validate while
 preserving the architecture needed for premium realtime chat, brief-first
@@ -239,19 +240,23 @@ Exit criteria:
 
 ## Phase 8: Continuous Analysis And Briefs
 
-Status: foundation implemented in the #95 and #102 slices. Schema version 22
-adds `conversation_analysis_jobs`, `conversation_analysis_candidates`,
-`conversation_brief_candidates`, and `conversation_memory_candidates`. Schema
-version 23 adds `knowledge_graph_node_candidates` and
-`knowledge_graph_edge_candidates`.
+Status: foundation implemented in the #95, #102, and #103 slices. Schema
+version 22 adds `conversation_analysis_jobs`,
+`conversation_analysis_candidates`, `conversation_brief_candidates`, and
+`conversation_memory_candidates`. Schema version 23 adds
+`knowledge_graph_node_candidates` and `knowledge_graph_edge_candidates`. Schema
+version 24 adds `referral_records`, `business_outcomes`, and
+`business_outcome_attributions`.
 Eligible visible durable messages queue idempotent local analysis jobs. The
 deterministic analyzer creates proposed operational candidates, a narrative
 brief candidate, and a relationship-memory candidate with evidence refs,
 provenance, safe summaries, content hashes, and no automatic truth promotion.
 Deterministic graph extraction can create proposed staff-private node and edge
-candidates from completed analysis jobs. Provider-backed analysis, surface brief
-jobs, and the full ethical persuasion prompt-slot contract remain owned by
-later accepted issues.
+candidates from completed analysis jobs. Offer acceptance now records an
+evidence-backed outcome and attribution candidates for offer, visitor session,
+and entry point influence when those ids exist. Provider-backed analysis,
+surface brief jobs, and the full ethical persuasion prompt-slot contract remain
+owned by later accepted issues.
 
 Deliverables:
 
@@ -261,7 +266,8 @@ Deliverables:
   memory candidates.
 - Create proposed knowledge graph node and edge candidates from source message
   evidence.
-- Defer offer/ask/referral/outcome attribution candidates to #103.
+- Record offer/ask/referral/outcome attribution foundation with proposed
+  evidence-backed influence rows.
 - Defer surface brief jobs for business, conversations, connections, offers,
   asks, artifacts, jobs, affiliates, and customers to #105.
 - Defer full ethical persuasion prompt-slot behavior to #107.

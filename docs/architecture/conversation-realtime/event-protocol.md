@@ -282,13 +282,25 @@ issues.
 
 Business outcomes:
 
-- `offer.outcome.recorded`
-- `ask.outcome.recorded`
+- `business.outcome.recorded`
+- `business.attribution.proposed`
+- `business.attribution.confirmed`
+- `business.attribution.rejected`
+- `business.attribution.superseded`
 - `referral.captured`
 - `referral.qualified`
 - `referral.converted`
 - `referral.lost`
+- `ask.outcome.recorded`
 - `artifact.usage.recorded`
+
+Implemented outcome and attribution behavior: public offer acceptance records a
+durable `business_outcomes` row and emits `business.outcome.recorded` with
+offer, entry point, visitor session, and evidence ids only. Attribution rows
+default to `proposed`; accepted offers can propose direct offer influence plus
+visitor-session and entry-point influence when those source ids exist. The
+model intentionally does not infer campaigns, referrals, artifacts, asks, or
+payments without source evidence.
 
 ## Ephemeral Event Catalog
 

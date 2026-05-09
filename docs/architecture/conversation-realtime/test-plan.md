@@ -287,6 +287,13 @@ Coverage:
   becoming automatic business truth;
 - offer/ask/referral/outcome attribution candidates reference source entry
   points, conversations, artifacts, and events where available;
+- outcomes require evidence refs and provenance;
+- attribution records require outcome id, source kind/id, influence role,
+  evidence refs, provenance, and proposed candidate state;
+- public offer acceptance records an offer outcome and only attributes sources
+  that have concrete offer, visitor-session, or entry-point ids;
+- attribution lifecycle transitions are durable for confirmed, rejected, and
+  superseded states;
 - brief candidates cite durable conversation evidence;
 - ethical recommendation candidates cite durable evidence and limitations;
 - provider-backed analysis uses the same privacy and token ledger path.

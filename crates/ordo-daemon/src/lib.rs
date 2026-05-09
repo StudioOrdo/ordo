@@ -1,4 +1,5 @@
 pub mod answer_drafts;
+pub mod attribution;
 pub mod availability;
 pub mod backups;
 pub mod briefs;

@@ -235,6 +235,29 @@ Implemented Phase 1 harness foundation:
 The harness does not yet write full transcript artifact packets or scorecard
 files. That remains the Phase 2 scope.
 
+Implemented Phase 2 transcript packet and scorecard foundation:
+
+- `EvalArtifactWriter` writes a JSON packet, JSON scorecard, and manifest for a
+  deterministic eval case.
+- Packet schema version is `ordo.eval_artifact_packet.v1`.
+- Packets include case metadata, actor roles, ordered steps, evidence
+  snapshots, assertion results, transcript entries, timeline entries,
+  conversation event ledger, realtime replay ledger, policy decision ledger,
+  prompt-slot ledger, privacy transform ledger, token ledger, analysis
+  candidate ledger, handoff ledger, artifact ledger, surface brief ledger, a
+  redaction summary, and an artifact-review placeholder.
+- Missing optional ledgers are represented as empty arrays rather than omitted.
+- Scorecard JSON remains smaller than the packet and keeps the deterministic
+  Phase 1 pass/fail summary.
+- Manifest JSON includes schema version, run id, case ids, validation status,
+  source commit, actor roles, packet path, and scorecard path.
+- Redaction runs before packet serialization and replaces obvious emails,
+  phone numbers, bearer/API-key-shaped tokens, and configured private terms with
+  placeholders while preserving hashes, ids, counts, source refs, and metadata.
+
+Artifact review finding classification remains Phase 7 (#140). The Phase 2
+packet only reserves the placeholder and stable categories.
+
 ## Workflow Pressure Tests
 
 The eval suite should work like a pressure test for the application. A coding

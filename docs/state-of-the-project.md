@@ -71,6 +71,12 @@ surfaces land.
   daemon exposes protected local corpus source/item management and governed
   retrieval routes that filter by approval status, visibility, viewer context,
   and durable resource access before returning evidence.
+- SQLite stores durable local answer draft and answer draft citation records.
+  The daemon exposes protected local answer draft preparation/list/read routes;
+  preparation first runs governed corpus retrieval, then persists redacted
+  prompt metadata, retrieval evidence, cited corpus item IDs, limitations,
+  status, provenance, and source citation rows. The current draft output is a
+  local evidence scaffold and records that no provider or model call occurred.
 - The capability catalog distinguishes MCP export policy tiers, side effects,
   and approval requirements for read-only, local mutation, operator-confirmed,
   and non-exported dangerous operations.
@@ -143,8 +149,9 @@ surfaces land.
   handoff, mediated handoff chat, and external handoff delivery are not
   implemented yet; current support is backend state, policy audit, eligibility
   evidence, local inbox events, and receipt evidence only.
-- Embeddings, vector search, RAG answer generation, chat retrieval UI, provider
-  calls for answers, and external integrations are not implemented yet.
+- Embeddings, vector search, provider-backed RAG answer generation, chat
+  retrieval UI, provider calls for answers, and external integrations are not
+  implemented yet.
 - Report submission and support packet transport to external systems are not
   implemented yet; Reports 1.0 and support packet approval remain local evidence
   and approval records only.
@@ -188,8 +195,8 @@ slices.
   describes the implemented backend foundation for owner attention boundaries,
   eligibility decisions, inbox state, and local receipts.
 - [Knowledge Corpus And Governed Retrieval](architecture/knowledge-corpus.md)
-  describes the implemented local FTS retrieval foundation for future
-  knowledge/RAG work.
+  describes the implemented local FTS retrieval and answer draft foundation for
+  future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,
   Offers, Asks, Feed, Connections, availability, handoff, affiliate, and sales
   loop direction without claiming they are built.

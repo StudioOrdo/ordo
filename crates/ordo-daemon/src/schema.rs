@@ -53,13 +53,15 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "corpus_sources",
     "corpus_items",
     "corpus_items_fts",
+    "answer_drafts",
+    "answer_draft_citations",
     "schedules",
     "scheduled_job_runs",
     "brief_artifacts",
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 16;
+pub const CURRENT_SCHEMA_VERSION: i64 = 17;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -149,6 +151,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 16,
         name: "add_corpus_fts_retrieval_index",
         apply: add_corpus_fts_retrieval_index,
+    },
+    SchemaMigration {
+        version: 17,
+        name: "add_answer_draft_spine",
+        apply: add_answer_draft_spine,
     },
 ];
 
@@ -1272,6 +1279,52 @@ fn add_corpus_fts_retrieval_index(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_answer_draft_spine(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS answer_drafts (
+            id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            question TEXT NOT NULL,
+            prompt_input_json TEXT NOT NULL DEFAULT '{}',
+            retrieval_query_json TEXT NOT NULL DEFAULT '{}',
+            retrieval_evidence_json TEXT NOT NULL DEFAULT '{}',
+            cited_item_ids_json TEXT NOT NULL DEFAULT '[]',
+            draft_markdown TEXT NOT NULL,
+            limitations_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_answer_drafts_status_updated ON answer_drafts(status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_answer_drafts_created ON answer_drafts(created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS answer_draft_citations (
+            id TEXT PRIMARY KEY,
+            draft_id TEXT NOT NULL,
+            corpus_item_id TEXT NOT NULL,
+            corpus_source_id TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            rank REAL NOT NULL,
+            snippet TEXT NOT NULL,
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (draft_id) REFERENCES answer_drafts(id) ON DELETE CASCADE,
+            FOREIGN KEY (corpus_item_id) REFERENCES corpus_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (corpus_source_id) REFERENCES corpus_sources(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_answer_draft_citations_draft ON answer_draft_citations(draft_id, rank);
+        CREATE INDEX IF NOT EXISTS idx_answer_draft_citations_item ON answer_draft_citations(corpus_item_id);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1375,9 +1428,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 16);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 17);
     }
 
     #[test]
@@ -1457,6 +1510,8 @@ mod tests {
         assert!(table_exists(&connection, "corpus_sources"));
         assert!(table_exists(&connection, "corpus_items"));
         assert!(table_exists(&connection, "corpus_items_fts"));
+        assert!(table_exists(&connection, "answer_drafts"));
+        assert!(table_exists(&connection, "answer_draft_citations"));
         assert!(table_exists(&connection, "tracked_entry_points"));
         assert!(table_exists(&connection, "visitor_sessions"));
         assert!(table_exists(&connection, "visitor_session_events"));
@@ -1629,6 +1684,40 @@ mod tests {
         assert!(table_exists(&connection, "corpus_items_fts"));
         assert!(column_exists(&connection, "corpus_items_fts", "item_id"));
         assert!(column_exists(&connection, "corpus_items_fts", "body_text"));
+    }
+
+    #[test]
+    fn answer_draft_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "answer_drafts"));
+        assert!(column_exists(
+            &connection,
+            "answer_drafts",
+            "retrieval_evidence_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "answer_drafts",
+            "cited_item_ids_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "answer_drafts",
+            "provenance_json"
+        ));
+        assert!(table_exists(&connection, "answer_draft_citations"));
+        assert!(column_exists(
+            &connection,
+            "answer_draft_citations",
+            "content_hash"
+        ));
+        assert!(column_exists(
+            &connection,
+            "answer_draft_citations",
+            "evidence_json"
+        ));
     }
 
     #[test]

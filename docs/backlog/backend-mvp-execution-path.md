@@ -40,8 +40,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | complete |
 | 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | complete |
 | 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | complete |
-| 8 | Knowledge corpus and governed retrieval | #57 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Corpus ingestion, source/item provenance, SQLite FTS retrieval, visibility filtering, and retrieval evidence exist. | ready for PR |
-| 9 | RAG answer draft spine | #58 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Provider-backed answer draft job uses governed retrieval, emits evidence, avoids unsupported claims, and preserves redaction guarantees. | not started |
+| 8 | Knowledge corpus and governed retrieval | #57 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Corpus ingestion, source/item provenance, SQLite FTS retrieval, visibility filtering, and retrieval evidence exist. | complete |
+| 9 | RAG answer draft spine | #58 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Evidence-backed answer draft records use governed retrieval, emit citations, avoid unsupported claims, and preserve redaction guarantees. | ready for PR |
 | 10 | MCP pack and tool hardening | #59 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Pack manifest validation, tool schemas, side effect declarations, capability policy mapping, and disable behavior exist. | not started |
 | 11 | Backend handoff package | #60 | this document | UI-ready route contracts, state docs, smoke seeds, validation matrix, and known non-goals are collected for the UI agent. | not started |
 
@@ -250,7 +250,7 @@ Current implementation evidence:
 
 This phase makes retrieval safe before generation is added.
 
-GitHub issue: #57. Pull request: pending.
+GitHub issue: #57. Pull request: #69, merged.
 
 Done means:
 
@@ -274,14 +274,36 @@ Current implementation evidence:
 
 ### 9. RAG Answer Draft Spine
 
-This phase adds provider-backed drafting on top of governed retrieval.
+This phase adds the durable answer draft spine on top of governed retrieval. In
+the current backend foundation, drafting is a local evidence scaffold rather
+than a provider/model call path.
+
+GitHub issue: #58. Pull request: pending.
 
 Done means:
 
-- answer draft jobs gather retrieval evidence before provider calls;
-- outputs include cited source items and limitations;
-- unsupported claims are rejected or clearly marked;
-- provider calls use configured provider/vault state without leaking secrets.
+- answer draft records gather retrieval evidence before any future provider
+  transport is allowed;
+- outputs include cited source items, provenance, retrieval evidence, and
+  limitations;
+- missing evidence produces an explicit needs-evidence draft state;
+- unsupported claims are not generated from prompts without supporting corpus
+  evidence;
+- prompt/input metadata is redacted before persistence;
+- provider/model transport remains future work and is recorded as not
+  performed.
+
+Current implementation evidence:
+
+- schema version 17 adds durable answer draft and answer draft citation tables;
+- protected local daemon routes exist for answer draft preparation, list, and
+  read contracts;
+- answer draft preparation first calls governed corpus retrieval and persists
+  retrieval evidence, cited item IDs, citation rows, limitations, status, and
+  provenance;
+- missing evidence creates a `needs_evidence` record without source claims;
+- generated draft markdown only summarizes cited corpus snippets and records
+  that no provider or model call occurred.
 
 ### 10. MCP Pack And Tool Hardening
 

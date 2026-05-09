@@ -97,6 +97,7 @@ pub enum ResourceKind {
     DiagnosticLog,
     CorpusSource,
     CorpusItem,
+    AnswerDraft,
     Connection,
 }
 
@@ -116,6 +117,7 @@ impl ResourceKind {
             Self::DiagnosticLog => "diagnostic_log",
             Self::CorpusSource => "corpus_source",
             Self::CorpusItem => "corpus_item",
+            Self::AnswerDraft => "answer_draft",
             Self::Connection => "connection",
         }
     }

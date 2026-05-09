@@ -5,6 +5,7 @@ pub mod briefs;
 pub mod business;
 pub mod capabilities;
 pub mod connections;
+pub mod conversation_protocol;
 pub mod conversations;
 pub mod corpus;
 pub mod diagnostics;

@@ -21,6 +21,13 @@ LLM/tool/provider boundaries. They should also validate Customer Feedback,
 reviews, Home/About billboards, Offers/Asks as business intent objects, and
 artifact/review/outcome evidence loops.
 
+The next eval arc is documented in
+`docs/architecture/conversation-realtime/live-product-journey-evals.md`.
+0.1.5 should use the 0.1.4 harness, packet, live-runner, simulator, and
+artifact-review foundations to validate persona-driven QR/event journeys,
+30-day trials, review-return loops, affiliate referrals, staff handoffs, and
+cross-persona analyzed reports.
+
 ## Current Assessment
 
 The current codebase can already validate much of the business spine without a
@@ -139,6 +146,9 @@ evidence rather than live-model impressions:
 9. Artifact review loop that classifies findings and drives follow-on issues.
 10. Customer, operator, and reviewer simulator contracts for future replay/live
     workflow pressure.
+11. Live product journey evals that run persona-driven QR-to-trial,
+    review-return, affiliate-referral, and staff/admin handoff paths behind
+    explicit live-provider guards.
 
 Every implementation phase should begin by re-reading the issue, current docs,
 and current code because earlier eval work may change the best implementation

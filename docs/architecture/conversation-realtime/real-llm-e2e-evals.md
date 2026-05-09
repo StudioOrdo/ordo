@@ -53,6 +53,12 @@ visitor session, deterministic conversation/LLM response, offer acceptance,
 started trial, referral record, referral-linked business outcome, and
 referral/affiliate attribution while proving unrelated conversation access is
 denied.
+The 0.1.5 Phase 6 admin/staff handoff and moderation journey eval is
+implemented in `crates/ordo-daemon/src/live_eval_runner.rs`; default tests
+create a relationship conversation, governed handoff, staff and manager queue
+evidence, human-led/delegated/returned mode boundaries, moderated review
+publication, affiliate grant revocation, and redacted packet/manifest artifacts
+without provider keys or network calls.
 
 ## Current Assessment
 
@@ -174,9 +180,10 @@ evidence rather than live-model impressions:
     workflow pressure.
 11. Live product journey evals that run persona-driven QR-to-trial,
     review-return, affiliate-referral, and staff/admin handoff paths behind
-    explicit live-provider guards. Phase 1 now provides the committed synthetic
-    persona library and deterministic validator. Phase 2 now provides the
-    multi-case guard/cap planner and manifest shape.
+    explicit live-provider guards. Phases 1-6 now provide the committed
+    synthetic persona library, deterministic validator, multi-case guard/cap
+    planner, QR-to-trial execution, review-return execution,
+    affiliate-referral execution, and admin/staff moderation execution.
 
 Every implementation phase should begin by re-reading the issue, current docs,
 and current code because earlier eval work may change the best implementation

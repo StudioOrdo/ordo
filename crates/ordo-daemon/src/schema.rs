@@ -36,6 +36,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "offer_acceptances",
     "trials",
     "trial_events",
+    "connections",
+    "connection_grants",
+    "connection_events",
+    "connection_receipts",
     "corpus_sources",
     "corpus_items",
     "schedules",
@@ -44,7 +48,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 12;
+pub const CURRENT_SCHEMA_VERSION: i64 = 13;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -114,6 +118,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 12,
         name: "add_offers_and_trial_lifecycle",
         apply: add_offers_and_trial_lifecycle,
+    },
+    SchemaMigration {
+        version: 13,
+        name: "add_connections_foundation",
+        apply: add_connections_foundation,
     },
 ];
 
@@ -973,6 +982,87 @@ fn add_offers_and_trial_lifecycle(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_connections_foundation(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS connections (
+            id TEXT PRIMARY KEY,
+            connection_type TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            identity_json TEXT NOT NULL DEFAULT '{}',
+            scope_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            activated_at TEXT,
+            suspended_at TEXT,
+            revoked_at TEXT,
+            archived_at TEXT,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_connections_type_status ON connections(connection_type, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_connections_status ON connections(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS connection_grants (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            resource_grant_id TEXT NOT NULL,
+            resource_kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            status TEXT NOT NULL,
+            expires_at TEXT,
+            grant_reason TEXT,
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            revoked_at TEXT,
+            revoked_by_actor_id TEXT,
+            revocation_reason TEXT,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
+            FOREIGN KEY (resource_grant_id) REFERENCES resource_grants(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL,
+            FOREIGN KEY (revoked_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_connection_grants_connection ON connection_grants(connection_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_connection_grants_resource ON connection_grants(resource_kind, resource_id, action, status);
+        CREATE INDEX IF NOT EXISTS idx_connection_grants_expiry ON connection_grants(expires_at, status);
+
+        CREATE TABLE IF NOT EXISTS connection_events (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            occurred_at TEXT NOT NULL,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_connection_events_connection ON connection_events(connection_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_connection_events_type ON connection_events(event_type, occurred_at DESC);
+
+        CREATE TABLE IF NOT EXISTS connection_receipts (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            receipt_kind TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
+            FOREIGN KEY (event_id) REFERENCES connection_events(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_connection_receipts_connection ON connection_receipts(connection_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_connection_receipts_event ON connection_receipts(event_id);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1074,8 +1164,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 12);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 13);
     }
 
     #[test]
@@ -1161,6 +1251,10 @@ mod tests {
         assert!(table_exists(&connection, "offer_acceptances"));
         assert!(table_exists(&connection, "trials"));
         assert!(table_exists(&connection, "trial_events"));
+        assert!(table_exists(&connection, "connections"));
+        assert!(table_exists(&connection, "connection_grants"));
+        assert!(table_exists(&connection, "connection_events"));
+        assert!(table_exists(&connection, "connection_receipts"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -1412,6 +1506,45 @@ mod tests {
         ));
         assert!(table_exists(&connection, "trial_events"));
         assert!(column_exists(&connection, "trial_events", "event_type"));
+    }
+
+    #[test]
+    fn connection_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "connections"));
+        assert!(column_exists(&connection, "connections", "connection_type"));
+        assert!(column_exists(&connection, "connections", "identity_json"));
+        assert!(column_exists(&connection, "connections", "scope_json"));
+        assert!(table_exists(&connection, "connection_grants"));
+        assert!(column_exists(
+            &connection,
+            "connection_grants",
+            "resource_grant_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "connection_grants",
+            "expires_at"
+        ));
+        assert!(column_exists(
+            &connection,
+            "connection_grants",
+            "revoked_at"
+        ));
+        assert!(table_exists(&connection, "connection_events"));
+        assert!(column_exists(
+            &connection,
+            "connection_events",
+            "event_type"
+        ));
+        assert!(table_exists(&connection, "connection_receipts"));
+        assert!(column_exists(
+            &connection,
+            "connection_receipts",
+            "receipt_kind"
+        ));
     }
 
     fn create_legacy_unversioned_database(connection: &Connection) {

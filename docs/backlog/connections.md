@@ -1,6 +1,6 @@
 # Connections MVP
 
-Status: not built
+Status: backend foundation ready for PR; UI not built
 
 ## Why It Matters
 
@@ -16,6 +16,21 @@ support, workers, services, and future peer Ordos.
 - Support Studio Ordo Support and affiliate connections as first concrete
   examples.
 - Show Connections in a restrained System or owner surface.
+
+## Backend Foundation
+
+- SQLite schema version 13 stores `connections`, `connection_grants`,
+  `connection_events`, and `connection_receipts`.
+- Connection grants mirror into shared `resource_grants` with
+  `subject_kind = 'connection'` so policy can authorize scoped connection
+  actions through the existing durable access spine.
+- Protected local daemon routes exist for listing, creating, updating, grant
+  creation/revocation, and event inspection.
+- Connection lifecycle and grant mutations record durable connection events,
+  local receipts, persisted realtime events, and protected route policy audit
+  decisions.
+- Broad implicit grants are rejected; grant creation requires explicit resource
+  ids and stable actions.
 
 ## Durable Product Nouns
 
@@ -37,9 +52,11 @@ support, workers, services, and future peer Ordos.
 - Social graph.
 - Public profiles for every connection.
 - Full contact manager.
+- Availability, handoff inbox, support packet egress, RAG, external
+  integrations, affiliate payouts, analytics dashboards, mediated chat UI,
+  payments, public portals, or external egress.
 
 ## Validation
 
-- Schema and policy tests.
-- Event/replay tests for connection events.
+- Schema, policy, event, receipt, and protected route tests.
 - UI smoke once surface exists.

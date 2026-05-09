@@ -1,7 +1,8 @@
 # Conversation Frontend Experience
 
-Status: Product and interaction contract with the first premium UI core
-implemented for the local conversation gateway slice.
+Status: Product and interaction contract with the first premium UI core and
+recovery/accessibility hardening implemented for the local conversation gateway
+slice.
 
 The conversation UI should feel fast, polished, and emotionally legible while
 remaining operational. It should be the primary working surface, not a landing
@@ -369,9 +370,17 @@ Implemented behavior:
   and structured gateway rejection with retry;
 - composer supports optimistic send, enter-to-send, disabled state while
   sending, command rejection, and retry reconciliation by `clientId`;
+- recovery UI covers offline, command pending, replay, recovered, and rejected
+  states, with pending optimistic messages reconciled by `clientId` rather than
+  duplicated;
+- timeline controls support jump to first unread and jump to latest anchors;
+- mobile composer uses sticky safe-area behavior and stable controls;
+- primary message actions have explicit accessible labels, visible focus rings,
+  and reduced-motion behavior keeps state legible without relying on smooth
+  scrolling;
 - smoke coverage exercises desktop and mobile layout, edit, undo, reactions,
-  mark read/unread affordances, typing/presence, retry, and role-gated
-  navigation.
+  mark read/unread affordances, typing/presence, retry, recovery/replay,
+  reduced motion, no horizontal overflow, and role-gated navigation.
 
 Deferred behavior:
 
@@ -379,4 +388,6 @@ Deferred behavior:
 - provider/LLM streaming and tool approval UI;
 - durable attachment/artifact insertion;
 - delivered/displayed precision across multiple devices;
-- persistent draft sync.
+- persistent draft sync;
+- device-lab coverage for mobile keyboard viewport behavior beyond automated
+  browser smoke checks.

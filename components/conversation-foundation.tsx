@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useRef, useState, type Dispatch, type Ref, type SetStateAction } from "react";
 
 import {
   CONVERSATION_GATEWAY_ROUTE,
@@ -17,7 +17,7 @@ import {
 } from "@/lib/conversation-product";
 import { type ProductRole } from "@/lib/product-navigation";
 
-type GatewayStatus = "connected" | "pending" | "rejected";
+type GatewayStatus = "connected" | "pending" | "rejected" | "offline" | "replaying" | "recovered";
 type ComposerStatus = "idle" | "sending" | "failed";
 
 interface GatewayState {
@@ -28,6 +28,8 @@ interface GatewayState {
   lastClientId?: string;
   lastError?: string;
   sequence: number;
+  cursor: number;
+  recoveryMessage?: string;
 }
 
 export function ClientConversationBrief() {
@@ -41,6 +43,7 @@ export function ClientConversationBrief() {
       role="client"
       gatewayStatus={detail.gatewayStatus}
       composerStatus={detail.composerStatus}
+      recoveryMessage={detail.recoveryMessage}
       lastError={detail.lastError}
       onSelectConversation={detail.selectConversation}
       onSendMessage={detail.sendMessage}
@@ -50,6 +53,8 @@ export function ClientConversationBrief() {
       onMarkUnread={detail.markUnread}
       onReact={detail.toggleReaction}
       onRetry={detail.retryLastMessage}
+      onSimulateOffline={detail.simulateOffline}
+      onReconnect={detail.reconnectAndReplay}
     />
   );
 }
@@ -67,6 +72,7 @@ export function StaffConversationQueues({ role }: { role: ProductRole }) {
       role={role}
       gatewayStatus={detail.gatewayStatus}
       composerStatus={detail.composerStatus}
+      recoveryMessage={detail.recoveryMessage}
       lastError={detail.lastError}
       onSelectConversation={detail.selectConversation}
       onSendMessage={detail.sendMessage}
@@ -76,6 +82,8 @@ export function StaffConversationQueues({ role }: { role: ProductRole }) {
       onMarkUnread={detail.markUnread}
       onReact={detail.toggleReaction}
       onRetry={detail.retryLastMessage}
+      onSimulateOffline={detail.simulateOffline}
+      onReconnect={detail.reconnectAndReplay}
     />
   );
 }
@@ -87,6 +95,7 @@ function ConversationExperience({
   role,
   gatewayStatus,
   composerStatus,
+  recoveryMessage,
   lastError,
   onSelectConversation,
   onSendMessage,
@@ -96,6 +105,8 @@ function ConversationExperience({
   onMarkUnread,
   onReact,
   onRetry,
+  onSimulateOffline,
+  onReconnect,
 }: {
   detail: ConversationDetail;
   rows: readonly ConversationQueueRow[];
@@ -103,6 +114,7 @@ function ConversationExperience({
   role: ProductRole;
   gatewayStatus: GatewayStatus;
   composerStatus: ComposerStatus;
+  recoveryMessage?: string;
   lastError?: string;
   onSelectConversation: (conversationId: string) => void;
   onSendMessage: (body: string) => void;
@@ -112,8 +124,19 @@ function ConversationExperience({
   onMarkUnread: () => void;
   onReact: (messageId: string, reactionKey: string) => void;
   onRetry: () => void;
+  onSimulateOffline: () => void;
+  onReconnect: () => void;
 }) {
   const isStaff = role === "staff" || role === "manager" || role === "owner" || role === "admin";
+  const timelineRef = useRef<HTMLElement | null>(null);
+
+  function jumpToLatest() {
+    timelineRef.current?.querySelector("[data-latest-message='true']")?.scrollIntoView({ block: "end" });
+  }
+
+  function jumpToFirstUnread() {
+    timelineRef.current?.querySelector("[data-unread-divider='true']")?.scrollIntoView({ block: "center" });
+  }
 
   return (
     <section className="conversation-core" aria-label="Conversation workspace">
@@ -126,8 +149,18 @@ function ConversationExperience({
       />
       <section className="conversation-detail" aria-labelledby="conversation-title">
         <ConversationHeader detail={detail} gatewayStatus={gatewayStatus} gatewayRoute={CONVERSATION_GATEWAY_ROUTE} />
+        <RecoveryBanner gatewayStatus={gatewayStatus} message={recoveryMessage} onReconnect={onReconnect} onSimulateOffline={onSimulateOffline} />
         <NarrativeBrief detail={detail} isStaff={isStaff} />
+        <div className="timeline-toolbar" aria-label="Timeline navigation">
+          <button type="button" className="button-secondary compact-button" onClick={jumpToFirstUnread}>
+            Jump to first unread
+          </button>
+          <button type="button" className="button-secondary compact-button" onClick={jumpToLatest}>
+            Jump to latest
+          </button>
+        </div>
         <MessageTimeline
+          ref={timelineRef}
           detail={detail}
           isStaff={isStaff}
           lastError={lastError}
@@ -139,10 +172,10 @@ function ConversationExperience({
         />
         <ConversationComposer status={composerStatus} onSendMessage={onSendMessage} onTypingStart={() => undefined} />
         <div className="conversation-actions" aria-label="Read state actions">
-          <button type="button" className="button-secondary compact-button" onClick={onMarkRead}>
+          <button type="button" className="button-secondary compact-button" aria-label="Mark conversation read" onClick={onMarkRead}>
             Mark read
           </button>
-          <button type="button" className="button-secondary compact-button" onClick={onMarkUnread}>
+          <button type="button" className="button-secondary compact-button" aria-label="Mark conversation unread" onClick={onMarkUnread}>
             Mark unread
           </button>
         </div>
@@ -250,13 +283,45 @@ function ConversationHeader({
         <p>{detail.subtitle}</p>
       </div>
       <div className="connection-state" aria-label="Gateway and presence">
-        <span className={`status-pill ${gatewayStatus === "rejected" ? "status-error" : "status-ok"}`}>
-          {gatewayStatus === "rejected" ? "Command rejected" : "Gateway connected"}
+        <span className={`status-pill ${gatewayStatus === "rejected" || gatewayStatus === "offline" ? "status-error" : gatewayStatus === "replaying" ? "status-warn" : "status-ok"}`}>
+          {gatewayLabel(gatewayStatus)}
         </span>
         <span className="status-pill">{CONVERSATION_GATEWAY_SCHEMA_VERSION}</span>
         <span className="status-pill">{gatewayRoute}</span>
       </div>
     </header>
+  );
+}
+
+function RecoveryBanner({
+  gatewayStatus,
+  message,
+  onReconnect,
+  onSimulateOffline,
+}: {
+  gatewayStatus: GatewayStatus;
+  message?: string;
+  onReconnect: () => void;
+  onSimulateOffline: () => void;
+}) {
+  if (gatewayStatus === "connected") {
+    return (
+      <div className="recovery-banner stable" role="status" aria-label="Connection status">
+        <span>Connection steady</span>
+        <button type="button" className="button-secondary compact-button" onClick={onSimulateOffline}>
+          Simulate offline
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`recovery-banner ${gatewayStatus}`} role="status" aria-label="Connection status">
+      <span>{message ?? gatewayLabel(gatewayStatus)}</span>
+      <button type="button" className="button-secondary compact-button" onClick={onReconnect}>
+        Reconnect and replay
+      </button>
+    </div>
   );
 }
 
@@ -282,7 +347,8 @@ function NarrativeBrief({ detail, isStaff }: { detail: ConversationDetail; isSta
   );
 }
 
-function MessageTimeline({
+const MessageTimeline = function MessageTimeline({
+  ref,
   detail,
   isStaff,
   lastError,
@@ -292,6 +358,7 @@ function MessageTimeline({
   onReact,
   onRetry,
 }: {
+  ref: Ref<HTMLElement>;
   detail: ConversationDetail;
   isStaff: boolean;
   lastError?: string;
@@ -302,7 +369,7 @@ function MessageTimeline({
   onRetry: () => void;
 }) {
   return (
-    <section className="timeline-panel" aria-label="Conversation timeline" aria-live="polite">
+    <section className="timeline-panel" aria-label="Conversation timeline" aria-live="polite" ref={ref}>
       {lastError ? (
         <div className="gateway-error" role="status">
           <strong>Gateway rejected command</strong>
@@ -313,11 +380,12 @@ function MessageTimeline({
         </div>
       ) : null}
 
-      {detail.messages.map((message) => (
+      {detail.messages.map((message, index) => (
         <MessageBubble
           key={message.id}
           message={message}
           showUnreadDivider={detail.unreadFromSequence === message.sequence}
+          latest={index === detail.messages.length - 1}
           isStaff={isStaff}
           onEditMessage={onEditMessage}
           onUndoMessage={onUndoMessage}
@@ -336,11 +404,12 @@ function MessageTimeline({
       </div>
     </section>
   );
-}
+};
 
 function MessageBubble({
   message,
   showUnreadDivider,
+  latest,
   isStaff,
   onEditMessage,
   onUndoMessage,
@@ -349,6 +418,7 @@ function MessageBubble({
 }: {
   message: ConversationMessage;
   showUnreadDivider: boolean;
+  latest: boolean;
   isStaff: boolean;
   onEditMessage: (messageId: string, body: string) => void;
   onUndoMessage: (messageId: string) => void;
@@ -361,8 +431,8 @@ function MessageBubble({
 
   return (
     <>
-      {showUnreadDivider ? <div className="unread-divider">Unread</div> : null}
-      <article className={`message-bubble ${mine ? "mine" : ""} ${message.state}`} aria-label={`${message.authorLabel} message`}>
+      {showUnreadDivider ? <div className="unread-divider" data-unread-divider="true">Unread</div> : null}
+      <article className={`message-bubble ${mine ? "mine" : ""} ${message.state}`} aria-label={`${message.authorLabel} message`} data-latest-message={latest ? "true" : undefined}>
         <header>
           <strong>{message.authorLabel}</strong>
           <span>{message.occurredAt}</span>
@@ -380,10 +450,10 @@ function MessageBubble({
           >
             <textarea className="text-input text-area compact" value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="Edit message" />
             <div className="inline-actions">
-              <button type="submit" className="button-primary compact-button">
+              <button type="submit" className="button-primary compact-button" aria-label={`Save edit for ${message.authorLabel} message`}>
                 Save edit
               </button>
-              <button type="button" className="button-secondary compact-button" onClick={() => setEditing(false)}>
+              <button type="button" className="button-secondary compact-button" aria-label={`Cancel edit for ${message.authorLabel} message`} onClick={() => setEditing(false)}>
                 Cancel
               </button>
             </div>
@@ -408,17 +478,17 @@ function MessageBubble({
               Ack
             </button>
             {isStaff && message.canEdit && message.state !== "deleted" ? (
-              <button type="button" className="message-action-button" onClick={() => setEditing(true)}>
+              <button type="button" className="message-action-button" aria-label={`Edit ${message.authorLabel} message`} onClick={() => setEditing(true)}>
                 Edit
               </button>
             ) : null}
             {isStaff && message.canUndo && message.state !== "deleted" ? (
-              <button type="button" className="message-action-button" onClick={() => onUndoMessage(message.id)}>
+              <button type="button" className="message-action-button" aria-label={`Undo ${message.authorLabel} message`} onClick={() => onUndoMessage(message.id)}>
                 Undo
               </button>
             ) : null}
             {isStaff ? (
-              <button type="button" className="message-action-button" onClick={onMarkUnread}>
+              <button type="button" className="message-action-button" aria-label={`Mark unread from ${message.authorLabel} message`} onClick={onMarkUnread}>
                 Mark unread
               </button>
             ) : null}
@@ -460,6 +530,7 @@ function ConversationComposer({
         disabled={disabled}
         placeholder="Write a reply"
         aria-label="Write a reply"
+        rows={2}
         onFocus={onTypingStart}
         onChange={(event) => {
           onTypingStart();
@@ -494,10 +565,11 @@ function useGatewayConversation(initialConversationId: string, role: ProductRole
   const [state, setState] = useState<GatewayState>({
     selectedConversationId: initialDetail.conversationId,
     detail: initialDetail,
-    gatewayStatus: "connected",
-    composerStatus: "idle",
-    sequence: initialDetail.messages.at(-1)?.sequence ?? 0,
-  });
+      gatewayStatus: "connected",
+      composerStatus: "idle",
+      sequence: initialDetail.messages.at(-1)?.sequence ?? 0,
+      cursor: initialDetail.messages.at(-1)?.sequence ?? 0,
+    });
 
   return useMemo(
     () => ({
@@ -510,11 +582,13 @@ function useGatewayConversation(initialConversationId: string, role: ProductRole
           gatewayStatus: "connected",
           composerStatus: "idle",
           sequence: nextDetail.messages.at(-1)?.sequence ?? 0,
+          cursor: nextDetail.messages.at(-1)?.sequence ?? 0,
         });
       },
       sendMessage(body: string) {
         const clientId = createClientId("message.submit");
         const failed = body.toLowerCase().includes("fail");
+        const holdPending = body.toLowerCase().includes("hold");
         const nextSequence = state.sequence + 1;
         const sentByStaff = role === "staff" || role === "manager" || role === "owner" || role === "admin";
         const pendingMessage: ConversationMessage = {
@@ -540,15 +614,17 @@ function useGatewayConversation(initialConversationId: string, role: ProductRole
           lastClientId: clientId,
           lastError: failed ? "The mock gateway returned command.rejected for this body." : undefined,
           sequence: nextSequence,
+          cursor: failed ? current.cursor : nextSequence,
+          recoveryMessage: failed ? "Command rejected. Inspect and retry when ready." : current.recoveryMessage,
         }));
-        if (!failed) {
+        if (!failed && !holdPending) {
           window.setTimeout(() => {
             updateMessage(setState, pendingMessage.id, (message) => ({
               ...message,
               state: "persisted",
               receiptLabel: `Ack ${clientId}`,
             }));
-            setState((current) => ({ ...current, gatewayStatus: "connected", composerStatus: "idle" }));
+            setState((current) => ({ ...current, gatewayStatus: "connected", composerStatus: "idle", cursor: Math.max(current.cursor, nextSequence) }));
           }, 80);
         }
       },
@@ -573,6 +649,7 @@ function useGatewayConversation(initialConversationId: string, role: ProductRole
       markRead() {
         setState((current) => ({
           ...current,
+          recoveryMessage: "Read position advanced without moving the transcript.",
           detail: {
             ...current.detail,
             lastReadSequence: current.sequence,
@@ -584,6 +661,7 @@ function useGatewayConversation(initialConversationId: string, role: ProductRole
       markUnread() {
         setState((current) => ({
           ...current,
+          recoveryMessage: "Unread anchor restored from durable read state.",
           detail: {
             ...current.detail,
             unreadFromSequence: Math.max(1, current.sequence),
@@ -620,6 +698,7 @@ function useGatewayConversation(initialConversationId: string, role: ProductRole
           gatewayStatus: "connected",
           composerStatus: "idle",
           lastError: undefined,
+          recoveryMessage: "Command retried and reconciled by clientId.",
           detail: {
             ...current.detail,
             messages: current.detail.messages.map((message) =>
@@ -630,9 +709,88 @@ function useGatewayConversation(initialConversationId: string, role: ProductRole
           },
         }));
       },
+      simulateOffline() {
+        setState((current) => ({
+          ...current,
+          gatewayStatus: "offline",
+          composerStatus: current.composerStatus === "sending" ? "sending" : "idle",
+          recoveryMessage: "Offline. Local drafts stay usable and eligible commands wait for replay.",
+        }));
+      },
+      reconnectAndReplay() {
+        setState((current) => {
+          const pendingMessages = current.detail.messages.filter((message) => message.state === "pending");
+          const replayedMessages =
+            pendingMessages.length > 0
+              ? current.detail.messages.map((message) =>
+                  message.state === "pending"
+                    ? {
+                        ...message,
+                        state: "persisted" as const,
+                        receiptLabel: `Replayed · ${message.clientId ?? "client_replay"}`,
+                      }
+                    : message,
+                )
+              : current.detail.messages.some((message) => message.id === "message_replay_recovery")
+                ? current.detail.messages
+                : [
+                    ...current.detail.messages,
+                    {
+                      id: "message_replay_recovery",
+                      author: "assistant" as const,
+                      authorLabel: "Ordo Assistant",
+                      body: "Recovered missed durable conversation state after reconnect.",
+                      occurredAt: "Recovered",
+                      sequence: current.sequence + 1,
+                      state: "persisted" as const,
+                      edited: false,
+                      canEdit: false,
+                      canUndo: false,
+                      receiptLabel: "Replayed",
+                      reactions: [],
+                    },
+                  ];
+          const nextSequence = Math.max(current.sequence, replayedMessages.at(-1)?.sequence ?? current.sequence);
+          return {
+            ...current,
+            gatewayStatus: "recovered",
+            composerStatus: "idle",
+            lastError: undefined,
+            sequence: nextSequence,
+            cursor: Math.max(current.cursor, nextSequence),
+            recoveryMessage:
+              pendingMessages.length > 0
+                ? "Recovered. Pending optimistic messages reconciled by clientId without duplicates."
+                : "Recovered. Missed durable events replayed from the latest cursor.",
+            detail: {
+              ...current.detail,
+              messages: replayedMessages,
+            },
+          };
+        });
+      },
     }),
     [role, state],
   );
+}
+
+function gatewayLabel(gatewayStatus: GatewayStatus): string {
+  if (gatewayStatus === "offline") {
+    return "Offline";
+  }
+  if (gatewayStatus === "pending") {
+    return "Command pending";
+  }
+  if (gatewayStatus === "rejected") {
+    return "Command rejected";
+  }
+  if (gatewayStatus === "replaying") {
+    return "Replaying";
+  }
+  if (gatewayStatus === "recovered") {
+    return "Recovered";
+  }
+  return "Gateway connected";
 }
 
 function updateMessage(

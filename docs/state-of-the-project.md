@@ -2,9 +2,9 @@
 
 Date: 2026-05-08
 
-Ordo has completed the 0.1.0 Appliance Specimen implementation pass and is
-working through the 0.1.1 appliance stabilization slices before deeper product
-surfaces land.
+Ordo has completed the 0.1.0 Appliance Specimen implementation pass, the 0.1.1
+appliance trust-boundary stabilization pass, and the 0.1.2 backend readiness
+foundation before deeper product surfaces land.
 
 ## What Is Real Now
 
@@ -172,11 +172,12 @@ surfaces land.
 
 ## Current Goal
 
-Continue the 0.1.1 stabilization track after the runtime supervision, network
-posture, MCP policy tier, MCP request strictness, durable event replay, schema
-migration, backup integrity, UI smoke coverage, and local diagnostics/reporting
-slices. The backend handoff package now gives the next UI implementation slice a
-single route-and-boundary map to start from.
+Use the completed local appliance foundation and 0.1.2 backend readiness package
+as the contract for the next UI/product-depth implementation slices. The backend
+handoff package gives future UI work a single route-and-boundary map while the
+product remains explicitly pre-production: hosted identity, public portals,
+external transports, provider-backed answer generation, embeddings/vector
+search, Worker Ordos, and A2A are still future work.
 
 ## Useful Current References
 

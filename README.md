@@ -76,8 +76,11 @@ Ordo is being designed as a sovereign appliance:
 
 Managed hosting should be convenience, not captivity.
 
-The first release target is [Ordo 0.1.0 Appliance Specimen](docs/process/release-0.1.0.md):
-a small, working proof of the core architecture before product depth.
+The first release target was
+[Ordo 0.1.0 Appliance Specimen](docs/process/release-0.1.0.md): a small,
+working proof of the core architecture before product depth. The current
+backend readiness map is
+[Backend Handoff Package 0.1.2](docs/process/backend-handoff-package-0.1.2.md).
 
 Read the [system architecture contract](docs/architecture/system-architecture.md)
 for the 0.1.0 design.
@@ -100,16 +103,24 @@ Implemented now:
 - a capability catalog and local MCP JSON-RPC projection with policy tiers;
 - a resource/provenance policy spine and durable local access foundation for
   system and owner resources;
-- persisted realtime event replay plus WebSocket projection.
+- persisted realtime event replay plus WebSocket projection;
+- protected local backend route contracts for install/provider state, business
+  facts, entry points, offers/trials, connections, availability/handoff,
+  reports/support packets, corpus retrieval, answer drafts, and MCP pack
+  metadata;
+- public-safe daemon read models for About, Offers, Asks, Feed, public entry
+  point resolution, visitor session creation, and public offer acceptance.
 
 Not implemented yet:
 
-- public Chat, About, Offers, and Feed product surfaces;
+- public Chat, About, Offers, Asks, and Feed frontend product surfaces;
 - authentication UI, hosted identity, public portals, and product-depth access
   enforcement;
-- RAG/vector memory and content packs;
+- embeddings, vector search, provider-backed answer generation, chat retrieval
+  UI, and content packs;
 - hosted trial orchestration;
-- Worker Ordos, A2A networking, and external report submission.
+- Worker Ordos, A2A networking, external report submission, support packet
+  transport, and arbitrary third-party MCP execution.
 
 Reports are local evidence packages today. Ordo can prepare, preview, copy, and
 export a markdown report from appliance diagnostics, but it does not submit
@@ -153,18 +164,19 @@ working process.
 
 ## Repository Status
 
-This repository has completed the 0.1.0 Appliance Specimen pass and is in the
-0.1.1 appliance stabilization track. The current work is still not production
-business automation; it is the inspectable local foundation that later product
-surfaces will use.
+This repository has completed the 0.1.0 Appliance Specimen pass, the 0.1.1
+appliance trust-boundary stabilization pass, and the 0.1.2 backend readiness
+foundation. The current work is still not production business automation; it is
+the inspectable local appliance and backend contract foundation that later
+product-depth UI and hosted surfaces will use.
 
 The product is not ready for production use yet.
 
 ## Current Commands
 
-The 0.1.0 Rust appliance spine starts in `crates/ordo-daemon`.
-Database startup runs ordered SQLite migrations and seeders; repeat `init-db`
-or `serve` runs are idempotent.
+The Rust appliance daemon starts in `crates/ordo-daemon`. Database startup runs
+ordered SQLite migrations and seeders; repeat `init-db` or `serve` runs are
+idempotent.
 
 ```bash
 cargo run -p ordo-daemon -- health-json
@@ -186,11 +198,12 @@ npm run export
 external AI/code review tools. See [Project Export](docs/process/project-export.md)
 for when to use it and what it intentionally excludes.
 
-The Phase 2 system shell is a minimal Next.js app.
+The current System shell is a Next.js management UI over the local daemon.
 
 ```bash
 npm install
 npm run dev
+npm run typecheck
 npm run build
 npm run smoke:ui
 ```

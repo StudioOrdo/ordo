@@ -352,7 +352,10 @@ Delivery order:
    with `role_lifecycle_anonymous_to_client`,
    `role_lifecycle_staff_manager_owner_boundaries`, and
    `role_lifecycle_agent_silence_boundary`, all deterministic and packet-backed.
-6. Implement Customer Feedback and Review workflow evals.
+6. Implement Customer Feedback and Review workflow evals. The initial slice is
+   implemented with `feedback_capture_private_business_intelligence` and
+   `review_candidate_consent_publication_boundary`, backed by minimal durable
+   feedback, tag, and review tables.
 7. Implement Home/About and Offer/Ask product surface workflow evals.
 8. Add replay-provider fixture support.
 9. Add real provider adapter behind the Rust-owned LLM gateway.

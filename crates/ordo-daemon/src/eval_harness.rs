@@ -14,6 +14,11 @@ use crate::conversations::{
     ConversationHandoffCreateRequest, ConversationMessageCreateRequest, ConversationMode,
     ConversationParticipantCreateRequest, ConversationRole, PublicPostContext, QueueScope,
 };
+use crate::feedback::{
+    capture_feedback, create_review_candidate, list_private_feedback, list_public_reviews,
+    propose_feedback_tag, set_feedback_starred, transition_review, CustomerFeedbackInput,
+    FeedbackTagInput, ReviewCandidateInput, ReviewStatus,
+};
 use crate::llm_gateway::{DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, PromptSlot};
 use crate::policy::{
     authorize_protected_daemon_action, authorize_resource_access, record_policy_decision,
@@ -66,6 +71,7 @@ pub enum EvalEvidenceChannel {
     HandoffState,
     ArtifactRecords,
     SurfaceBriefRecords,
+    FeedbackReviewRecords,
 }
 
 impl EvalEvidenceChannel {
@@ -82,6 +88,7 @@ impl EvalEvidenceChannel {
             Self::HandoffState => "handoff_state",
             Self::ArtifactRecords => "artifact_records",
             Self::SurfaceBriefRecords => "surface_brief_records",
+            Self::FeedbackReviewRecords => "feedback_review_records",
         }
     }
 }
@@ -327,6 +334,8 @@ pub struct EvalArtifactPacket {
     pub handoff_ledger: Vec<EvalLedgerEntry>,
     pub artifact_ledger: Vec<EvalLedgerEntry>,
     pub surface_brief_ledger: Vec<EvalLedgerEntry>,
+    pub feedback_ledger: Vec<EvalLedgerEntry>,
+    pub review_ledger: Vec<EvalLedgerEntry>,
     pub redaction_summary: EvalRedactionSummary,
     pub artifact_review: EvalArtifactReviewPlaceholder,
 }
@@ -405,6 +414,8 @@ impl EvalArtifactWriter {
             handoff_ledger: handoff_ledger(connection)?,
             artifact_ledger: artifact_ledger(connection)?,
             surface_brief_ledger: surface_brief_ledger(connection)?,
+            feedback_ledger: feedback_ledger(connection)?,
+            review_ledger: review_ledger(connection)?,
             redaction_summary: EvalRedactionSummary {
                 redaction_applied: false,
                 redacted_value_count: 0,
@@ -578,6 +589,34 @@ pub fn run_role_lifecycle_agent_silence_eval(
         output_dir,
         source_commit,
         run_role_lifecycle_agent_silence_step,
+    )
+}
+
+pub fn run_feedback_capture_private_business_intelligence_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    run_role_lifecycle_eval(
+        connection,
+        feedback_capture_private_business_intelligence_case()?,
+        output_dir,
+        source_commit,
+        run_feedback_capture_private_business_intelligence_step,
+    )
+}
+
+pub fn run_review_candidate_consent_publication_boundary_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    run_role_lifecycle_eval(
+        connection,
+        review_candidate_consent_publication_boundary_case()?,
+        output_dir,
+        source_commit,
+        run_review_candidate_consent_publication_boundary_step,
     )
 }
 
@@ -919,6 +958,157 @@ fn role_lifecycle_agent_silence_case() -> Result<EvalCase> {
                 "agent_silence_policy_evidence_recorded",
                 EvalEvidenceChannel::PolicyDecisions,
                 1,
+            )?,
+        ],
+    )
+}
+
+fn feedback_capture_private_business_intelligence_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "feedback_capture_private_business_intelligence",
+        "Customer feedback capture as private business intelligence",
+        &json!({
+            "fixture": "feedback_capture_private_business_intelligence",
+            "version": 1,
+            "feedbackContract": "private_business_intelligence",
+        }),
+        vec![
+            EvalActorRole::ClientMember,
+            EvalActorRole::Staff,
+            EvalActorRole::ManagerAdmin,
+        ],
+        vec![
+            eval_step_with_metadata(
+                "seed_feedback_source_message",
+                EvalActorRole::ClientMember,
+                "conversation.message.submit",
+                vec![
+                    EvalEvidenceChannel::ConversationEvents,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+                json!({
+                    "source": "durable_message",
+                    "containsPrivateContactFixture": true,
+                }),
+            )?,
+            eval_step_with_metadata(
+                "capture_private_feedback",
+                EvalActorRole::Staff,
+                "feedback.capture",
+                vec![
+                    EvalEvidenceChannel::FeedbackReviewRecords,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+                json!({
+                    "visibility": "private_business_intelligence",
+                    "notReview": true,
+                    "notTestimonial": true,
+                }),
+            )?,
+            eval_step_with_metadata(
+                "star_and_tag_feedback_candidate",
+                EvalActorRole::Staff,
+                "feedback.star_and_tag",
+                vec![
+                    EvalEvidenceChannel::FeedbackReviewRecords,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+                json!({
+                    "starMeans": "staff_signal_not_customer_rating",
+                    "tagCandidateState": "proposed",
+                }),
+            )?,
+        ],
+        vec![
+            EvalAssertion::minimum_count(
+                "feedback_records_created",
+                EvalEvidenceChannel::FeedbackReviewRecords,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "feedback_events_recorded",
+                EvalEvidenceChannel::RealtimeReplay,
+                4,
+            )?,
+            EvalAssertion::minimum_count(
+                "conversation_source_evidence_recorded",
+                EvalEvidenceChannel::ConversationEvents,
+                2,
+            )?,
+        ],
+    )
+}
+
+fn review_candidate_consent_publication_boundary_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "review_candidate_consent_publication_boundary",
+        "Review candidate consent and publication boundary",
+        &json!({
+            "fixture": "review_candidate_consent_publication_boundary",
+            "version": 1,
+            "reviewLifecycle": [
+                "candidate",
+                "requested",
+                "received",
+                "consent_confirmed",
+                "approved",
+                "published",
+                "featured",
+                "retired"
+            ],
+        }),
+        vec![
+            EvalActorRole::ClientMember,
+            EvalActorRole::Staff,
+            EvalActorRole::ManagerAdmin,
+        ],
+        vec![
+            eval_step_with_metadata(
+                "create_review_candidate",
+                EvalActorRole::Staff,
+                "review.candidate.create",
+                vec![
+                    EvalEvidenceChannel::FeedbackReviewRecords,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+                json!({
+                    "source": "private_feedback",
+                    "initialVisibility": "private_until_approved",
+                }),
+            )?,
+            eval_step_with_metadata(
+                "assert_publish_blocked_before_consent_approval",
+                EvalActorRole::Staff,
+                "review.publish.denied",
+                vec![EvalEvidenceChannel::FeedbackReviewRecords],
+                json!({
+                    "requiredBeforePublish": ["consent_evidence", "approval_evidence"],
+                }),
+            )?,
+            eval_step_with_metadata(
+                "complete_review_consent_approval_publication_lifecycle",
+                EvalActorRole::ManagerAdmin,
+                "review.lifecycle.transition",
+                vec![
+                    EvalEvidenceChannel::FeedbackReviewRecords,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+                json!({
+                    "terminalState": "retired",
+                    "publishedOnlyAfter": ["consent_confirmed", "approved"],
+                }),
+            )?,
+        ],
+        vec![
+            EvalAssertion::minimum_count(
+                "review_records_created",
+                EvalEvidenceChannel::FeedbackReviewRecords,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "review_events_recorded",
+                EvalEvidenceChannel::RealtimeReplay,
+                8,
             )?,
         ],
     )
@@ -1330,6 +1520,297 @@ fn run_role_lifecycle_agent_silence_step(connection: &Connection, step: &EvalSte
     Ok(())
 }
 
+fn run_feedback_capture_private_business_intelligence_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "seed_feedback_source_message" => {
+            seed_feedback_source_message(connection)?;
+        }
+        "capture_private_feedback" => {
+            let (conversation_id, message_id) = seed_feedback_source_message(connection)?;
+            let (feedback, _) = capture_feedback(
+                connection,
+                CustomerFeedbackInput {
+                    connection_id: Some("connection_eval_1".to_string()),
+                    conversation_id,
+                    segment_id: None,
+                    message_id: Some(message_id.clone()),
+                    feedback_kind: "praise".to_string(),
+                    body_summary: "Client says the onboarding was clear and useful.".to_string(),
+                    source_refs: vec![message_id.clone()],
+                    evidence_refs: vec![message_id],
+                    provenance: json!({
+                        "workflow": "feedback_capture_private_business_intelligence",
+                        "source": "conversation_message",
+                    }),
+                },
+            )?;
+            ensure!(
+                feedback.visibility == "private_business_intelligence",
+                "feedback must remain private business intelligence"
+            );
+            ensure!(
+                list_public_reviews(connection)?.is_empty(),
+                "private feedback must not create a public review"
+            );
+        }
+        "star_and_tag_feedback_candidate" => {
+            let feedback_id = latest_feedback_id(connection)?;
+            let (starred, _) = set_feedback_starred(
+                connection,
+                &feedback_id,
+                true,
+                vec!["staff_review_1".to_string()],
+            )?;
+            ensure!(
+                starred.is_starred,
+                "starred feedback should persist as staff signal"
+            );
+            let (tag, _) = propose_feedback_tag(
+                connection,
+                &feedback_id,
+                FeedbackTagInput {
+                    tag: "clear_onboarding".to_string(),
+                    confidence: 0.82,
+                    evidence_refs: starred.evidence_refs.clone(),
+                    provenance: json!({
+                        "workflow": "feedback_capture_private_business_intelligence",
+                        "candidate": true,
+                    }),
+                },
+            )?;
+            ensure!(
+                tag.candidate_state == "proposed",
+                "feedback tags should default to proposed candidates"
+            );
+            let private_rows = list_private_feedback(connection, &starred.conversation_id)?;
+            ensure!(
+                private_rows.len() == 1,
+                "feedback should be visible in private staff intelligence list"
+            );
+        }
+        other => anyhow::bail!("unsupported feedback capture workflow eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn run_review_candidate_consent_publication_boundary_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "create_review_candidate" => {
+            let feedback_id = ensure_review_feedback(connection)?;
+            let (review, _) = create_review_candidate(
+                connection,
+                &feedback_id,
+                ReviewCandidateInput {
+                    review_body: "The onboarding made the next decision easy.".to_string(),
+                    evidence_refs: vec![feedback_id.clone()],
+                    provenance: json!({
+                        "workflow": "review_candidate_consent_publication_boundary",
+                        "source": "private_feedback",
+                    }),
+                },
+            )?;
+            ensure!(
+                review.status == ReviewStatus::Candidate,
+                "review should start as candidate"
+            );
+            ensure!(
+                review.publication_visibility == "private_until_approved",
+                "review candidate must remain private before consent and approval"
+            );
+        }
+        "assert_publish_blocked_before_consent_approval" => {
+            let review_id = latest_review_id(connection)?;
+            let blocked = transition_review(
+                connection,
+                &review_id,
+                ReviewStatus::Published,
+                vec!["publish_attempt_1".to_string()],
+                "attempted early publication",
+            );
+            ensure!(
+                blocked.is_err(),
+                "review publication should fail closed before consent and approval"
+            );
+            ensure!(
+                list_public_reviews(connection)?.is_empty(),
+                "early publication failure should not expose public reviews"
+            );
+        }
+        "complete_review_consent_approval_publication_lifecycle" => {
+            let review_id = latest_review_id(connection)?;
+            let (requested, _) = transition_review(
+                connection,
+                &review_id,
+                ReviewStatus::Requested,
+                vec!["review_request_1".to_string()],
+                "request review",
+            )?;
+            let (received, _) = transition_review(
+                connection,
+                &requested.id,
+                ReviewStatus::Received,
+                vec!["review_received_1".to_string()],
+                "review received",
+            )?;
+            let (consented, _) = transition_review(
+                connection,
+                &received.id,
+                ReviewStatus::ConsentConfirmed,
+                vec!["review_consent_1".to_string()],
+                "customer consent confirmed",
+            )?;
+            let (approved, _) = transition_review(
+                connection,
+                &consented.id,
+                ReviewStatus::Approved,
+                vec!["review_approval_1".to_string()],
+                "staff approved publication",
+            )?;
+            let (published, _) = transition_review(
+                connection,
+                &approved.id,
+                ReviewStatus::Published,
+                vec!["review_publish_1".to_string()],
+                "publish public review",
+            )?;
+            ensure!(
+                list_public_reviews(connection)?.len() == 1,
+                "published review should become public only after consent and approval"
+            );
+            let (featured, _) = transition_review(
+                connection,
+                &published.id,
+                ReviewStatus::Featured,
+                vec!["review_feature_1".to_string()],
+                "feature review",
+            )?;
+            let (retired, _) = transition_review(
+                connection,
+                &featured.id,
+                ReviewStatus::Retired,
+                vec!["review_retire_1".to_string()],
+                "retire review",
+            )?;
+            ensure!(
+                retired.status == ReviewStatus::Retired,
+                "review lifecycle should support retired state"
+            );
+            ensure!(
+                list_public_reviews(connection)?.is_empty(),
+                "retired reviews should leave the public review list"
+            );
+        }
+        other => anyhow::bail!("unsupported review workflow eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn seed_feedback_source_message(connection: &Connection) -> Result<(String, String)> {
+    let conversation =
+        find_or_create_canonical_conversation(connection, &feedback_conversation_request())?;
+    let participant = create_conversation_participant(
+        connection,
+        &ConversationParticipantCreateRequest {
+            conversation_id: conversation.id.clone(),
+            participant_kind: "connection".to_string(),
+            actor_id: Some("actor_client_eval_1".to_string()),
+            connection_id: Some("connection_eval_1".to_string()),
+            visitor_session_id: None,
+            display_name: "Eval Client".to_string(),
+            role: "client".to_string(),
+        },
+    )?;
+    let message = create_conversation_message(
+        connection,
+        &ConversationMessageCreateRequest {
+            conversation_id: conversation.id.clone(),
+            segment_id: None,
+            participant_id: participant.id,
+            message_kind: "user".to_string(),
+            body_markdown:
+                "The onboarding was clear. Please keep my email alex@example.com private."
+                    .to_string(),
+            visibility: "participants".to_string(),
+            client_message_id: "eval-feedback-source-message-1".to_string(),
+            reply_to_message_id: None,
+            undo_expires_at: None,
+        },
+    )?;
+    Ok((conversation.id, message.id))
+}
+
+fn ensure_review_feedback(connection: &Connection) -> Result<String> {
+    if let Some(id) = connection
+        .query_row(
+            "SELECT id FROM customer_feedback ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+    {
+        return Ok(id);
+    }
+
+    let (conversation_id, message_id) = seed_feedback_source_message(connection)?;
+    let (feedback, _) = capture_feedback(
+        connection,
+        CustomerFeedbackInput {
+            connection_id: Some("connection_eval_1".to_string()),
+            conversation_id,
+            segment_id: None,
+            message_id: Some(message_id.clone()),
+            feedback_kind: "praise".to_string(),
+            body_summary: "Client says onboarding made the next decision easy.".to_string(),
+            source_refs: vec![message_id.clone()],
+            evidence_refs: vec![message_id],
+            provenance: json!({
+                "workflow": "review_candidate_consent_publication_boundary",
+                "source": "conversation_message",
+            }),
+        },
+    )?;
+    Ok(feedback.id)
+}
+
+fn latest_feedback_id(connection: &Connection) -> Result<String> {
+    connection
+        .query_row(
+            "SELECT id FROM customer_feedback ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("expected feedback row"))
+}
+
+fn latest_review_id(connection: &Connection) -> Result<String> {
+    connection
+        .query_row(
+            "SELECT id FROM customer_reviews ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("expected review row"))
+}
+
+fn feedback_conversation_request() -> CanonicalConversationRequest {
+    CanonicalConversationRequest {
+        surface: "client_portal".to_string(),
+        subject_kind: "connection".to_string(),
+        subject_id: "connection_eval_1".to_string(),
+        connection_id: Some("connection_eval_1".to_string()),
+        visitor_session_id: None,
+        created_by_actor_id: Some("actor_client_eval_1".to_string()),
+    }
+}
+
 fn visitor_conversation_request() -> CanonicalConversationRequest {
     CanonicalConversationRequest {
         surface: "chat".to_string(),
@@ -1543,6 +2024,12 @@ pub fn collect_evidence_snapshot(
                 channel: EvalEvidenceChannel::SurfaceBriefRecords,
                 count: table_count(connection, "surface_briefs")?,
             },
+            EvalEvidenceCount {
+                channel: EvalEvidenceChannel::FeedbackReviewRecords,
+                count: table_count(connection, "customer_feedback")?
+                    + table_count(connection, "feedback_tags")?
+                    + table_count(connection, "customer_reviews")?,
+            },
         ],
         conversation_event_max_sequence: max_i64(connection, "conversation_events", "sequence")?,
         realtime_replay_max_cursor: max_i64(connection, "realtime_events", "cursor")?,
@@ -1570,6 +2057,9 @@ fn total_evidence_rows(connection: &Connection) -> Result<i64> {
         "artifacts",
         "artifact_deliverables",
         "surface_briefs",
+        "customer_feedback",
+        "feedback_tags",
+        "customer_reviews",
     ];
     tables
         .iter()
@@ -1959,6 +2449,72 @@ fn surface_brief_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>>
                 "completedAt": row.get::<_, Option<String>>(13)?,
                 "supersededAt": row.get::<_, Option<String>>(14)?,
                 "failureMessage": row.get::<_, Option<String>>(15)?,
+            }),
+        })
+    })?;
+    collect_rows(rows)
+}
+
+fn feedback_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>> {
+    let mut statement = connection.prepare(
+        "SELECT id, created_at, feedback_kind, status, visibility, connection_id,
+                conversation_id, segment_id, message_id, body_summary, is_starred,
+                source_refs_json, evidence_refs_json, provenance_json
+         FROM customer_feedback
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(EvalLedgerEntry {
+            ledger: "customer_feedback".to_string(),
+            id: row.get(0)?,
+            occurred_at: Some(row.get(1)?),
+            entry_type: row.get(2)?,
+            payload: json!({
+                "status": row.get::<_, String>(3)?,
+                "visibility": row.get::<_, String>(4)?,
+                "connectionId": row.get::<_, Option<String>>(5)?,
+                "conversationId": row.get::<_, String>(6)?,
+                "segmentId": row.get::<_, Option<String>>(7)?,
+                "messageId": row.get::<_, Option<String>>(8)?,
+                "summary": row.get::<_, String>(9)?,
+                "isStarred": row.get::<_, i64>(10)? == 1,
+                "sourceRefs": parse_json_value(row.get::<_, String>(11)?),
+                "evidenceRefs": parse_json_value(row.get::<_, String>(12)?),
+                "provenance": parse_json_value(row.get::<_, String>(13)?),
+            }),
+        })
+    })?;
+    collect_rows(rows)
+}
+
+fn review_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>> {
+    let mut statement = connection.prepare(
+        "SELECT id, created_at, status, feedback_id, connection_id, conversation_id,
+                review_body, publication_visibility, consent_evidence_refs_json,
+                approval_evidence_refs_json, evidence_refs_json, provenance_json,
+                published_at, featured_at, retired_at
+         FROM customer_reviews
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(EvalLedgerEntry {
+            ledger: "customer_reviews".to_string(),
+            id: row.get(0)?,
+            occurred_at: Some(row.get(1)?),
+            entry_type: row.get(2)?,
+            payload: json!({
+                "feedbackId": row.get::<_, String>(3)?,
+                "connectionId": row.get::<_, Option<String>>(4)?,
+                "conversationId": row.get::<_, String>(5)?,
+                "reviewBody": row.get::<_, String>(6)?,
+                "publicationVisibility": row.get::<_, String>(7)?,
+                "consentEvidenceRefs": parse_json_value(row.get::<_, String>(8)?),
+                "approvalEvidenceRefs": parse_json_value(row.get::<_, String>(9)?),
+                "evidenceRefs": parse_json_value(row.get::<_, String>(10)?),
+                "provenance": parse_json_value(row.get::<_, String>(11)?),
+                "publishedAt": row.get::<_, Option<String>>(12)?,
+                "featuredAt": row.get::<_, Option<String>>(13)?,
+                "retiredAt": row.get::<_, Option<String>>(14)?,
             }),
         })
     })?;
@@ -2553,5 +3109,70 @@ mod tests {
         assert!(packet.contains("\"promptSlotLedger\": []"));
         assert!(packet.contains("\"privacyTransformLedger\": []"));
         assert!(packet.contains("\"tokenLedger\": []"));
+    }
+
+    #[test]
+    fn feedback_capture_eval_records_private_feedback_and_tag_candidate() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run = run_feedback_capture_private_business_intelligence_eval(
+            &connection,
+            temp_dir.path(),
+            "test-commit",
+        )
+        .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(
+            run.case.id,
+            "feedback_capture_private_business_intelligence"
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::FeedbackReviewRecords)
+                >= 2
+        );
+        assert_eq!(list_public_reviews(&connection).unwrap().len(), 0);
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"feedbackLedger\""));
+        assert!(packet.contains("\"reviewLedger\": []"));
+        assert!(packet.contains("private_business_intelligence"));
+        assert!(packet.contains("staff_signal_not_customer_rating"));
+        assert!(packet.contains("clear_onboarding"));
+        assert!(packet.contains("[REDACTED:email]"));
+        assert!(!packet.contains("alex@example.com"));
+    }
+
+    #[test]
+    fn review_candidate_eval_blocks_publication_until_consent_and_approval() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run = run_review_candidate_consent_publication_boundary_eval(
+            &connection,
+            temp_dir.path(),
+            "test-commit",
+        )
+        .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "review_candidate_consent_publication_boundary");
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::FeedbackReviewRecords)
+                >= 2
+        );
+        assert_eq!(list_public_reviews(&connection).unwrap().len(), 0);
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"reviewLedger\""));
+        assert!(packet.contains("private_until_approved"));
+        assert!(packet.contains("public_review"));
+        assert!(packet.contains("consentEvidenceRefs"));
+        assert!(packet.contains("approvalEvidenceRefs"));
+        assert!(packet.contains("\"entryType\": \"retired\""));
+        assert!(!packet.contains("fake review"));
     }
 }

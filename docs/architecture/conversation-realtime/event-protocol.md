@@ -315,18 +315,13 @@ artifact ids, kind, title, and evidence refs for system surfaces. Deliverable
 events carry client-safe deliverable ids, artifact ids, label, and status
 without exposing internal provenance, storage, job, or policy details.
 
-Planned product intelligence events for 0.1.4+ eval pressure:
+Implemented Customer Feedback and Review events:
 
 - `feedback.item.created`
 - `feedback.item.tagged`
-- `feedback.item.untagged`
 - `feedback.item.starred`
 - `feedback.item.unstarred`
-- `feedback.item.linked`
 - `feedback.item.review_candidate.marked`
-- `feedback.item.review_candidate.dismissed`
-- `feedback.brief.requested`
-- `feedback.brief.generated`
 - `review.requested`
 - `review.received`
 - `review.consent.confirmed`
@@ -334,6 +329,14 @@ Planned product intelligence events for 0.1.4+ eval pressure:
 - `review.published`
 - `review.featured`
 - `review.retired`
+
+Deferred product intelligence events for later surface work:
+
+- `feedback.item.untagged`
+- `feedback.item.linked`
+- `feedback.item.review_candidate.dismissed`
+- `feedback.brief.requested`
+- `feedback.brief.generated`
 - `home.about.refresh.requested`
 - `home.about.billboard.generated`
 - `home.about.billboard.pinned`

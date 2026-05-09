@@ -1080,6 +1080,27 @@ provider-free. It does not implement Customer Feedback/Review workflows,
 Home/About or Offer/Ask product surface workflows, replay fixtures, live
 provider adapters, or the full handoff/mode/delegation gateway command surface.
 
+Implemented Customer Feedback and Review slice:
+
+1. `feedback_capture_private_business_intelligence`
+   - Seeds a client conversation message as durable feedback evidence.
+   - Captures private customer feedback with evidence refs and provenance.
+   - Stars the feedback as a staff signal, not a customer rating.
+   - Proposes a feedback tag with `proposed` candidate state.
+   - Confirms no public review/testimonial is created from private feedback.
+2. `review_candidate_consent_publication_boundary`
+   - Creates a review candidate from private feedback evidence.
+   - Confirms publication fails closed before consent and approval.
+   - Transitions through requested, received, consent confirmed, approved,
+     published, featured, and retired states.
+   - Confirms public review visibility appears only after consent and approval
+     and is removed from the public list after retirement.
+
+This slice adds the smallest durable feedback/review backend foundation needed
+for deterministic evals. It does not implement Customer Feedback UI, Home/About
+review presentation, broad review solicitation automation, or autonomous
+artifact-review finding filing.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`
@@ -1122,16 +1143,19 @@ compare quality across providers and prompt revisions.
    `role_lifecycle_anonymous_to_client`,
    `role_lifecycle_staff_manager_owner_boundaries`, and
    `role_lifecycle_agent_silence_boundary`.
-5. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
+5. Add Customer Feedback and Review workflow evals. The initial implemented
+   cases are `feedback_capture_private_business_intelligence` and
+   `review_candidate_consent_publication_boundary`.
+6. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
    `policy_gap`, `privacy_gap`, `prompt_gap`, `handoff_gap`, `analysis_gap`,
    `accounting_gap`, `ux_contract_gap`, and `provider_gap`.
-6. Wire currently direct-domain handoff/mode workflows through gateway commands
+7. Wire currently direct-domain handoff/mode workflows through gateway commands
    as those commands are implemented.
-7. Add customer and operator simulator prompts with redacted transcript turn
+8. Add customer and operator simulator prompts with redacted transcript turn
    capture.
-8. Add replay fixture support for provider-shaped responses.
-9. Add real provider adapter behind `LlmProviderAdapter` with
+9. Add replay fixture support for provider-shaped responses.
+10. Add real provider adapter behind `LlmProviderAdapter` with
    OpenAI-compatible non-streaming support.
-10. Add opt-in live eval runner with env guards and spend caps.
-11. Add Anthropic and DeepSeek provider coverage.
-12. Add SSE streaming normalization once non-streaming passes.
+11. Add opt-in live eval runner with env guards and spend caps.
+12. Add Anthropic and DeepSeek provider coverage.
+13. Add SSE streaming normalization once non-streaming passes.

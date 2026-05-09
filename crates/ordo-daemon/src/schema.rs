@@ -77,6 +77,9 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "artifact_links",
     "artifact_deliverables",
     "surface_briefs",
+    "customer_feedback",
+    "feedback_tags",
+    "customer_reviews",
     "referral_records",
     "business_outcomes",
     "business_outcome_attributions",
@@ -93,7 +96,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 26;
+pub const CURRENT_SCHEMA_VERSION: i64 = 27;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -233,6 +236,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 26,
         name: "add_surface_brief_schema",
         apply: add_surface_brief_schema,
+    },
+    SchemaMigration {
+        version: 27,
+        name: "add_customer_feedback_review_schema",
+        apply: add_customer_feedback_review_schema,
     },
 ];
 
@@ -2287,6 +2295,87 @@ fn add_surface_brief_schema(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_customer_feedback_review_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS customer_feedback (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            message_id TEXT,
+            feedback_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            body_summary TEXT NOT NULL,
+            is_starred INTEGER NOT NULL DEFAULT 0,
+            source_refs_json TEXT NOT NULL DEFAULT '[]',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_customer_feedback_conversation
+            ON customer_feedback(conversation_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_customer_feedback_connection
+            ON customer_feedback(connection_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_customer_feedback_visibility
+            ON customer_feedback(visibility, status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS feedback_tags (
+            id TEXT PRIMARY KEY,
+            feedback_id TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            candidate_state TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            state_changed_at TEXT,
+            state_reason TEXT,
+            FOREIGN KEY (feedback_id) REFERENCES customer_feedback(id) ON DELETE CASCADE,
+            UNIQUE(feedback_id, tag)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_tags_feedback_state
+            ON feedback_tags(feedback_id, candidate_state, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS customer_reviews (
+            id TEXT PRIMARY KEY,
+            feedback_id TEXT NOT NULL,
+            connection_id TEXT,
+            conversation_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            review_body TEXT NOT NULL,
+            publication_visibility TEXT NOT NULL,
+            consent_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            approval_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            published_at TEXT,
+            featured_at TEXT,
+            retired_at TEXT,
+            FOREIGN KEY (feedback_id) REFERENCES customer_feedback(id) ON DELETE CASCADE,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_customer_reviews_feedback
+            ON customer_reviews(feedback_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_customer_reviews_status
+            ON customer_reviews(status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_customer_reviews_public
+            ON customer_reviews(publication_visibility, status, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -2392,10 +2481,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26,
+                24, 25, 26, 27,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 26);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 27);
     }
 
     #[test]
@@ -3193,6 +3282,34 @@ mod tests {
             &connection,
             "surface_briefs",
             "superseded_at"
+        ));
+        assert!(table_exists(&connection, "customer_feedback"));
+        assert!(column_exists(
+            &connection,
+            "customer_feedback",
+            "visibility"
+        ));
+        assert!(column_exists(
+            &connection,
+            "customer_feedback",
+            "evidence_refs_json"
+        ));
+        assert!(table_exists(&connection, "feedback_tags"));
+        assert!(column_exists(
+            &connection,
+            "feedback_tags",
+            "candidate_state"
+        ));
+        assert!(table_exists(&connection, "customer_reviews"));
+        assert!(column_exists(
+            &connection,
+            "customer_reviews",
+            "consent_evidence_refs_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "customer_reviews",
+            "approval_evidence_refs_json"
         ));
     }
 

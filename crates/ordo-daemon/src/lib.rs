@@ -18,6 +18,7 @@ pub mod errors;
 pub mod ethical_persuasion;
 pub mod eval_harness;
 pub mod events;
+pub mod feedback;
 pub mod health;
 pub mod install;
 pub mod kernel;

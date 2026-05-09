@@ -1,6 +1,6 @@
 # Capability Catalog
 
-Status: Implemented seed with 0.1.1 MCP policy tiers
+Status: Implemented seed with MCP policy tiers and local pack metadata
 
 The capability catalog is the source of truth for what Ordo can do.
 
@@ -38,9 +38,21 @@ The Rust daemon owns the first durable catalog in SQLite:
 - built-in templates are validated against the catalog during seed;
 - job creation validates the template and task capability IDs before inserting
   the job DAG.
+- `mcp_packs` stores local pack identity, status, manifest JSON, provenance,
+  and timestamps;
+- `mcp_pack_tools` stores local pack tool identity, capability binding, schema,
+  output contract, side effects, approval requirement, artifact expectations,
+  MCP export policy, export status, and disabled state.
 
 The daemon exposes the catalog at `/capabilities` and through the CLI command
 `list-capabilities-json`.
+
+The daemon exposes protected local MCP pack management routes at:
+
+- `GET /mcp/packs`
+- `POST /mcp/packs`
+- `GET /mcp/packs/:pack_id`
+- `PUT /mcp/packs/:pack_id/disable`
 
 ## Registry Rule
 
@@ -49,6 +61,10 @@ arbitrary code from user-authored JSON.
 
 Users may copy, edit, reuse, and schedule processes, but each task kind remains
 governed by catalog schema, permissions, and executor binding.
+
+Local MCP packs are metadata over existing capabilities. A pack manifest cannot
+introduce a new executor, shell command, hosted registry tool, remote code path,
+provider/model transport, or external egress path.
 
 ## Catalog Seed
 
@@ -108,3 +124,17 @@ exported through MCP.
 MCP tool-call results include Ordo policy decision metadata so the appliance can
 explain the actor, capability, resource, action, and decision outcome for the
 governed projection path.
+
+## Local Pack Contract
+
+Local pack manifests must name each tool, bind it to an existing capability,
+and provide schema, output contract, side effect, approval, and artifact
+metadata that matches the registered capability. The daemon rejects manifests
+with unknown capabilities, malformed schemas, mismatched approval requirements,
+or arbitrary execution-shaped capability IDs.
+
+When a pack is disabled, its tool rows are marked disabled. The MCP projection
+consults durable pack metadata during both `tools/list` and `tools/call`, so a
+disabled tool is hidden from listing and blocked from invocation. If a manifest
+references a `dangerous_none` capability, the tool is persisted as blocked and
+is not projected through MCP.

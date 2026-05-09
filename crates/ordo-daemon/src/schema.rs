@@ -55,13 +55,15 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "corpus_items_fts",
     "answer_drafts",
     "answer_draft_citations",
+    "mcp_packs",
+    "mcp_pack_tools",
     "schedules",
     "scheduled_job_runs",
     "brief_artifacts",
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 17;
+pub const CURRENT_SCHEMA_VERSION: i64 = 18;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -156,6 +158,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 17,
         name: "add_answer_draft_spine",
         apply: add_answer_draft_spine,
+    },
+    SchemaMigration {
+        version: 18,
+        name: "add_mcp_pack_hardening",
+        apply: add_mcp_pack_hardening,
     },
 ];
 
@@ -1325,6 +1332,53 @@ fn add_answer_draft_spine(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_mcp_pack_hardening(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS mcp_packs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            manifest_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mcp_packs_status_updated ON mcp_packs(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS mcp_pack_tools (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            capability_id TEXT NOT NULL,
+            input_schema_json TEXT NOT NULL DEFAULT '{}',
+            output_contract_json TEXT NOT NULL DEFAULT '{}',
+            side_effects_json TEXT NOT NULL DEFAULT '[]',
+            approval_requirement TEXT NOT NULL,
+            artifact_kinds_json TEXT NOT NULL DEFAULT '[]',
+            mcp_export_policy TEXT NOT NULL,
+            export_status TEXT NOT NULL,
+            disabled_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (pack_id) REFERENCES mcp_packs(id) ON DELETE CASCADE,
+            FOREIGN KEY (capability_id) REFERENCES capabilities(id) ON DELETE CASCADE,
+            UNIQUE(pack_id, tool_name),
+            UNIQUE(pack_id, capability_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mcp_pack_tools_pack ON mcp_pack_tools(pack_id, tool_name);
+        CREATE INDEX IF NOT EXISTS idx_mcp_pack_tools_capability ON mcp_pack_tools(capability_id, export_status);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1428,9 +1482,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 17);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 18);
     }
 
     #[test]
@@ -1512,6 +1566,8 @@ mod tests {
         assert!(table_exists(&connection, "corpus_items_fts"));
         assert!(table_exists(&connection, "answer_drafts"));
         assert!(table_exists(&connection, "answer_draft_citations"));
+        assert!(table_exists(&connection, "mcp_packs"));
+        assert!(table_exists(&connection, "mcp_pack_tools"));
         assert!(table_exists(&connection, "tracked_entry_points"));
         assert!(table_exists(&connection, "visitor_sessions"));
         assert!(table_exists(&connection, "visitor_session_events"));
@@ -1717,6 +1773,32 @@ mod tests {
             &connection,
             "answer_draft_citations",
             "evidence_json"
+        ));
+    }
+
+    #[test]
+    fn mcp_pack_hardening_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "mcp_packs"));
+        assert!(column_exists(&connection, "mcp_packs", "manifest_json"));
+        assert!(column_exists(&connection, "mcp_packs", "provenance_json"));
+        assert!(table_exists(&connection, "mcp_pack_tools"));
+        assert!(column_exists(
+            &connection,
+            "mcp_pack_tools",
+            "capability_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "mcp_pack_tools",
+            "export_status"
+        ));
+        assert!(column_exists(
+            &connection,
+            "mcp_pack_tools",
+            "mcp_export_policy"
         ));
     }
 

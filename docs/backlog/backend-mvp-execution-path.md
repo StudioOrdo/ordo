@@ -41,8 +41,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | complete |
 | 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | complete |
 | 8 | Knowledge corpus and governed retrieval | #57 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Corpus ingestion, source/item provenance, SQLite FTS retrieval, visibility filtering, and retrieval evidence exist. | complete |
-| 9 | RAG answer draft spine | #58 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Evidence-backed answer draft records use governed retrieval, emit citations, avoid unsupported claims, and preserve redaction guarantees. | ready for PR |
-| 10 | MCP pack and tool hardening | #59 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Pack manifest validation, tool schemas, side effect declarations, capability policy mapping, and disable behavior exist. | not started |
+| 9 | RAG answer draft spine | #58 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Evidence-backed answer draft records use governed retrieval, emit citations, avoid unsupported claims, and preserve redaction guarantees. | complete |
+| 10 | MCP pack and tool hardening | #59 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Pack manifest validation, tool schemas, side effect declarations, capability policy mapping, and disable behavior exist. | ready for PR |
 | 11 | Backend handoff package | #60 | this document | UI-ready route contracts, state docs, smoke seeds, validation matrix, and known non-goals are collected for the UI agent. | not started |
 
 ## Phase Detail
@@ -278,7 +278,7 @@ This phase adds the durable answer draft spine on top of governed retrieval. In
 the current backend foundation, drafting is a local evidence scaffold rather
 than a provider/model call path.
 
-GitHub issue: #58. Pull request: pending.
+GitHub issue: #58. Pull request: #70, merged.
 
 Done means:
 
@@ -309,12 +309,29 @@ Current implementation evidence:
 
 This phase keeps customization inside the appliance trust boundary.
 
+GitHub issue: #59. Pull request: pending.
+
 Done means:
 
 - pack manifests describe capabilities, schemas, side effects, approval needs,
   and artifact contracts;
 - tools cannot execute without capability policy mapping;
 - dangerous tools remain non-exported until approval flows exist.
+
+Current implementation evidence:
+
+- schema version 18 adds durable `mcp_packs` and `mcp_pack_tools` tables;
+- pack install/update validates manifest identity, capability bindings, input
+  schemas, output contracts, side effects, approval requirements, and artifact
+  metadata against the registered capability catalog;
+- protected local daemon routes exist for pack list, read, install/update, and
+  disable behavior;
+- MCP `tools/list` and `tools/call` consult durable pack metadata so disabled
+  pack tools are hidden and blocked;
+- dangerous `dangerous_none` capabilities remain blocked even if a pack
+  manifest references them;
+- no arbitrary command, plugin, marketplace, provider, or external egress
+  execution path is added.
 
 ### 11. Backend Handoff Package
 

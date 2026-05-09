@@ -14,6 +14,7 @@ pub mod health;
 pub mod install;
 pub mod kernel;
 pub mod mcp;
+pub mod mcp_packs;
 pub mod offers;
 pub mod policy;
 pub mod policy_audit;

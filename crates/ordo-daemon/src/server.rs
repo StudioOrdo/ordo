@@ -77,6 +77,10 @@ use crate::install::{
     ProviderUpdateRequest,
 };
 use crate::mcp::{handle_mcp_json, McpResponse};
+use crate::mcp_packs::{
+    disable_mcp_pack, install_mcp_pack, list_mcp_packs, read_mcp_pack, McpPackInstallRequest,
+    McpPackListResponse, McpPackResponse,
+};
 use crate::offers::{
     accept_public_offer, create_offer, list_offer_acceptances, list_offers,
     list_public_available_offers, list_trials, transition_trial, update_offer,
@@ -304,6 +308,10 @@ pub async fn serve(
         .route("/answer-drafts", get(answer_drafts_handler))
         .route("/answer-drafts", post(answer_draft_prepare_handler))
         .route("/answer-drafts/:draft_id", get(answer_draft_read_handler))
+        .route("/mcp/packs", get(mcp_packs_handler))
+        .route("/mcp/packs", post(mcp_pack_install_handler))
+        .route("/mcp/packs/:pack_id", get(mcp_pack_read_handler))
+        .route("/mcp/packs/:pack_id/disable", put(mcp_pack_disable_handler))
         .route("/reports/issues", get(list_issue_reports_handler))
         .route("/reports/issues/:report_id", get(read_issue_report_handler))
         .route(
@@ -1922,6 +1930,108 @@ async fn answer_draft_prepare_handler(
     Ok(Json(response))
 }
 
+async fn mcp_packs_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<McpPackListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/mcp/packs"),
+        Some("mcp.packs.list"),
+    )?;
+    list_mcp_packs(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn mcp_pack_read_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(pack_id): AxumPath<String>,
+) -> Result<Json<McpPackResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, format!("/mcp/packs/{pack_id}")),
+        Some("mcp.packs.list"),
+    )?;
+    read_mcp_pack(&state.db_path, &pack_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn mcp_pack_install_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<McpPackInstallRequest>,
+) -> Result<Json<McpPackResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Validate,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/mcp/packs"),
+        Some("mcp.packs.write"),
+    )?;
+    let response = install_mcp_pack(&state.db_path, request, "http", actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "mcp.pack.installed",
+        json!({
+            "packId": response.pack.id,
+            "status": response.pack.status,
+            "toolCount": response.pack.tools.len(),
+        }),
+    );
+    Ok(Json(response))
+}
+
+async fn mcp_pack_disable_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(pack_id): AxumPath<String>,
+) -> Result<Json<McpPackResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/mcp/packs/{pack_id}/disable"),
+        ),
+        Some("mcp.packs.write"),
+    )?;
+    let response = disable_mcp_pack(&state.db_path, &pack_id, "http", actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "mcp.pack.disabled",
+        json!({
+            "packId": response.pack.id,
+            "status": response.pack.status,
+            "toolCount": response.pack.tools.len(),
+        }),
+    );
+    Ok(Json(response))
+}
+
 async fn list_issue_reports_handler(
     State(state): State<AppState>,
 ) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -3080,5 +3190,62 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 4);
+    }
+
+    #[test]
+    fn mcp_pack_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Validate,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/mcp/packs"),
+            Some("mcp.packs.write"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            ("/mcp/packs", PolicyAction::Inspect, "mcp.packs.list"),
+            (
+                "/mcp/packs/pack.local.status",
+                PolicyAction::Inspect,
+                "mcp.packs.list",
+            ),
+            ("/mcp/packs", PolicyAction::Validate, "mcp.packs.write"),
+            (
+                "/mcp/packs/pack.local.status/disable",
+                PolicyAction::Update,
+                "mcp.packs.write",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('mcp.packs.list', 'mcp.packs.write')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 5);
     }
 }

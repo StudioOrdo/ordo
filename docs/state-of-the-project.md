@@ -90,6 +90,12 @@ surfaces land.
 - The local MCP projection validates JSON-RPC 2.0 request shape and tool
   arguments against catalog input schemas before dispatch, and tool-call results
   include Ordo policy decision metadata.
+- SQLite stores durable local MCP pack and pack tool metadata. The daemon
+  exposes protected local pack list/read/install/disable routes; pack manifests
+  validate against existing catalog capabilities, schemas, side effects,
+  approval requirements, artifact metadata, and MCP export policy. MCP
+  `tools/list` and `tools/call` hide or block disabled pack tools, and dangerous
+  non-exported capabilities remain blocked.
 - Job events and system lifecycle events are replayable from SQLite through a
   global event cursor, and the Events surface reads persisted event history.
 - Structured diagnostic logs are persisted locally with bounded retention,
@@ -155,8 +161,9 @@ surfaces land.
 - Report submission and support packet transport to external systems are not
   implemented yet; Reports 1.0 and support packet approval remain local evidence
   and approval records only.
-- MCP is currently a local JSON-RPC daemon projection with first policy tiers,
-  not a third-party plugin surface.
+- MCP is currently a local JSON-RPC daemon projection with governed local pack
+  metadata, not a third-party plugin surface, marketplace, or arbitrary code
+  execution runtime.
 - Full visual regression coverage is not implemented yet.
 
 ## Current Goal
@@ -197,6 +204,8 @@ slices.
 - [Knowledge Corpus And Governed Retrieval](architecture/knowledge-corpus.md)
   describes the implemented local FTS retrieval and answer draft foundation for
   future knowledge/RAG work.
+- [Capability Catalog](architecture/capability-catalog.md) describes the
+  implemented catalog, MCP projection, and local pack metadata boundary.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,
   Offers, Asks, Feed, Connections, availability, handoff, affiliate, and sales
   loop direction without claiming they are built.

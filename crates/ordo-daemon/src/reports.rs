@@ -119,7 +119,24 @@ pub struct IssueReportArtifact {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueReportsResponse {
-    pub reports: Vec<IssueReportArtifact>,
+    pub reports: Vec<IssueReportSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueReportSummary {
+    pub id: String,
+    pub job_id: Option<String>,
+    pub status: String,
+    pub severity: String,
+    pub title: String,
+    pub summary: String,
+    pub source_route: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub exported_at: Option<String>,
+    pub submitted_at: Option<String>,
+    pub external_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -251,7 +268,7 @@ struct NormalizedIssueReportRequest {
 pub fn list_issue_reports(db_path: &Path) -> Result<IssueReportsResponse> {
     let connection = Connection::open(db_path)?;
     Ok(IssueReportsResponse {
-        reports: load_issue_reports(&connection)?,
+        reports: load_issue_report_summaries(&connection)?,
     })
 }
 
@@ -1014,15 +1031,14 @@ fn actor_context_for_origin(origin: &str, actor_id: Option<&str>) -> ActorContex
     ActorContext::new(kind, origin, actor_id.map(ToString::to_string))
 }
 
-fn load_issue_reports(connection: &Connection) -> Result<Vec<IssueReportArtifact>> {
+fn load_issue_report_summaries(connection: &Connection) -> Result<Vec<IssueReportSummary>> {
     let mut statement = connection.prepare(
-        "SELECT id, job_id, status, severity, title, summary, description, source_route,
-                markdown_body, diagnostics_json, evidence_json, redactions_json, created_at,
+        "SELECT id, job_id, status, severity, title, summary, source_route, created_at,
                 updated_at, exported_at, submitted_at, external_url
          FROM issue_report_artifacts
          ORDER BY updated_at DESC",
     )?;
-    let rows = statement.query_map([], issue_report_from_row)?;
+    let rows = statement.query_map([], issue_report_summary_from_row)?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Into::into)
 }
@@ -1067,6 +1083,23 @@ fn issue_report_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<IssueRepor
         exported_at: row.get(14)?,
         submitted_at: row.get(15)?,
         external_url: row.get(16)?,
+    })
+}
+
+fn issue_report_summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<IssueReportSummary> {
+    Ok(IssueReportSummary {
+        id: row.get(0)?,
+        job_id: row.get(1)?,
+        status: row.get(2)?,
+        severity: row.get(3)?,
+        title: row.get(4)?,
+        summary: row.get(5)?,
+        source_route: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+        exported_at: row.get(9)?,
+        submitted_at: row.get(10)?,
+        external_url: row.get(11)?,
     })
 }
 
@@ -1517,6 +1550,17 @@ mod tests {
 
         let reports = list_issue_reports(db.path()).unwrap();
         assert_eq!(reports.reports.len(), 1);
+        let summary_json = serde_json::to_value(&reports.reports[0]).unwrap();
+        assert_eq!(summary_json["id"], report.id);
+        assert!(summary_json.get("markdownBody").is_none());
+        assert!(summary_json.get("diagnostics").is_none());
+        assert!(summary_json.get("evidence").is_none());
+        assert!(summary_json.get("redactions").is_none());
+        assert!(summary_json.get("description").is_none());
+
+        let detail = read_issue_report(db.path(), &report.id).unwrap();
+        assert_eq!(detail.report.markdown_body, report.markdown_body);
+        assert_eq!(detail.report.evidence.len(), report.evidence.len());
 
         let connection = Connection::open(db.path()).unwrap();
         let metadata_json: String = connection

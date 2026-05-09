@@ -24,6 +24,12 @@ agent treats these facts as fixed:
 - Support packets, answer drafts, MCP packs, handoff, and reports remain local
   unless a future approved transport slice adds egress.
 
+The route protection contract is mirrored in
+`crates/ordo-daemon/src/route_contracts.rs`. Protected routes in this handoff
+map must have a capability ID there, and the daemon tests use that contract to
+exercise denied non-loopback access, allowed loopback access, and configured
+daemon-token access.
+
 ## Contract Families
 
 ### System And Runtime
@@ -173,7 +179,7 @@ push notification, calendar sync, voice handoff, or mediated chat transport.
 | `GET` | `/backups` | protected | `BackupRestoreResponse` | List backup/restore jobs. |
 | `POST` | `/backups/create` | protected | `BackupRestoreResponse` | Create backup. |
 | `POST` | `/restore/validate` | protected | `BackupRestoreResponse` | Restore preflight only. |
-| `GET` | `/reports/issues` | protected | `IssueReportsResponse` | List local issue reports. |
+| `GET` | `/reports/issues` | protected | `IssueReportsResponse` with `IssueReportSummary[]` | List local issue report summaries. |
 | `POST` | `/reports/issues/prepare` | protected | `IssueReportDetailResponse` | Prepare report artifact. |
 | `GET` | `/reports/issues/:report_id` | protected | `IssueReportDetailResponse` | Read report detail. |
 | `PUT` | `/reports/issues/:report_id/status` | protected | `IssueReportDetailResponse` | Update local report status. |

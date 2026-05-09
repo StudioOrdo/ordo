@@ -20,6 +20,7 @@ pub mod policy;
 pub mod policy_audit;
 pub mod public_surfaces;
 pub mod reports;
+pub mod route_contracts;
 pub mod scheduler;
 pub mod schema;
 pub mod server;

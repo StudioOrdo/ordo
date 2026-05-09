@@ -1,6 +1,6 @@
 # Business Truth, Visibility, And Publication
 
-Status: backend foundation in progress
+Status: backend foundation implemented
 
 This slice gives Ordo a durable place to store local business truth before that
 truth is used by public surfaces, governed retrieval, or RAG answer drafting.

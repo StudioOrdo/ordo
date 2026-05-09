@@ -1,6 +1,6 @@
 # Content Visibility And Publication MVP
 
-Status: backend foundation in progress
+Status: backend foundation merged
 
 ## Why It Matters
 

@@ -37,8 +37,8 @@ architecture doc together.
 | Spec | Purpose | Status |
 | --- | --- | --- |
 | [Install And Provider Setup](install-provider-setup.md) | Turn backend install/provider/vault state into a minimal operator setup path. | backend foundation merged; UI not built |
-| [Owner Identity And Business Seeding](owner-identity-business-seeding.md) | Capture local owner and business truth for future public surfaces. | backend foundation in progress |
-| [Content Visibility And Publication](content-visibility-publication.md) | Define public/authenticated/staff/owner visibility and publication state for business truth. | backend foundation in progress |
+| [Owner Identity And Business Seeding](owner-identity-business-seeding.md) | Capture local owner and business truth for future public surfaces. | backend foundation merged |
+| [Content Visibility And Publication](content-visibility-publication.md) | Define public/authenticated/staff/owner visibility and publication state for business truth. | backend foundation merged |
 | [Connections](connections.md) | Model trusted relationships with scope, grants, history, and revocation. | not built |
 | [Availability And Presence](availability-presence.md) | Model handoff hours, operator status, and interruption thresholds. | not built |
 | [Handoff Inbox](handoff-inbox.md) | Create handoff envelopes and owner attention items with evidence and receipts. | not built |

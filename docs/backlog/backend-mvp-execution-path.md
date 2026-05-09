@@ -33,8 +33,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | Order | Phase | GitHub Issue | Backlog Spec | Backend Exit Criteria | Status |
 | --- | --- | --- | --- | --- | --- |
 | 0 | Local install, providers, and vault | #49 | [Install And Provider Setup](install-provider-setup.md) | Daemon routes, schema, vault encryption, secret redaction, backup key archival, protected policy decisions, and docs exist. | complete |
-| 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | ready for PR |
-| 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | not started |
+| 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | complete |
+| 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | next |
 | 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | not started |
 | 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | not started |
 | 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | not started |
@@ -75,7 +75,7 @@ Current validation evidence:
 This is the next implementation slice. It should add the durable truth and
 policy layer that public surfaces and RAG will consume.
 
-GitHub issue: #50.
+GitHub issue: #50. Pull request: #62, merged.
 
 Done means:
 
@@ -84,6 +84,13 @@ Done means:
 - policy helpers decide whether a viewer can inspect or retrieve each fact;
 - tests prove draft/private/staff/owner material cannot enter public read
   models or retrieval.
+
+Current validation evidence:
+
+- `cargo fmt --all -- --check`: passed;
+- `cargo test --workspace`: passed, 88 tests;
+- `cargo clippy --workspace --all-targets -- -D warnings`: passed;
+- `git diff --check`: passed.
 
 ### 2. Public Surface Read Models
 

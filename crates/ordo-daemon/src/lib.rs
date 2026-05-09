@@ -10,6 +10,7 @@ pub mod health;
 pub mod install;
 pub mod kernel;
 pub mod mcp;
+pub mod offers;
 pub mod policy;
 pub mod policy_audit;
 pub mod public_surfaces;

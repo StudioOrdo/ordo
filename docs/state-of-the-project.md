@@ -39,6 +39,10 @@ surfaces land.
   events. The daemon exposes protected management routes and public-safe
   resolution/session creation routes that only point at published public surface
   destinations.
+- SQLite stores durable offers, offer acceptances, trials, and trial events. The
+  daemon exposes protected owner/operator routes plus public-safe offer listing
+  and acceptance routes that only work for public published available offers or
+  published public Offers read-model items.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
@@ -108,6 +112,9 @@ surfaces land.
 - Visitor-facing UI, analytics dashboards, and offer/trial attribution consumers
   are not implemented yet; current visitor session support is backend state and
   event evidence only.
+- Offers and trial lifecycle UI, payments, affiliate payout automation, and
+  external trial follow-up are not implemented yet; current support is backend
+  state, policy audit, and event evidence only.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
   integrations are not implemented yet.
 - Report submission transports to external systems are not implemented yet;
@@ -142,6 +149,9 @@ slices.
 - [Tracked Entry Points And Visitor Sessions](architecture/tracked-entry-points.md)
   describes the implemented backend foundation for QR/link/campaign entry
   context and visitor session evidence.
+- [Offers And Trial Lifecycle](architecture/offers-and-trials.md) describes the
+  implemented backend foundation for offer acceptance, 30-day trials, and
+  lifecycle event evidence.
 - [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
   implemented retrieval safety foundation for future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,

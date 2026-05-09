@@ -35,8 +35,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 0 | Local install, providers, and vault | #49 | [Install And Provider Setup](install-provider-setup.md) | Daemon routes, schema, vault encryption, secret redaction, backup key archival, protected policy decisions, and docs exist. | complete |
 | 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | complete |
 | 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | complete |
-| 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | ready for PR |
-| 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | not started |
+| 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | complete |
+| 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | ready for PR |
 | 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | not started |
 | 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | not started |
 | 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | not started |
@@ -124,6 +124,7 @@ This phase gives the product a durable path from QR/link/campaign entry into
 visitor activity.
 
 GitHub issue: #52.
+Pull request: #64, merged.
 
 Done means:
 
@@ -145,12 +146,26 @@ Current implementation evidence:
 
 This phase turns public interest into durable commercial state.
 
+GitHub issue: #53.
+
 Done means:
 
 - offers are records, not page copy;
 - offer acceptance records visitor/session/source context;
 - trial state supports start, expiration, conversion, void, and follow-up;
 - attribution hooks are present but payout automation is not required.
+
+Current implementation evidence:
+
+- durable offer, offer acceptance, trial, and trial event tables exist;
+- protected owner/operator routes exist for offer management, acceptance
+  inspection, trial inspection, and trial lifecycle transitions;
+- public-safe offer listing and acceptance routes only expose offers that are
+  explicit public/published/available records or published public Offers read
+  model items;
+- offer acceptance copies visitor session entry point and attribution context
+  when a visitor session is supplied;
+- trial starts and lifecycle transitions persist event rows and realtime events.
 
 ### 5. Connections Foundation
 

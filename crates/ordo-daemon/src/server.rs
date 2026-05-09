@@ -51,6 +51,13 @@ use crate::install::{
     ProviderUpdateRequest,
 };
 use crate::mcp::{handle_mcp_json, McpResponse};
+use crate::offers::{
+    accept_public_offer, create_offer, list_offer_acceptances, list_offers,
+    list_public_available_offers, list_trials, transition_trial, update_offer,
+    OfferAcceptanceCreateRequest, OfferAcceptanceListResponse, OfferAcceptanceResponse,
+    OfferListResponse, OfferView, OfferWriteRequest, PublicOfferListResponse, TrialListResponse,
+    TrialTransitionRequest, TrialView,
+};
 use crate::policy::{
     authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
     PolicyDecision, PolicyDecisionCorrelation, ProtectedAccessEvidence, ResourceKind, ResourceRef,
@@ -176,6 +183,20 @@ pub async fn serve(
             put(entry_point_update_handler),
         )
         .route("/visitor-sessions", get(visitor_sessions_handler))
+        .route("/offers", get(offers_handler))
+        .route("/offers", post(offer_create_handler))
+        .route("/offers/:offer_id", put(offer_update_handler))
+        .route("/offer-acceptances", get(offer_acceptances_handler))
+        .route("/trials", get(trials_handler))
+        .route("/trials/:trial_id/status", put(trial_transition_handler))
+        .route(
+            "/public/available-offers",
+            get(public_available_offers_handler),
+        )
+        .route(
+            "/public/offers/:offer_slug/accept",
+            post(public_offer_accept_handler),
+        )
         .route("/public/e/:slug", get(public_entry_point_handler))
         .route(
             "/public/visitor-sessions",
@@ -847,6 +868,150 @@ async fn public_session_create_handler(
         create_visitor_session(&state.db_path, request).map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
     Ok(Json(session))
+}
+
+async fn offers_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<OfferListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/offers"),
+        Some("offers.list"),
+    )?;
+    list_offers(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn offer_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<OfferWriteRequest>,
+) -> Result<Json<OfferView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/offers"),
+        Some("offers.write"),
+    )?;
+    let (offer, event) = create_offer(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(offer))
+}
+
+async fn offer_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(offer_id): AxumPath<String>,
+    Json(request): Json<OfferWriteRequest>,
+) -> Result<Json<OfferView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, format!("/offers/{offer_id}")),
+        Some("offers.write"),
+    )?;
+    let (offer, event) = update_offer(&state.db_path, &offer_id, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(offer))
+}
+
+async fn offer_acceptances_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<OfferAcceptanceListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/offer-acceptances"),
+        Some("offer_acceptances.list"),
+    )?;
+    list_offer_acceptances(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn trials_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<TrialListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/trials"),
+        Some("trials.list"),
+    )?;
+    list_trials(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn trial_transition_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(trial_id): AxumPath<String>,
+    Json(request): Json<TrialTransitionRequest>,
+) -> Result<Json<TrialView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/trials/{trial_id}/status"),
+        ),
+        Some("trials.transition"),
+    )?;
+    let (trial, event) =
+        transition_trial(&state.db_path, &trial_id, request).map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(trial))
+}
+
+async fn public_available_offers_handler(
+    State(state): State<AppState>,
+) -> Result<Json<PublicOfferListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    list_public_available_offers(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn public_offer_accept_handler(
+    State(state): State<AppState>,
+    AxumPath(offer_slug): AxumPath<String>,
+    Json(request): Json<OfferAcceptanceCreateRequest>,
+) -> Result<Json<OfferAcceptanceResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (acceptance, trial, event) =
+        accept_public_offer(&state.db_path, &offer_slug, request).map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(OfferAcceptanceResponse { acceptance, trial }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1562,5 +1727,67 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 3);
+    }
+
+    #[test]
+    fn offer_and_trial_management_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/offers"),
+            Some("offers.write"),
+        );
+        assert!(denied.is_err());
+
+        for (route, capability) in [
+            ("/offers", "offers.list"),
+            ("/offer-acceptances", "offer_acceptances.list"),
+            ("/trials", "trials.list"),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                PolicyAction::Inspect,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let transition_allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/trials/trial_1/status"),
+            Some("trials.transition"),
+        );
+        assert!(transition_allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN (
+                    'offers.write', 'offers.list', 'offer_acceptances.list',
+                    'trials.list', 'trials.transition'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 5);
     }
 }

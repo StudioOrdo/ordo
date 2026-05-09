@@ -30,6 +30,9 @@ The current codebase can already support substantial parts of this journey:
 - `live_eval_runner.rs` supports one guarded OpenAI-compatible smoke eval with
   `ORDO_LIVE_LLM_EVALS=1`, `ORDO_LIVE_LLM_ALLOW_NETWORK=1`, provider/model/key
   checks, max-case guard, budget guard, and artifact packets.
+- `live_eval_runner.rs` also supports a multi-case live journey planning
+  foundation that loads validated personas, applies guard/case/budget caps,
+  and writes a redacted manifest without executing the QR-to-trial journey.
 - `offers.rs` supports public offer acceptance and starts a 30-day trial by
   default.
 - `attribution.rs` records offer-acceptance outcomes and proposed attribution
@@ -47,8 +50,8 @@ The current codebase can already support substantial parts of this journey:
 
 Known gaps:
 
-- no persona markdown library or parser exists yet;
-- the live runner is intentionally one smoke case and rejects multiple cases;
+- the smoke eval remains one provider call, while multi-persona live journey
+  planning is implemented without provider execution;
 - no orchestrator runs the full QR-to-trial-to-review journey;
 - no outbound email adapter exists; review-request email should start as a
   redacted simulated artifact/link;
@@ -120,6 +123,33 @@ budget-constrained early adopter, affiliate/referrer, and dissatisfied trial
 user. Personas are fixtures, not truth. Their messages can create realistic
 pressure, but deterministic assertions and durable evidence remain
 authoritative.
+
+## Multi-Case Runner Foundation
+
+Status: implemented by #164.
+
+The multi-case live journey foundation plans persona-backed cases without
+running the product journey. It reuses the persona library and live guard
+contract, then writes a JSON manifest with:
+
+- source commit;
+- guard status and reason;
+- provider/model ids when guards allow planning;
+- persona library count;
+- selected persona ids;
+- max-case and budget cap summary;
+- estimated per-case and total cost;
+- planned case id per selected persona;
+- persona content hashes;
+- planned/skipped/blocked case status;
+- redaction detector metadata.
+
+Default behavior remains network-free. Missing live/network guards still load
+and validate personas, then write a skipped manifest. A budget overrun blocks
+before any provider or journey execution. Unknown persona ids are rejected as
+configuration errors. The actual QR scan, visitor session, live conversation,
+offer acceptance, trial, attribution, review-return, affiliate, handoff, and
+cross-run report workflows remain in #165-#169.
 
 ## Ethical Persuasion Boundary
 

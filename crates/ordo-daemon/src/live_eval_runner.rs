@@ -1,9 +1,10 @@
-use anyhow::{ensure, Result};
+use anyhow::{anyhow, ensure, Result};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -15,6 +16,7 @@ use crate::eval_harness::{
     DeterministicEvalClock, DeterministicEvalHarness, EvalActorRole, EvalArtifactPaths,
     EvalArtifactWriter, EvalAssertion, EvalCase, EvalEvidenceChannel, EvalStep,
 };
+use crate::eval_personas::{load_persona_dir, EvalPersona};
 use crate::llm_gateway::{
     LlmGateway, LlmGatewayRequest, LlmProviderAdapter, OpenAiCompatibleConfig,
     OpenAiCompatibleProvider, OpenAiCompatibleTransport, PromptSlot, ReqwestOpenAiTransport,
@@ -23,10 +25,12 @@ use crate::policy::ActorContext;
 
 pub const LIVE_EVAL_RUNNER_SCHEMA_VERSION: &str = "ordo.live_eval_runner.v1";
 pub const LIVE_OPENAI_SMOKE_CASE_ID: &str = "live_openai_compatible_smoke";
+pub const LIVE_JOURNEY_RUNNER_SCHEMA_VERSION: &str = "ordo.live_journey_runner.v1";
 
 const DEFAULT_MAX_CASES: u32 = 1;
 const DEFAULT_BUDGET_MICROS: u64 = 10_000;
 const ESTIMATED_CASE_COST_MICROS: u64 = 1_000;
+const ESTIMATED_JOURNEY_CASE_COST_MICROS: u64 = 1_000;
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +49,14 @@ pub struct LiveEvalGuardDecision {
     pub status: LiveEvalStatus,
     pub reason: String,
     pub network_enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveJourneyCaseStatus {
+    Planned,
+    Skipped,
+    Blocked,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,6 +252,394 @@ impl LiveEvalRunSummary {
             message: "live LLM eval did not run".to_string(),
         }
     }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveJourneyConfig {
+    pub provider_id: String,
+    pub model_id: String,
+    pub base_url: String,
+    pub timeout_ms: u64,
+    pub max_cases: u32,
+    pub budget_micros: u64,
+    pub api_key_configured: bool,
+}
+
+impl fmt::Debug for LiveJourneyConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LiveJourneyConfig")
+            .field("provider_id", &self.provider_id)
+            .field("model_id", &self.model_id)
+            .field("base_url", &self.base_url)
+            .field("timeout_ms", &self.timeout_ms)
+            .field("max_cases", &self.max_cases)
+            .field("budget_micros", &self.budget_micros)
+            .field("api_key_configured", &self.api_key_configured)
+            .finish()
+    }
+}
+
+impl LiveJourneyConfig {
+    pub fn from_env_map(
+        values: &BTreeMap<String, String>,
+    ) -> (LiveEvalGuardDecision, Option<Self>) {
+        let live_enabled = env_is_one(values, "ORDO_LIVE_LLM_EVALS");
+        if !live_enabled {
+            return (
+                skipped("ORDO_LIVE_LLM_EVALS=1 is required for live journey evals."),
+                None,
+            );
+        }
+        if !env_is_one(values, "ORDO_LIVE_LLM_ALLOW_NETWORK") {
+            return (
+                skipped("ORDO_LIVE_LLM_ALLOW_NETWORK=1 is required for live journey evals."),
+                None,
+            );
+        }
+
+        let provider_id =
+            env_trimmed(values, "ORDO_LIVE_LLM_PROVIDER").unwrap_or_else(|| "openai".to_string());
+        if provider_id != "openai" {
+            return (
+                blocked(format!(
+                    "unsupported live LLM provider {provider_id}; only openai is implemented"
+                )),
+                None,
+            );
+        }
+        let Some(model_id) = env_trimmed(values, "ORDO_LIVE_LLM_MODEL") else {
+            return (
+                blocked("ORDO_LIVE_LLM_MODEL is required for live journey evals."),
+                None,
+            );
+        };
+        if env_trimmed(values, "OPENAI_API_KEY")
+            .or_else(|| env_trimmed(values, "API__OPENAI_API_KEY"))
+            .is_none()
+        {
+            return (
+                blocked(
+                    "OPENAI_API_KEY or API__OPENAI_API_KEY is required for live journey evals.",
+                ),
+                None,
+            );
+        }
+
+        let max_cases = match parse_optional_u32(values, "ORDO_LIVE_LLM_MAX_CASES") {
+            Ok(value) => value.unwrap_or(DEFAULT_MAX_CASES),
+            Err(reason) => return (blocked(reason), None),
+        };
+        if max_cases == 0 {
+            return (
+                blocked("ORDO_LIVE_LLM_MAX_CASES must allow at least one case."),
+                None,
+            );
+        }
+
+        let budget_micros = match parse_optional_usd_micros(values, "ORDO_LIVE_LLM_BUDGET_USD") {
+            Ok(value) => value.unwrap_or(DEFAULT_BUDGET_MICROS),
+            Err(reason) => return (blocked(reason), None),
+        };
+        if budget_micros < ESTIMATED_JOURNEY_CASE_COST_MICROS {
+            return (
+                blocked(format!(
+                    "live journey budget is below the conservative per-case estimate of {ESTIMATED_JOURNEY_CASE_COST_MICROS} micros"
+                )),
+                None,
+            );
+        }
+
+        let timeout_ms = match parse_optional_u64(values, "ORDO_LIVE_LLM_TIMEOUT_MS") {
+            Ok(value) => value.unwrap_or(30_000),
+            Err(reason) => return (blocked(reason), None),
+        };
+        if timeout_ms == 0 {
+            return (blocked("ORDO_LIVE_LLM_TIMEOUT_MS must be positive."), None);
+        }
+
+        (
+            LiveEvalGuardDecision {
+                status: LiveEvalStatus::Allowed,
+                reason: "live journey eval guards satisfied".to_string(),
+                network_enabled: true,
+            },
+            Some(Self {
+                provider_id,
+                model_id,
+                base_url: env_trimmed(values, "ORDO_LIVE_LLM_BASE_URL")
+                    .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
+                timeout_ms,
+                max_cases,
+                budget_micros,
+                api_key_configured: true,
+            }),
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveJourneyPlanRequest {
+    pub persona_dir: PathBuf,
+    pub selected_persona_ids: Vec<String>,
+    pub output_dir: PathBuf,
+    pub source_commit: String,
+    pub private_terms: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlannedLiveJourneyCase {
+    pub case_id: String,
+    pub persona_id: String,
+    pub persona_content_hash: String,
+    pub person_type: String,
+    pub expected_pressure_subsystems: Vec<String>,
+    pub status: LiveJourneyCaseStatus,
+    pub estimated_case_cost_micros: u64,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveJourneyBudgetSummary {
+    pub max_cases: u32,
+    pub selected_persona_count: usize,
+    pub planned_case_count: usize,
+    pub budget_micros: u64,
+    pub estimated_case_cost_micros: u64,
+    pub estimated_total_cost_micros: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveJourneyRunManifest {
+    pub schema_version: String,
+    pub source_commit: String,
+    pub guard: LiveEvalGuardDecision,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub persona_library_count: usize,
+    pub selected_persona_ids: Vec<String>,
+    pub budget: LiveJourneyBudgetSummary,
+    pub planned_cases: Vec<PlannedLiveJourneyCase>,
+    pub redaction_detectors: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveJourneyRunSummary {
+    pub schema_version: String,
+    pub status: LiveEvalStatus,
+    pub guard: LiveEvalGuardDecision,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub persona_library_count: usize,
+    pub selected_persona_count: usize,
+    pub planned_case_count: usize,
+    pub budget_micros: Option<u64>,
+    pub estimated_total_cost_micros: u64,
+    pub manifest_path: Option<String>,
+    pub message: String,
+}
+
+pub fn plan_live_journey_from_env_map(
+    env_values: &BTreeMap<String, String>,
+    request: LiveJourneyPlanRequest,
+) -> Result<LiveJourneyRunSummary> {
+    let personas = load_persona_dir(&request.persona_dir, &request.private_terms)?;
+    let (guard, config) = LiveJourneyConfig::from_env_map(env_values);
+    let selected_personas = select_personas(&personas, &request.selected_persona_ids)?;
+
+    match config {
+        Some(config) => write_live_journey_manifest(LiveJourneyManifestInput {
+            guard,
+            provider_id: Some(config.provider_id),
+            model_id: Some(config.model_id),
+            max_cases: config.max_cases,
+            budget_micros: config.budget_micros,
+            persona_library_count: personas.len(),
+            selected_personas,
+            request,
+        }),
+        None => write_live_journey_manifest(LiveJourneyManifestInput {
+            guard,
+            provider_id: None,
+            model_id: None,
+            max_cases: DEFAULT_MAX_CASES,
+            budget_micros: 0,
+            persona_library_count: personas.len(),
+            selected_personas,
+            request,
+        }),
+    }
+}
+
+struct LiveJourneyManifestInput {
+    guard: LiveEvalGuardDecision,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    max_cases: u32,
+    budget_micros: u64,
+    persona_library_count: usize,
+    selected_personas: Vec<EvalPersona>,
+    request: LiveJourneyPlanRequest,
+}
+
+fn write_live_journey_manifest(input: LiveJourneyManifestInput) -> Result<LiveJourneyRunSummary> {
+    let capped_personas = input
+        .selected_personas
+        .iter()
+        .take(input.max_cases as usize)
+        .cloned()
+        .collect::<Vec<_>>();
+    let estimated_total_cost_micros =
+        ESTIMATED_JOURNEY_CASE_COST_MICROS.saturating_mul(capped_personas.len() as u64);
+
+    let mut manifest_guard = input.guard;
+    if manifest_guard.status == LiveEvalStatus::Allowed
+        && input.budget_micros < estimated_total_cost_micros
+    {
+        manifest_guard = blocked(format!(
+            "live journey budget would be exceeded before execution: estimated {estimated_total_cost_micros} micros for {} cases with budget {} micros",
+            capped_personas.len(),
+            input.budget_micros
+        ));
+    }
+
+    let planned_cases = capped_personas
+        .iter()
+        .map(|persona| planned_case_for_persona(persona, &manifest_guard))
+        .collect::<Vec<_>>();
+    let selected_persona_ids = input
+        .selected_personas
+        .iter()
+        .map(|persona| persona.persona_id.clone())
+        .collect::<Vec<_>>();
+
+    let manifest = LiveJourneyRunManifest {
+        schema_version: LIVE_JOURNEY_RUNNER_SCHEMA_VERSION.to_string(),
+        source_commit: input.request.source_commit,
+        guard: manifest_guard.clone(),
+        provider_id: input.provider_id.clone(),
+        model_id: input.model_id.clone(),
+        persona_library_count: input.persona_library_count,
+        selected_persona_ids,
+        budget: LiveJourneyBudgetSummary {
+            max_cases: input.max_cases,
+            selected_persona_count: input.selected_personas.len(),
+            planned_case_count: planned_cases.len(),
+            budget_micros: input.budget_micros,
+            estimated_case_cost_micros: ESTIMATED_JOURNEY_CASE_COST_MICROS,
+            estimated_total_cost_micros,
+        },
+        planned_cases,
+        redaction_detectors: vec![
+            "email".to_string(),
+            "phone".to_string(),
+            "auth-token-shaped".to_string(),
+            "api-key-shaped".to_string(),
+            "private_term".to_string(),
+        ],
+    };
+
+    ensure_manifest_is_safe(&manifest, &input.request.private_terms)?;
+    fs::create_dir_all(&input.request.output_dir)?;
+    let manifest_path = input.request.output_dir.join("live-journey-manifest.json");
+    let encoded = serde_json::to_string_pretty(&manifest)?;
+    fs::write(&manifest_path, encoded)?;
+
+    Ok(LiveJourneyRunSummary {
+        schema_version: LIVE_JOURNEY_RUNNER_SCHEMA_VERSION.to_string(),
+        status: manifest_guard.status.clone(),
+        guard: manifest_guard,
+        provider_id: input.provider_id,
+        model_id: input.model_id,
+        persona_library_count: input.persona_library_count,
+        selected_persona_count: manifest.budget.selected_persona_count,
+        planned_case_count: manifest.budget.planned_case_count,
+        budget_micros: Some(input.budget_micros),
+        estimated_total_cost_micros,
+        manifest_path: Some(manifest_path.to_string_lossy().to_string()),
+        message: match manifest.status_label() {
+            "allowed" => "live journey cases planned; execution remains deferred to later phases",
+            "blocked" => "live journey planning blocked before provider execution",
+            "skipped" => "live journey planning skipped before provider execution",
+            _ => "live journey planning did not execute provider work",
+        }
+        .to_string(),
+    })
+}
+
+impl LiveJourneyRunManifest {
+    fn status_label(&self) -> &'static str {
+        match self.guard.status {
+            LiveEvalStatus::Allowed => "allowed",
+            LiveEvalStatus::Blocked => "blocked",
+            LiveEvalStatus::Skipped => "skipped",
+            LiveEvalStatus::Completed | LiveEvalStatus::Failed => "terminal",
+        }
+    }
+}
+
+fn select_personas(personas: &[EvalPersona], selected_ids: &[String]) -> Result<Vec<EvalPersona>> {
+    if selected_ids.is_empty() {
+        return Ok(personas.to_vec());
+    }
+
+    let by_id = personas
+        .iter()
+        .map(|persona| (persona.persona_id.as_str(), persona))
+        .collect::<BTreeMap<_, _>>();
+    let mut selected = Vec::new();
+    for id in selected_ids {
+        let Some(persona) = by_id.get(id.as_str()) else {
+            return Err(anyhow!("unknown live journey persona id {id}"));
+        };
+        selected.push((*persona).clone());
+    }
+    Ok(selected)
+}
+
+fn planned_case_for_persona(
+    persona: &EvalPersona,
+    guard: &LiveEvalGuardDecision,
+) -> PlannedLiveJourneyCase {
+    let case_status = match guard.status {
+        LiveEvalStatus::Allowed => LiveJourneyCaseStatus::Planned,
+        LiveEvalStatus::Skipped => LiveJourneyCaseStatus::Skipped,
+        LiveEvalStatus::Blocked | LiveEvalStatus::Completed | LiveEvalStatus::Failed => {
+            LiveJourneyCaseStatus::Blocked
+        }
+    };
+    PlannedLiveJourneyCase {
+        case_id: format!("live_journey_{}", persona.persona_id),
+        persona_id: persona.persona_id.clone(),
+        persona_content_hash: persona.content_hash.clone(),
+        person_type: persona.person_type.clone(),
+        expected_pressure_subsystems: persona
+            .expected_eval_pressure_subsystems
+            .iter()
+            .map(|subsystem| subsystem.as_str().to_string())
+            .collect(),
+        status: case_status,
+        estimated_case_cost_micros: ESTIMATED_JOURNEY_CASE_COST_MICROS,
+        note: "Planning only; QR-to-trial execution is deferred to #165.".to_string(),
+    }
+}
+
+fn ensure_manifest_is_safe(
+    manifest: &LiveJourneyRunManifest,
+    private_terms: &[String],
+) -> Result<()> {
+    let value = serde_json::to_value(manifest)?;
+    ensure!(
+        !contains_sensitive_value(&value, private_terms),
+        "live journey manifest contains raw sensitive value"
+    );
+    Ok(())
 }
 
 pub fn run_live_openai_eval_from_env(
@@ -594,6 +994,80 @@ fn parse_usd_micros(raw: &str) -> Option<u64> {
     dollar_micros.checked_add(fraction_micros)
 }
 
+fn contains_sensitive_value(value: &Value, private_terms: &[String]) -> bool {
+    match value {
+        Value::String(text) => text_contains_sensitive_value(text, private_terms),
+        Value::Array(items) => items
+            .iter()
+            .any(|item| contains_sensitive_value(item, private_terms)),
+        Value::Object(map) => map
+            .values()
+            .any(|item| contains_sensitive_value(item, private_terms)),
+        _ => false,
+    }
+}
+
+fn text_contains_sensitive_value(text: &str, private_terms: &[String]) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if private_terms.iter().any(|term| {
+        let term = term.trim().to_ascii_lowercase();
+        !term.is_empty() && lower.contains(&term)
+    }) {
+        return true;
+    }
+    text.split_whitespace().any(|token| {
+        let trimmed = token.trim_matches(|character: char| {
+            matches!(
+                character,
+                '"' | '\''
+                    | ','
+                    | '.'
+                    | ';'
+                    | ':'
+                    | '{'
+                    | '}'
+                    | '['
+                    | ']'
+                    | '('
+                    | ')'
+                    | '<'
+                    | '>'
+                    | '!'
+            )
+        });
+        looks_like_email(trimmed) || looks_like_phone(trimmed) || looks_like_secret(trimmed)
+    })
+}
+
+fn looks_like_email(value: &str) -> bool {
+    let Some((local, domain)) = value.split_once('@') else {
+        return false;
+    };
+    !local.is_empty() && domain.contains('.') && !domain.ends_with('.')
+}
+
+fn looks_like_phone(value: &str) -> bool {
+    let digit_count = value
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .count();
+    digit_count >= 10
+        && value
+            .chars()
+            .all(|character| character.is_ascii_digit() || "()+-. ".contains(character))
+}
+
+fn looks_like_secret(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.starts_with("sk-")
+        || lower.starts_with("api_")
+        || lower.starts_with("pat_")
+        || lower.starts_with("ghp_")
+        || lower == "bearer"
+        || lower.starts_with("bearer_")
+        || lower.starts_with("bearer-")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,6 +1136,28 @@ mod tests {
             ("ORDO_LIVE_LLM_MAX_CASES".to_string(), "1".to_string()),
             ("ORDO_LIVE_LLM_BUDGET_USD".to_string(), "0.01".to_string()),
         ])
+    }
+
+    fn personas_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("docs/evals/personas")
+    }
+
+    fn journey_request(
+        output_dir: &Path,
+        selected_persona_ids: Vec<String>,
+    ) -> LiveJourneyPlanRequest {
+        LiveJourneyPlanRequest {
+            persona_dir: personas_dir(),
+            selected_persona_ids,
+            output_dir: output_dir.to_path_buf(),
+            source_commit: "test-commit".to_string(),
+            private_terms: vec![
+                "Project Orchid".to_string(),
+                "sk-live-secret-value".to_string(),
+            ],
+        }
     }
 
     #[test]
@@ -766,5 +1262,133 @@ mod tests {
         assert_eq!(summary.attempted_cases, 0);
         assert!(!summary.guard.network_enabled);
         assert!(summary.packet_path.is_none());
+    }
+
+    #[test]
+    fn live_journey_planner_loads_personas_and_limits_by_max_cases() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut env = allowed_env();
+        env.insert("ORDO_LIVE_LLM_MAX_CASES".to_string(), "3".to_string());
+        env.insert("ORDO_LIVE_LLM_BUDGET_USD".to_string(), "0.01".to_string());
+        let summary =
+            plan_live_journey_from_env_map(&env, journey_request(temp_dir.path(), Vec::new()))
+                .unwrap();
+
+        assert_eq!(summary.status, LiveEvalStatus::Allowed);
+        assert_eq!(summary.persona_library_count, 10);
+        assert_eq!(summary.selected_persona_count, 10);
+        assert_eq!(summary.planned_case_count, 3);
+        assert_eq!(summary.estimated_total_cost_micros, 3_000);
+
+        let manifest_path = summary.manifest_path.as_ref().unwrap();
+        let manifest_json = fs::read_to_string(manifest_path).unwrap();
+        let manifest: LiveJourneyRunManifest = serde_json::from_str(&manifest_json).unwrap();
+        assert_eq!(manifest.planned_cases.len(), 3);
+        assert_eq!(
+            manifest.planned_cases[0].persona_id,
+            "affiliate_referrer_community"
+        );
+        assert_eq!(
+            manifest.planned_cases[0].status,
+            LiveJourneyCaseStatus::Planned
+        );
+        assert!(manifest.planned_cases[0]
+            .case_id
+            .starts_with("live_journey_"));
+        assert!(manifest.planned_cases[0]
+            .persona_content_hash
+            .starts_with("sha256:"));
+        assert_eq!(manifest.provider_id.as_deref(), Some("openai"));
+        assert_eq!(manifest.model_id.as_deref(), Some("gpt-test"));
+        assert!(!manifest_json.contains("sk-live-secret-value"));
+        assert!(!manifest_json.contains("Project Orchid"));
+        assert!(!manifest_json.contains("Maya is used to software demos"));
+    }
+
+    #[test]
+    fn live_journey_planner_skips_without_guards_without_network() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let summary = plan_live_journey_from_env_map(
+            &BTreeMap::new(),
+            journey_request(temp_dir.path(), Vec::new()),
+        )
+        .unwrap();
+
+        assert_eq!(summary.status, LiveEvalStatus::Skipped);
+        assert!(!summary.guard.network_enabled);
+        assert_eq!(summary.persona_library_count, 10);
+        assert_eq!(summary.planned_case_count, 1);
+        let manifest_json = fs::read_to_string(summary.manifest_path.unwrap()).unwrap();
+        let manifest: LiveJourneyRunManifest = serde_json::from_str(&manifest_json).unwrap();
+        assert_eq!(
+            manifest.planned_cases[0].status,
+            LiveJourneyCaseStatus::Skipped
+        );
+        assert!(manifest.provider_id.is_none());
+    }
+
+    #[test]
+    fn live_journey_planner_rejects_unknown_persona_id() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let error = plan_live_journey_from_env_map(
+            &allowed_env(),
+            journey_request(temp_dir.path(), vec!["missing_persona".to_string()]),
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("unknown live journey persona id missing_persona"));
+    }
+
+    #[test]
+    fn live_journey_planner_blocks_budget_overrun_before_execution() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut env = allowed_env();
+        env.insert("ORDO_LIVE_LLM_MAX_CASES".to_string(), "3".to_string());
+        env.insert("ORDO_LIVE_LLM_BUDGET_USD".to_string(), "0.002".to_string());
+        let summary =
+            plan_live_journey_from_env_map(&env, journey_request(temp_dir.path(), Vec::new()))
+                .unwrap();
+
+        assert_eq!(summary.status, LiveEvalStatus::Blocked);
+        assert!(summary.guard.reason.contains("budget would be exceeded"));
+        assert_eq!(summary.planned_case_count, 3);
+        let manifest_json = fs::read_to_string(summary.manifest_path.unwrap()).unwrap();
+        let manifest: LiveJourneyRunManifest = serde_json::from_str(&manifest_json).unwrap();
+        assert!(manifest
+            .planned_cases
+            .iter()
+            .all(|case| case.status == LiveJourneyCaseStatus::Blocked));
+    }
+
+    #[test]
+    fn live_journey_planner_respects_explicit_persona_selection_order() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut env = allowed_env();
+        env.insert("ORDO_LIVE_LLM_MAX_CASES".to_string(), "5".to_string());
+        let selected = vec![
+            "solo_consultant_followup".to_string(),
+            "agency_operator_pipeline".to_string(),
+        ];
+        let summary = plan_live_journey_from_env_map(
+            &env,
+            journey_request(temp_dir.path(), selected.clone()),
+        )
+        .unwrap();
+
+        assert_eq!(summary.status, LiveEvalStatus::Allowed);
+        assert_eq!(summary.selected_persona_count, 2);
+        assert_eq!(summary.planned_case_count, 2);
+        let manifest_json = fs::read_to_string(summary.manifest_path.unwrap()).unwrap();
+        let manifest: LiveJourneyRunManifest = serde_json::from_str(&manifest_json).unwrap();
+        assert_eq!(manifest.selected_persona_ids, selected);
+        assert_eq!(
+            manifest.planned_cases[0].persona_id,
+            "solo_consultant_followup"
+        );
+        assert_eq!(
+            manifest.planned_cases[1].persona_id,
+            "agency_operator_pipeline"
+        );
     }
 }

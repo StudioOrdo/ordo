@@ -63,6 +63,54 @@ export interface ConversationQueueRow {
   episode: ConversationEpisode;
 }
 
+export type ConversationMessageAuthor = "client" | "staff" | "assistant";
+export type ConversationMessageState = "pending" | "persisted" | "read" | "failed" | "deleted";
+
+export interface ConversationReaction {
+  key: string;
+  label: string;
+  count: number;
+  selectedByViewer: boolean;
+}
+
+export interface ConversationMessage {
+  id: string;
+  clientId?: string;
+  author: ConversationMessageAuthor;
+  authorLabel: string;
+  body: string;
+  occurredAt: string;
+  sequence: number;
+  state: ConversationMessageState;
+  edited: boolean;
+  canEdit: boolean;
+  canUndo: boolean;
+  receiptLabel: string;
+  reactions: readonly ConversationReaction[];
+}
+
+export interface ConversationDetail {
+  conversationId: string;
+  participantId: string;
+  title: string;
+  subtitle: string;
+  mode: ConversationMode;
+  connectionLabel: string;
+  narrativeBrief: {
+    whatIsHappening: string;
+    whatChanged: string;
+    nextStep: string;
+    whyItMatters: string;
+    evidence: string;
+    limitation: string;
+  };
+  messages: readonly ConversationMessage[];
+  typing: readonly string[];
+  presence: readonly string[];
+  unreadFromSequence: number;
+  lastReadSequence: number;
+}
+
 export const conversationQueues: readonly ConversationQueue[] = [
   {
     id: "my-handoffs",
@@ -148,6 +196,137 @@ export const sampleConversationRows: readonly ConversationQueueRow[] = [
     },
   },
 ];
+
+export const sampleConversationDetails: Record<string, ConversationDetail> = {
+  conv_ava: {
+    conversationId: "conv_ava",
+    participantId: "participant_keith",
+    title: "Your conversation with Studio Ordo",
+    subtitle: "Ava Thompson · Starter offer and QR card proof",
+    mode: "human_led_active",
+    connectionLabel: "Ava Thompson",
+    unreadFromSequence: 3,
+    lastReadSequence: 2,
+    typing: ["Ava is typing"],
+    presence: ["Keith here", "Ava available now"],
+    narrativeBrief: {
+      whatIsHappening: "Ava is evaluating the Starter offer and asked whether a metal QR card is included.",
+      whatChanged: "The conversation moved from general interest to a purchase-intent pricing question.",
+      nextStep: "Confirm the trial scope, name the metal card add-on, and ask whether she wants the first proof.",
+      whyItMatters: "A precise answer can turn the offer view into a concrete deliverable without inventing terms.",
+      evidence: "message_ava_14, offer_view_starter_3, artifact_qr_card_1",
+      limitation: "Custom card pricing must be confirmed before a final quote is promised.",
+    },
+    messages: [
+      {
+        id: "message_ava_12",
+        author: "assistant",
+        authorLabel: "Ordo Assistant",
+        body: "The Starter trial covers the first public profile, the offer page, and a digital QR proof.",
+        occurredAt: "9:42 AM",
+        sequence: 1,
+        state: "read",
+        edited: false,
+        canEdit: false,
+        canUndo: false,
+        receiptLabel: "Read",
+        reactions: [],
+      },
+      {
+        id: "message_ava_13",
+        author: "client",
+        authorLabel: "Ava",
+        body: "That helps. I care most about the card people can scan at events.",
+        occurredAt: "9:44 AM",
+        sequence: 2,
+        state: "read",
+        edited: false,
+        canEdit: false,
+        canUndo: false,
+        receiptLabel: "Read",
+        reactions: [{ key: "useful", label: "Useful", count: 1, selectedByViewer: false }],
+      },
+      {
+        id: "message_ava_14",
+        author: "client",
+        authorLabel: "Ava",
+        body: "Are metal QR cards included, or is that a separate add-on?",
+        occurredAt: "9:46 AM",
+        sequence: 3,
+        state: "persisted",
+        edited: false,
+        canEdit: false,
+        canUndo: false,
+        receiptLabel: "Delivered",
+        reactions: [],
+      },
+      {
+        id: "message_keith_15",
+        author: "staff",
+        authorLabel: "Keith",
+        body: "Metal cards are a separate add-on. The trial includes the digital proof so you can approve the destination before we produce anything physical.",
+        occurredAt: "9:48 AM",
+        sequence: 4,
+        state: "persisted",
+        edited: false,
+        canEdit: true,
+        canUndo: true,
+        receiptLabel: "Delivered",
+        reactions: [{ key: "clear", label: "Clear", count: 1, selectedByViewer: true }],
+      },
+    ],
+  },
+  conv_marcus: {
+    conversationId: "conv_marcus",
+    participantId: "participant_keith",
+    title: "Your conversation with Studio Ordo",
+    subtitle: "Marcus Reed · Local-business beta referral",
+    mode: "needs_handoff",
+    connectionLabel: "Marcus Reed",
+    unreadFromSequence: 0,
+    lastReadSequence: 3,
+    typing: [],
+    presence: ["Marcus replies soon"],
+    narrativeBrief: {
+      whatIsHappening: "Marcus offered a referral after reading the local-business beta ask.",
+      whatChanged: "The conversation now needs consent and a clean introduction path before attribution.",
+      nextStep: "Thank Marcus, ask permission to mention him, and request the best way to introduce the business.",
+      whyItMatters: "Referral attribution should be evidence-backed before it becomes an outcome candidate.",
+      evidence: "message_marcus_7, ask_view_beta_2",
+      limitation: "Do not record the referred person as confirmed without consent and contact details.",
+    },
+    messages: [
+      {
+        id: "message_marcus_5",
+        author: "assistant",
+        authorLabel: "Ordo Assistant",
+        body: "The beta ask is looking for local operators who already have customer attention but need a clearer public surface.",
+        occurredAt: "Yesterday",
+        sequence: 1,
+        state: "read",
+        edited: false,
+        canEdit: false,
+        canUndo: false,
+        receiptLabel: "Read",
+        reactions: [],
+      },
+      {
+        id: "message_marcus_7",
+        author: "client",
+        authorLabel: "Marcus",
+        body: "I know a shop owner who might be perfect for this. Want an intro?",
+        occurredAt: "Today",
+        sequence: 2,
+        state: "persisted",
+        edited: false,
+        canEdit: false,
+        canUndo: false,
+        receiptLabel: "Delivered",
+        reactions: [{ key: "lead", label: "Lead", count: 1, selectedByViewer: false }],
+      },
+    ],
+  },
+};
 
 export function defaultQueueForRole(role: string): ConversationQueueId {
   if (role === "admin") {

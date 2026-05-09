@@ -117,6 +117,11 @@ test("Client chat keeps one relationship conversation and hides staff rails", as
   await expect(page.getByRole("navigation", { name: "Public and member navigation" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your conversation with Studio Ordo" })).toBeVisible();
   await expect(page.locator("main")).toContainText("single relationship conversation");
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Are metal QR cards included");
+  await page.getByLabel("Write a reply").fill("Please send me the digital proof.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Please send me the digital proof.");
+  await expect(page.getByLabel("Conversation timeline")).toContainText(/Ack message_submit_/);
   await expect(page.getByRole("navigation", { name: "Staff business navigation" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("Logs");
@@ -136,6 +141,46 @@ test("Staff navigation defaults to handoff work before relationship memory", asy
   await expect(page.locator("main")).toContainText("My Handoffs");
   await expect(page.locator("main")).toContainText("Why this is here");
   await expect(page.locator("main")).toContainText("Handoff Brief");
+});
+
+test("Premium conversation UI supports edit, undo, retry, unread, reactions, and presence", async ({ page }) => {
+  await page.goto("/conversations?role=staff");
+
+  await expect(page.getByLabel("Conversation workspace")).toBeVisible();
+  await expect(page.getByLabel("Narrative brief")).toContainText("What is happening");
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Ava is typing");
+  await expect(page.locator(".unread-divider")).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit" }).first().click();
+  await page.getByLabel("Edit message").fill("Metal cards are a separate add-on. I can send the first digital proof today.");
+  await page.getByRole("button", { name: "Save edit" }).click();
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Edited");
+  await expect(page.getByLabel("Conversation timeline")).toContainText("first digital proof today");
+
+  await page.getByRole("button", { name: "Ack" }).first().click();
+  await expect(page.getByRole("button", { name: /Ack 1/ }).first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Mark unread" }).first().click();
+  await expect(page.locator(".unread-divider")).toBeVisible();
+
+  await page.getByRole("button", { name: "Undo" }).first().click();
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Message undone");
+
+  await page.getByLabel("Write a reply").fill("fail this command");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByRole("status")).toContainText("Gateway rejected command");
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByLabel("Conversation timeline")).toContainText("Retried");
+});
+
+test("Conversation core mobile layout avoids horizontal overflow", async ({ page }) => {
+  await page.goto("/chat?role=client");
+
+  await expect(page.getByLabel("Conversation workspace")).toBeVisible();
+  await expect(page.getByLabel("Conversation composer")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
 });
 
 test("Admin role can access appliance system rail without leaking it to clients", async ({ page }) => {

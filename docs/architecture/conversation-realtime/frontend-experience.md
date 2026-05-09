@@ -1,6 +1,7 @@
 # Conversation Frontend Experience
 
-Status: Draft product and interaction contract
+Status: Product and interaction contract with the first premium UI core
+implemented for the local conversation gateway slice.
 
 The conversation UI should feel fast, polished, and emotionally legible while
 remaining operational. It should be the primary working surface, not a landing
@@ -349,3 +350,33 @@ authority claims, or urgency that is not backed by real constraints.
 - No persistent draft sync until privacy and retention rules are explicit.
 - No generic CRM dashboard.
 - No fake analytics, fake urgency, or hidden persuasion mechanics.
+
+## Implemented UI Core
+
+The first implementation slice renders the conversation product surface on
+`/chat` and `/conversations` using the `conversation.gateway.v1` contract as the
+frontend command model. The browser smoke fixture uses deterministic local
+gateway behavior instead of a live provider so it can validate UI state without
+inventing a parallel protocol.
+
+Implemented behavior:
+
+- client chat keeps one relationship conversation and hides staff/admin rails;
+- staff conversation work starts from queues and opens a narrative handoff brief
+  before the transcript;
+- timeline states render pending-style local echo, persisted/read receipts,
+  edited labels, undo tombstones, reactions, unread divider, presence, typing,
+  and structured gateway rejection with retry;
+- composer supports optimistic send, enter-to-send, disabled state while
+  sending, command rejection, and retry reconciliation by `clientId`;
+- smoke coverage exercises desktop and mobile layout, edit, undo, reactions,
+  mark read/unread affordances, typing/presence, retry, and role-gated
+  navigation.
+
+Deferred behavior:
+
+- live daemon WebSocket binding in the browser hook;
+- provider/LLM streaming and tool approval UI;
+- durable attachment/artifact insertion;
+- delivered/displayed precision across multiple devices;
+- persistent draft sync.

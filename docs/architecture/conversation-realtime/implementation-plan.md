@@ -184,6 +184,14 @@ Exit criteria:
 
 ## Phase 6: Privacy Egress Firewall
 
+Status: foundation implemented in the #93 slice. Provider-bound user and prompt
+slot payloads now pass through a daemon-owned privacy egress firewall before the
+provider adapter sees them. The foundation detects obvious API keys, bearer
+tokens, emails, phone numbers, and configured private terms; replaces them with
+scoped placeholders; stores mappings through the local encrypted vault boundary;
+emits metadata-only durable privacy events; and reconstructs placeholders only
+on the local return path for matching transform scope.
+
 Deliverables:
 
 - Add transform run and placeholder tables.

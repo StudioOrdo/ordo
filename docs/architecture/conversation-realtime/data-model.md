@@ -514,6 +514,14 @@ Indexes:
 
 Records each egress privacy transform before provider calls.
 
+Status: event-sourced foundation implemented in the #93 slice. The current
+implementation records transform run metadata as durable
+`privacy.egress.transformed` conversation events and stores placeholder mappings
+as encrypted `vault_items` with metadata for transform id, placeholder, detector
+kind, scope, and content hash. Dedicated `privacy_transform_runs` and
+`privacy_placeholders` tables remain planned for query-optimized privacy and
+token-ledger work.
+
 Columns:
 
 - `id TEXT PRIMARY KEY`
@@ -531,6 +539,10 @@ Columns:
 ### `privacy_placeholders`
 
 Stores encrypted mappings for reversible reconstruction.
+
+Status: encrypted vault-backed foundation implemented. Raw sensitive values are
+stored only as encrypted vault item values; event, realtime, policy, and
+metadata payloads carry hashes and placeholders rather than raw spans.
 
 Columns:
 

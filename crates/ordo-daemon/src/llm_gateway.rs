@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::path::Path;
 use uuid::Uuid;
 
 use crate::capabilities::{
@@ -23,6 +24,10 @@ use crate::events::RealtimeEvent;
 use crate::policy::{
     record_policy_decision, ActorContext, PolicyAction, PolicyDecision, PolicyDecisionCorrelation,
     PolicyOutcome, ResourceKind, ResourceRef,
+};
+use crate::privacy_egress::{
+    stable_hash as privacy_stable_hash, PrivacyEgressFirewall, PrivacyEgressScope,
+    PrivacyEgressTransform,
 };
 
 pub const LLM_INVOKE_CAPABILITY_ID: &str = "llm.invoke";
@@ -327,6 +332,7 @@ pub struct LlmGateway<P> {
     provider: P,
     invoke_policy: LlmPolicy,
     cancel_policy: LlmPolicy,
+    privacy_firewall: PrivacyEgressFirewall,
 }
 
 struct LlmToolTransition<'a> {
@@ -336,12 +342,20 @@ struct LlmToolTransition<'a> {
     reason: &'a str,
 }
 
+#[derive(Debug, Clone)]
+struct ProviderPrivacyPayload {
+    prompt: CompiledPrompt,
+    user_message: String,
+    transforms: Vec<PrivacyEgressTransform>,
+}
+
 impl<P: LlmProviderAdapter> LlmGateway<P> {
     pub fn new(provider: P) -> Self {
         Self {
             provider,
             invoke_policy: LlmPolicy::allow("LLM invocation allowed by daemon gateway policy."),
             cancel_policy: LlmPolicy::allow("LLM cancellation allowed by daemon gateway policy."),
+            privacy_firewall: PrivacyEgressFirewall::default(),
         }
     }
 
@@ -350,11 +364,18 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
             provider,
             invoke_policy,
             cancel_policy,
+            privacy_firewall: PrivacyEgressFirewall::default(),
         }
+    }
+
+    pub fn with_private_terms(mut self, private_terms: Vec<String>) -> Self {
+        self.privacy_firewall = PrivacyEgressFirewall::new(private_terms);
+        self
     }
 
     pub fn run_completion(
         &self,
+        db_path: &Path,
         connection: &Connection,
         actor: &ActorContext,
         request: LlmGatewayRequest,
@@ -395,6 +416,50 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
         }
 
         let prompt = compile_prompt(&request.prompt_slots)?;
+        let privacy = match transform_provider_payload(
+            &self.privacy_firewall,
+            db_path,
+            connection,
+            &request,
+            &prompt,
+        ) {
+            Ok(privacy) => privacy,
+            Err(error) => {
+                let frames = vec![
+                    persist_dispatch(
+                        connection,
+                        &request.conversation_id,
+                        request.segment_id.as_deref(),
+                        "privacy.egress.blocked",
+                        json!({
+                            "runId": request.run_id,
+                            "reason": "Provider-bound payload failed privacy egress transform.",
+                            "errorHash": stable_content_hash(&error.to_string()),
+                        }),
+                        Some(&policy_decision_id),
+                    )?,
+                    persist_dispatch(
+                        connection,
+                        &request.conversation_id,
+                        request.segment_id.as_deref(),
+                        "llm.run.failed",
+                        json!({
+                            "runId": request.run_id,
+                            "code": "privacy_transform_failed",
+                            "message": "Provider-bound payload failed privacy egress transform.",
+                        }),
+                        Some(&policy_decision_id),
+                    )?,
+                ];
+                return Ok(LlmGatewayRunResult {
+                    run_id: request.run_id,
+                    policy_decision_id,
+                    prompt: Some(prompt),
+                    final_message: None,
+                    frames,
+                });
+            }
+        };
         let mut frames = Vec::new();
         frames.push(persist_dispatch(
             connection,
@@ -439,6 +504,16 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
                 Some(&policy_decision_id),
             )?);
         }
+        for transform in &privacy.transforms {
+            frames.push(persist_dispatch(
+                connection,
+                &request.conversation_id,
+                request.segment_id.as_deref(),
+                "privacy.egress.transformed",
+                privacy_transform_event_payload(&request.run_id, transform),
+                Some(&policy_decision_id),
+            )?);
+        }
         frames.push(persist_dispatch(
             connection,
             &request.conversation_id,
@@ -456,8 +531,8 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
             run_id: request.run_id.clone(),
             provider_id: request.provider_id.clone(),
             model_id: request.model_id.clone(),
-            prompt: prompt.clone(),
-            user_message: request.user_message.clone(),
+            prompt: privacy.prompt.clone(),
+            user_message: privacy.user_message.clone(),
         };
         let stream = self.provider.stream(&provider_request)?;
         let mut completed_text = None;
@@ -505,7 +580,12 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
             }
         }
 
-        let completed_text = completed_text.unwrap_or_default();
+        let completed_text = reconstruct_provider_text(
+            db_path,
+            connection,
+            &privacy.transforms,
+            completed_text.unwrap_or_default(),
+        )?;
         require_text("completed assistant text", &completed_text)?;
         let final_message = create_conversation_message(
             connection,
@@ -903,6 +983,79 @@ pub fn compile_prompt(slots: &[PromptSlot]) -> Result<CompiledPrompt> {
     })
 }
 
+fn transform_provider_payload(
+    firewall: &PrivacyEgressFirewall,
+    db_path: &Path,
+    connection: &Connection,
+    request: &LlmGatewayRequest,
+    prompt: &CompiledPrompt,
+) -> Result<ProviderPrivacyPayload> {
+    let scope = PrivacyEgressScope {
+        scope_kind: "llm_run".to_string(),
+        scope_id: request.run_id.clone(),
+    };
+    let user_transform =
+        firewall.transform_payload(db_path, connection, scope.clone(), &request.user_message)?;
+    let mut transformed_slots = Vec::new();
+    let mut transforms = vec![user_transform.clone()];
+    for slot in &prompt.slots {
+        let transform =
+            firewall.transform_payload(db_path, connection, scope.clone(), &slot.content)?;
+        let mut transformed_slot = slot.clone();
+        transformed_slot.content = transform.transformed_payload.clone();
+        transformed_slot.content_hash = stable_content_hash(&transformed_slot.content);
+        transformed_slots.push(transformed_slot);
+        transforms.push(transform);
+    }
+    let transformed_prompt = compile_prompt(&transformed_slots)?;
+    Ok(ProviderPrivacyPayload {
+        prompt: transformed_prompt,
+        user_message: user_transform.transformed_payload,
+        transforms,
+    })
+}
+
+fn reconstruct_provider_text(
+    db_path: &Path,
+    connection: &Connection,
+    transforms: &[PrivacyEgressTransform],
+    mut payload: String,
+) -> Result<String> {
+    for transform in transforms {
+        if transform
+            .findings
+            .iter()
+            .any(|finding| payload.contains(&finding.placeholder))
+        {
+            payload = PrivacyEgressFirewall::reconstruct_payload(
+                db_path,
+                connection,
+                &transform.transform_run_id,
+                transform.scope.clone(),
+                &payload,
+            )?
+            .reconstructed_payload;
+        }
+    }
+    Ok(payload)
+}
+
+fn privacy_transform_event_payload(run_id: &str, transform: &PrivacyEgressTransform) -> Value {
+    json!({
+        "runId": run_id,
+        "transformRunId": transform.transform_run_id,
+        "scopeKind": transform.scope.scope_kind,
+        "scopeId": transform.scope.scope_id,
+        "sourcePayloadHash": transform.source_payload_hash,
+        "transformedPayloadHash": privacy_stable_hash(&transform.transformed_payload),
+        "detectorVersion": transform.detector_version,
+        "transformVersion": transform.transform_version,
+        "findingCount": transform.findings.len(),
+        "placeholderCount": transform.findings.len(),
+        "findings": transform.findings,
+    })
+}
+
 fn persist_dispatch(
     connection: &Connection,
     conversation_id: &str,
@@ -1200,7 +1353,8 @@ mod tests {
     use crate::policy::ActorContext;
     use crate::schema::init_schema;
     use rusqlite::Connection;
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
+    use std::path::PathBuf;
 
     fn test_connection() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
@@ -1222,6 +1376,12 @@ mod tests {
             )
             .unwrap();
         connection
+    }
+
+    fn test_db_path() -> (tempfile::TempDir, PathBuf) {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        (temp_dir, db_path)
     }
 
     fn conversation_and_assistant(connection: &Connection) -> (String, String) {
@@ -1307,11 +1467,13 @@ mod tests {
     #[test]
     fn provider_stream_normalizes_ephemeral_deltas_and_durable_completion() {
         let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
         let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
         let gateway = LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"));
 
         let result = gateway
             .run_completion(
+                &db_path,
                 &connection,
                 &ActorContext::local_owner("test"),
                 llm_request(&conversation_id, &assistant_id),
@@ -1356,11 +1518,13 @@ mod tests {
     #[test]
     fn prompt_slots_record_evidence_metadata_and_hashes() {
         let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
         let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
         let gateway = LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"));
 
         let result = gateway
             .run_completion(
+                &db_path,
                 &connection,
                 &ActorContext::local_owner("test"),
                 llm_request(&conversation_id, &assistant_id),
@@ -1417,6 +1581,7 @@ mod tests {
     #[test]
     fn provider_failure_records_failed_state_without_final_message() {
         let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
         let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
         let gateway = LlmGateway::new(DeterministicLlmProvider::failing(
             "local_fake",
@@ -1427,6 +1592,7 @@ mod tests {
 
         let result = gateway
             .run_completion(
+                &db_path,
                 &connection,
                 &ActorContext::local_owner("test"),
                 llm_request(&conversation_id, &assistant_id),
@@ -1464,9 +1630,44 @@ mod tests {
         }
     }
 
+    struct RecordingProvider {
+        seen_request: RefCell<Option<LlmProviderRequest>>,
+        echo_user_message: bool,
+    }
+
+    impl LlmProviderAdapter for RecordingProvider {
+        fn provider_id(&self) -> &str {
+            "local_fake"
+        }
+
+        fn model_id(&self) -> &str {
+            "fake-chat"
+        }
+
+        fn stream(&self, request: &LlmProviderRequest) -> Result<Vec<LlmProviderStreamEvent>> {
+            self.seen_request.replace(Some(request.clone()));
+            Ok(vec![LlmProviderStreamEvent::Completed {
+                text: if self.echo_user_message {
+                    request.user_message.clone()
+                } else {
+                    "ok".to_string()
+                },
+                usage: LlmUsageMetadata {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                },
+            }])
+        }
+
+        fn cancel(&self, _run_id: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn policy_denial_records_evidence_and_does_not_invoke_provider() {
         let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
         let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
         let provider = CountingProvider {
             called: Cell::new(false),
@@ -1479,6 +1680,7 @@ mod tests {
 
         let result = gateway
             .run_completion(
+                &db_path,
                 &connection,
                 &ActorContext::local_owner("test"),
                 llm_request(&conversation_id, &assistant_id),
@@ -1501,11 +1703,13 @@ mod tests {
     #[test]
     fn llm_capabilities_are_required_and_provider_keys_never_enter_events() {
         let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
         let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
         let gateway = LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"));
 
         gateway
             .run_completion(
+                &db_path,
                 &connection,
                 &ActorContext::local_owner("test"),
                 llm_request(&conversation_id, &assistant_id),
@@ -1528,6 +1732,187 @@ mod tests {
             .unwrap();
         assert_eq!(capability_count, 2);
         assert_eq!(leaked_secret_count, 0);
+    }
+
+    #[test]
+    fn privacy_firewall_transforms_provider_bound_payloads_and_reconstructs_locally() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let provider = RecordingProvider {
+            seen_request: RefCell::new(None),
+            echo_user_message: true,
+        };
+        let gateway =
+            LlmGateway::new(provider).with_private_terms(vec!["Project Orchid".to_string()]);
+        let mut request = llm_request(&conversation_id, &assistant_id);
+        request.user_message =
+            "Email ada@example.com or call +1-212-555-0101 with key sk-test-123456 and Bearer tok_abcdef123456 about Project Orchid.".to_string();
+        request.prompt_slots.push(
+            PromptSlot::new(
+                "private_fixture",
+                "Private Fixture",
+                "Provider must not see ada@example.com or Project Orchid.",
+                vec!["fixture".to_string()],
+                "Privacy regression fixture.",
+                "staff_private",
+            )
+            .unwrap(),
+        );
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        let seen = gateway.provider.seen_request.borrow();
+        let provider_request = seen.as_ref().unwrap();
+        let provider_payload = serde_json::to_string(provider_request).unwrap();
+        for raw in [
+            "ada@example.com",
+            "+1-212-555-0101",
+            "sk-test-123456",
+            "tok_abcdef123456",
+            "Project Orchid",
+        ] {
+            assert!(
+                !provider_payload.contains(raw),
+                "provider payload leaked {raw}"
+            );
+        }
+        assert!(provider_payload.contains("__ORDO_PRIVATE_EMAIL_"));
+        assert!(provider_payload.contains("__ORDO_PRIVATE_API_KEY_"));
+        assert!(result
+            .final_message
+            .as_ref()
+            .unwrap()
+            .body_markdown
+            .contains("ada@example.com"));
+
+        let raw_event_leaks: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_events
+                 WHERE payload_json LIKE '%ada@example.com%'
+                    OR payload_json LIKE '%sk-test-123456%'
+                    OR payload_json LIKE '%Project Orchid%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let raw_realtime_leaks: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM realtime_events
+                 WHERE payload_json LIKE '%ada@example.com%'
+                    OR payload_json LIKE '%sk-test-123456%'
+                    OR payload_json LIKE '%Project Orchid%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let raw_policy_leaks: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE metadata_json LIKE '%ada@example.com%'
+                    OR metadata_json LIKE '%sk-test-123456%'
+                    OR metadata_json LIKE '%Project Orchid%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(raw_event_leaks, 0);
+        assert_eq!(raw_realtime_leaks, 0);
+        assert_eq!(raw_policy_leaks, 0);
+    }
+
+    #[test]
+    fn privacy_transform_events_are_durable_and_metadata_only() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let gateway = LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"));
+        let mut request = llm_request(&conversation_id, &assistant_id);
+        request.user_message = "Use sk-test-secret-value for ada@example.com".to_string();
+
+        gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        let transform_payload: String = connection
+            .query_row(
+                "SELECT payload_json FROM conversation_events
+                 WHERE event_type = 'privacy.egress.transformed'
+                   AND payload_json LIKE '%api_key%'
+                 ORDER BY sequence ASC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(transform_payload.contains("sourcePayloadHash"));
+        assert!(transform_payload.contains("__ORDO_PRIVATE_API_KEY_"));
+        assert!(!transform_payload.contains("sk-test-secret-value"));
+        assert!(!transform_payload.contains("ada@example.com"));
+
+        let sequence_order = connection
+            .prepare(
+                "SELECT event_type FROM conversation_events
+                 WHERE event_type IN ('privacy.egress.transformed', 'llm.provider.started')
+                 ORDER BY sequence ASC",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        let first_provider_index = sequence_order
+            .iter()
+            .position(|event| event == "llm.provider.started")
+            .unwrap();
+        assert!(sequence_order[..first_provider_index]
+            .iter()
+            .any(|event| event == "privacy.egress.transformed"));
+    }
+
+    #[test]
+    fn untransformable_provider_payload_blocks_provider_invocation() {
+        let connection = test_connection();
+        let (_temp_dir, db_path) = test_db_path();
+        let (conversation_id, assistant_id) = conversation_and_assistant(&connection);
+        let provider = CountingProvider {
+            called: Cell::new(false),
+        };
+        let gateway = LlmGateway::new(provider);
+        let mut request = llm_request(&conversation_id, &assistant_id);
+        request.user_message = "Already has __ORDO_PRIVATE_EMAIL_1__".to_string();
+
+        let result = gateway
+            .run_completion(
+                &db_path,
+                &connection,
+                &ActorContext::local_owner("test"),
+                request,
+            )
+            .unwrap();
+
+        assert!(!gateway.provider.called.get());
+        assert!(result.final_message.is_none());
+        assert!(result
+            .frames
+            .iter()
+            .any(|frame| frame.frame_type == "privacy.egress.blocked"));
+        assert!(result
+            .frames
+            .iter()
+            .any(|frame| frame.payload["code"] == "privacy_transform_failed"));
     }
 
     #[test]

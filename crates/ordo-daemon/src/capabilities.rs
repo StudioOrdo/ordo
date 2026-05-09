@@ -1550,7 +1550,9 @@ mod tests {
             "providers.update",
             "business.facts.list",
             "business.facts.write",
+            "diagnostic.logs.list",
             "policy.decisions.list",
+            "issue.report.list",
         ]
         .into_iter()
         .map(ToString::to_string)

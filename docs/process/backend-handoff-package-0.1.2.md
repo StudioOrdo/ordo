@@ -1,6 +1,7 @@
 # Backend Handoff Package 0.1.2
 
-Status: backend handoff foundation ready for PR
+Status: backend handoff foundation implemented for the current 0.1.2 backend
+contracts
 
 This package is the handoff map for a future UI implementation agent. It records
 which backend contracts are ready to consume, which routes are protected, which

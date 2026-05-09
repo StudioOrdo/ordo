@@ -1482,9 +1482,20 @@ async fn latest_system_brief_handler(
 }
 
 async fn logs_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
     Query(query): Query<DiagnosticLogQuery>,
 ) -> Result<Json<DiagnosticLogsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/logs"),
+        Some("diagnostic.logs.list"),
+    )?;
     list_diagnostic_logs(&state.db_path, query)
         .map(Json)
         .map_err(internal_error)
@@ -2033,8 +2044,19 @@ async fn mcp_pack_disable_handler(
 }
 
 async fn list_issue_reports_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/reports/issues"),
+        Some("issue.report.list"),
+    )?;
     list_issue_reports(&state.db_path)
         .map(Json)
         .map_err(internal_error)
@@ -2623,6 +2645,49 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_log_route_uses_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/logs"),
+            Some("diagnostic.logs.list"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/logs"),
+            Some("diagnostic.logs.list"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'diagnostic.logs.list'
+                   AND resource_id = '/logs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
+    }
+
+    #[test]
     fn install_and_provider_mutations_use_protected_access_boundary() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
@@ -2976,16 +3041,18 @@ mod tests {
             &db_path,
             &headers,
             socket_addr("192.168.1.10:4000"),
-            PolicyAction::Approve,
-            ResourceRef::new(
-                ResourceKind::DaemonRoute,
-                "/support-packets/packet_1/approve",
-            ),
-            Some("support.packets.approve"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/reports/issues"),
+            Some("issue.report.list"),
         );
         assert!(denied.is_err());
 
         for (route, action, capability) in [
+            (
+                "/reports/issues",
+                PolicyAction::Inspect,
+                "issue.report.list",
+            ),
             (
                 "/reports/issues/report_1",
                 PolicyAction::Inspect,
@@ -3039,16 +3106,16 @@ mod tests {
             .query_row(
                 "SELECT COUNT(*) FROM policy_decisions
                  WHERE capability_id IN (
-                    'support.packets.approve', 'issue.report.detail',
+                    'issue.report.list', 'issue.report.detail',
                     'issue.report.status.update', 'issue.report.export',
                     'support.packets.list', 'support.packets.draft',
-                    'support.packet.receipts.list'
+                    'support.packets.approve', 'support.packet.receipts.list'
                  )",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(audit_count, 8);
+        assert_eq!(audit_count, 9);
     }
 
     #[test]

@@ -42,8 +42,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 7 | Reports and approved support packet backend | #56 | [Reports And QA Loop](reports-qa-loop.md), [Approved Support Packet Handoff](approved-support-packet-handoff.md) | Report detail/export/status contracts exist, and support packet egress is approval-gated with receipt tracking. | complete |
 | 8 | Knowledge corpus and governed retrieval | #57 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Corpus ingestion, source/item provenance, SQLite FTS retrieval, visibility filtering, and retrieval evidence exist. | complete |
 | 9 | RAG answer draft spine | #58 | [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Evidence-backed answer draft records use governed retrieval, emit citations, avoid unsupported claims, and preserve redaction guarantees. | complete |
-| 10 | MCP pack and tool hardening | #59 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Pack manifest validation, tool schemas, side effect declarations, capability policy mapping, and disable behavior exist. | ready for PR |
-| 11 | Backend handoff package | #60 | this document | UI-ready route contracts, state docs, smoke seeds, validation matrix, and known non-goals are collected for the UI agent. | not started |
+| 10 | MCP pack and tool hardening | #59 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Pack manifest validation, tool schemas, side effect declarations, capability policy mapping, and disable behavior exist. | complete |
+| 11 | Backend handoff package | #60 | [Backend Handoff Package 0.1.2](../process/backend-handoff-package-0.1.2.md) | UI-ready route contracts, state docs, smoke seeds, validation matrix, and known non-goals are collected for the UI agent. | ready for PR |
 
 ## Phase Detail
 
@@ -309,7 +309,7 @@ Current implementation evidence:
 
 This phase keeps customization inside the appliance trust boundary.
 
-GitHub issue: #59. Pull request: pending.
+GitHub issue: #59. Pull request: #71, merged.
 
 Done means:
 
@@ -337,6 +337,8 @@ Current implementation evidence:
 
 This is the final pre-UI step.
 
+GitHub issue: #60. Pull request: pending.
+
 Done means:
 
 - route contracts and response examples are documented;
@@ -346,6 +348,18 @@ Done means:
 - known non-goals are explicit;
 - GitHub issues/PRs are clean enough for the UI agent to start without reverse
   engineering backend intent.
+
+Current implementation evidence:
+
+- [Backend Handoff Package 0.1.2](../process/backend-handoff-package-0.1.2.md)
+  records route contract families for phases 0-10;
+- the handoff package names protection boundaries and expected response shapes;
+- smoke seed scenarios cover first-run, configured provider, public surface,
+  visitor journey, offers/trials, availability/handoff, reports/support
+  packets, corpus retrieval, answer drafts, and MCP pack metadata;
+- validation commands and known non-goals are captured for future UI work;
+- no UI, source behavior, external egress, provider/model, vector, or plugin
+  execution behavior is added by this phase.
 
 ## Validation Bar
 

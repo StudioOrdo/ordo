@@ -454,6 +454,23 @@ Phase 2 artifact packet coverage now includes:
 - deterministic normalized packet generation for repeated runs;
 - no provider keys, browser timing, or network access.
 
+Phase 3 first deterministic workflow coverage now includes:
+
+- `relationship_conversation_message`, which creates the canonical visitor
+  relationship conversation, creates the visitor participant, submits a
+  sensitive fixture message through the backend conversation service, and
+  asserts conversation-event plus realtime-replay evidence;
+- `privacy_gateway_roundtrip`, which runs the Rust-owned LLM gateway against
+  the deterministic local provider and asserts policy decisions, prompt-slot
+  accounting, privacy transform metadata, token ledger entries, durable
+  conversation events, and realtime replay evidence;
+- packet, scorecard, and manifest writing for both workflow cases through the
+  same `EvalArtifactWriter` used by Phase 2;
+- redaction evidence for the relationship transcript packet and non-leakage
+  evidence for provider-bound sensitive fixture content in the privacy gateway
+  packet;
+- provider-free, network-free execution suitable for local and CI runs.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

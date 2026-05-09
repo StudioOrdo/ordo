@@ -7,6 +7,14 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::conversations::{
+    create_conversation_message, create_conversation_participant,
+    find_or_create_canonical_conversation, CanonicalConversationRequest,
+    ConversationMessageCreateRequest, ConversationParticipantCreateRequest,
+};
+use crate::llm_gateway::{DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, PromptSlot};
+use crate::policy::ActorContext;
+
 pub const EVAL_HARNESS_SCHEMA_VERSION: &str = "ordo.eval_harness.v1";
 pub const EVAL_ARTIFACT_PACKET_SCHEMA_VERSION: &str = "ordo.eval_artifact_packet.v1";
 
@@ -344,6 +352,13 @@ pub struct EvalArtifactWriter {
     private_terms: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct EvalWorkflowRun {
+    pub case: EvalCase,
+    pub scorecard: EvalScorecardSummary,
+    pub artifact_paths: EvalArtifactPaths,
+}
+
 impl EvalArtifactWriter {
     pub fn new(output_dir: impl Into<PathBuf>, source_commit: impl Into<String>) -> Self {
         Self {
@@ -461,6 +476,307 @@ impl EvalArtifactWriter {
             manifest_path,
         })
     }
+}
+
+pub fn run_relationship_conversation_message_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    let case = relationship_conversation_message_case()?;
+    let packet_path = output_dir
+        .into()
+        .join("relationship_conversation_message-packet.json");
+    let mut harness = DeterministicEvalHarness::new(DeterministicEvalClock::fixed())
+        .with_artifact_path(packet_path.to_string_lossy());
+    let scorecard = harness.run_case(connection, &case, run_relationship_conversation_step)?;
+    let output_dir = packet_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let writer = EvalArtifactWriter::new(output_dir, source_commit)
+        .with_private_terms(vec!["package".to_string(), "Project Orchid".to_string()]);
+    let artifact_paths = writer.write_packet(connection, &case, &scorecard)?;
+    Ok(EvalWorkflowRun {
+        case,
+        scorecard,
+        artifact_paths,
+    })
+}
+
+pub fn run_privacy_gateway_roundtrip_eval(
+    db_path: &Path,
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    let case = privacy_gateway_roundtrip_case()?;
+    let packet_path = output_dir
+        .into()
+        .join("privacy_gateway_roundtrip-packet.json");
+    let mut harness = DeterministicEvalHarness::new(DeterministicEvalClock::fixed())
+        .with_artifact_path(packet_path.to_string_lossy());
+    let scorecard = harness.run_case(connection, &case, |connection, step| {
+        run_privacy_gateway_roundtrip_step(db_path, connection, step)
+    })?;
+    let output_dir = packet_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let writer = EvalArtifactWriter::new(output_dir, source_commit)
+        .with_private_terms(vec!["Project Orchid".to_string()]);
+    let artifact_paths = writer.write_packet(connection, &case, &scorecard)?;
+    Ok(EvalWorkflowRun {
+        case,
+        scorecard,
+        artifact_paths,
+    })
+}
+
+fn relationship_conversation_message_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "relationship_conversation_message",
+        "Relationship conversation message",
+        &json!({
+            "fixture": "relationship_conversation_message",
+            "version": 1,
+            "sensitiveFixtureKinds": ["email", "phone", "api_key", "private_term"],
+        }),
+        vec![
+            EvalActorRole::AnonymousVisitor,
+            EvalActorRole::Staff,
+            EvalActorRole::LlmToolProviderBoundary,
+        ],
+        vec![
+            EvalStep::new(
+                "create_canonical_conversation",
+                EvalActorRole::AnonymousVisitor,
+                "create_or_find_conversation",
+                vec![
+                    EvalEvidenceChannel::SqliteRows,
+                    EvalEvidenceChannel::ConversationEvents,
+                ],
+            )?,
+            EvalStep::new(
+                "submit_message",
+                EvalActorRole::AnonymousVisitor,
+                "message.submit",
+                vec![
+                    EvalEvidenceChannel::SqliteRows,
+                    EvalEvidenceChannel::ConversationEvents,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+            )?,
+        ],
+        vec![
+            EvalAssertion::minimum_count(
+                "conversation_events_exist",
+                EvalEvidenceChannel::ConversationEvents,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "realtime_replay_exists",
+                EvalEvidenceChannel::RealtimeReplay,
+                2,
+            )?,
+        ],
+    )
+}
+
+fn privacy_gateway_roundtrip_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "privacy_gateway_roundtrip",
+        "Privacy gateway roundtrip",
+        &json!({
+            "fixture": "privacy_gateway_roundtrip",
+            "version": 1,
+            "providerMode": "deterministic_only",
+        }),
+        vec![
+            EvalActorRole::Staff,
+            EvalActorRole::OrdoAgent,
+            EvalActorRole::LlmToolProviderBoundary,
+        ],
+        vec![EvalStep::new(
+            "run_deterministic_llm_completion",
+            EvalActorRole::LlmToolProviderBoundary,
+            "llm.run.request",
+            vec![
+                EvalEvidenceChannel::ConversationEvents,
+                EvalEvidenceChannel::PolicyDecisions,
+                EvalEvidenceChannel::PromptSlotAccounting,
+                EvalEvidenceChannel::PrivacyTransforms,
+                EvalEvidenceChannel::TokenLedger,
+                EvalEvidenceChannel::RealtimeReplay,
+            ],
+        )?],
+        vec![
+            EvalAssertion::minimum_count(
+                "policy_decision_recorded",
+                EvalEvidenceChannel::PolicyDecisions,
+                1,
+            )?,
+            EvalAssertion::minimum_count(
+                "prompt_slots_accounted",
+                EvalEvidenceChannel::PromptSlotAccounting,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "privacy_transform_recorded",
+                EvalEvidenceChannel::PrivacyTransforms,
+                1,
+            )?,
+            EvalAssertion::minimum_count(
+                "token_ledger_recorded",
+                EvalEvidenceChannel::TokenLedger,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "conversation_events_recorded",
+                EvalEvidenceChannel::ConversationEvents,
+                7,
+            )?,
+        ],
+    )
+}
+
+fn run_relationship_conversation_step(connection: &Connection, step: &EvalStep) -> Result<()> {
+    match step.id.as_str() {
+        "create_canonical_conversation" => {
+            find_or_create_canonical_conversation(connection, &visitor_conversation_request())?;
+        }
+        "submit_message" => {
+            let conversation =
+                find_or_create_canonical_conversation(connection, &visitor_conversation_request())?;
+            let participant = create_visitor_participant(connection, &conversation.id)?;
+            create_conversation_message(
+                connection,
+                &ConversationMessageCreateRequest {
+                    conversation_id: conversation.id,
+                    segment_id: None,
+                    participant_id: participant.id,
+                    message_kind: "user".to_string(),
+                    body_markdown:
+                        "I need help choosing a package. Email me at alex@example.com or 555-123-4567. sk-eval-secret"
+                            .to_string(),
+                    visibility: "participants".to_string(),
+                    client_message_id: "eval-client-message-1".to_string(),
+                    reply_to_message_id: None,
+                    undo_expires_at: None,
+                },
+            )?;
+        }
+        other => anyhow::bail!("unsupported relationship workflow eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn run_privacy_gateway_roundtrip_step(
+    db_path: &Path,
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "run_deterministic_llm_completion" => {
+            let (conversation_id, assistant_id) = conversation_and_assistant(connection)?;
+            let gateway = LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"))
+                .with_private_terms(vec!["Project Orchid".to_string()]);
+            gateway.run_completion(
+                db_path,
+                connection,
+                &ActorContext::local_owner("eval_privacy_gateway_roundtrip"),
+                LlmGatewayRequest {
+                    run_id: "eval_llm_run_privacy_roundtrip".to_string(),
+                    conversation_id,
+                    segment_id: None,
+                    assistant_participant_id: assistant_id,
+                    client_id: Some("eval-client-llm-1".to_string()),
+                    provider_id: "local_fake".to_string(),
+                    model_id: "fake-chat".to_string(),
+                    user_message: "Draft a reply for Project Orchid. Contact alex@example.com, 555-123-4567, sk-eval-secret.".to_string(),
+                    prompt_slots: vec![
+                        PromptSlot::new(
+                            "ethical_business_persuasion",
+                            "Ethical Business Persuasion",
+                            "Use verified evidence only; preserve client agency.",
+                            vec![
+                                "docs/architecture/conversation-realtime/product-doctrine.md"
+                                    .to_string(),
+                            ],
+                            "Business communication lens required by product doctrine.",
+                            "staff_private",
+                        )?,
+                        PromptSlot::new(
+                            "conversation_brief",
+                            "Conversation Brief",
+                            "Project Orchid needs a grounded next step.",
+                            vec!["conversation_event_eval_1".to_string()],
+                            "Current conversation evidence.",
+                            "participants",
+                        )?,
+                    ],
+                },
+            )?;
+        }
+        other => anyhow::bail!("unsupported privacy workflow eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn visitor_conversation_request() -> CanonicalConversationRequest {
+    CanonicalConversationRequest {
+        surface: "chat".to_string(),
+        subject_kind: "visitor_session".to_string(),
+        subject_id: "visitor_session_eval_1".to_string(),
+        connection_id: None,
+        visitor_session_id: Some("visitor_session_eval_1".to_string()),
+        created_by_actor_id: None,
+    }
+}
+
+fn create_visitor_participant(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<crate::conversations::ConversationParticipantView> {
+    create_conversation_participant(
+        connection,
+        &ConversationParticipantCreateRequest {
+            conversation_id: conversation_id.to_string(),
+            participant_kind: "visitor".to_string(),
+            actor_id: None,
+            connection_id: None,
+            visitor_session_id: Some("visitor_session_eval_1".to_string()),
+            display_name: "Visitor".to_string(),
+            role: "client".to_string(),
+        },
+    )
+}
+
+fn conversation_and_assistant(connection: &Connection) -> Result<(String, String)> {
+    let conversation = find_or_create_canonical_conversation(
+        connection,
+        &CanonicalConversationRequest {
+            surface: "client_portal".to_string(),
+            subject_kind: "connection".to_string(),
+            subject_id: "connection_eval_1".to_string(),
+            connection_id: Some("connection_eval_1".to_string()),
+            visitor_session_id: None,
+            created_by_actor_id: Some("actor_staff_eval_1".to_string()),
+        },
+    )?;
+    let assistant = create_conversation_participant(
+        connection,
+        &ConversationParticipantCreateRequest {
+            conversation_id: conversation.id.clone(),
+            participant_kind: "assistant".to_string(),
+            actor_id: None,
+            connection_id: None,
+            visitor_session_id: None,
+            display_name: "Ordo".to_string(),
+            role: "assistant".to_string(),
+        },
+    )?;
+    Ok((conversation.id, assistant.id))
 }
 
 #[derive(Debug, Clone)]
@@ -1182,7 +1498,6 @@ fn ensure_identifier(value: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
 pub fn isolated_eval_connection() -> Result<Connection> {
     let connection = Connection::open_in_memory()?;
     crate::schema::init_schema(&connection)?;
@@ -1210,132 +1525,25 @@ pub fn isolated_eval_connection() -> Result<Connection> {
          )",
         [],
     )?;
+    connection.execute(
+        "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+         VALUES ('actor_staff_eval_1', 'staff', 'Eval Staff', 'active', '{}', 'now', 'now')",
+        [],
+    )?;
+    connection.execute(
+        "INSERT INTO connections (
+            id, connection_type, display_name, status, identity_json, scope_json, metadata_json, created_at, updated_at
+         ) VALUES (
+            'connection_eval_1', 'client', 'Eval Client', 'active', '{}', '{}', '{}', 'now', 'now'
+         )",
+        [],
+    )?;
     Ok(connection)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversations::{
-        create_conversation_message, create_conversation_participant,
-        find_or_create_canonical_conversation, CanonicalConversationRequest,
-        ConversationMessageCreateRequest, ConversationParticipantCreateRequest,
-    };
-
-    fn eval_case() -> EvalCase {
-        EvalCase::new(
-            "relationship_message_foundation",
-            "Relationship message foundation",
-            &json!({
-                "fixture": "relationship_message_foundation",
-                "version": 1,
-            }),
-            vec![
-                EvalActorRole::AnonymousVisitor,
-                EvalActorRole::Staff,
-                EvalActorRole::LlmToolProviderBoundary,
-            ],
-            vec![
-                EvalStep::new(
-                    "create_canonical_conversation",
-                    EvalActorRole::AnonymousVisitor,
-                    "create_or_find_conversation",
-                    vec![
-                        EvalEvidenceChannel::SqliteRows,
-                        EvalEvidenceChannel::ConversationEvents,
-                    ],
-                )
-                .unwrap(),
-                EvalStep::new(
-                    "submit_message",
-                    EvalActorRole::AnonymousVisitor,
-                    "message.submit",
-                    vec![
-                        EvalEvidenceChannel::SqliteRows,
-                        EvalEvidenceChannel::ConversationEvents,
-                        EvalEvidenceChannel::RealtimeReplay,
-                    ],
-                )
-                .unwrap(),
-            ],
-            vec![
-                EvalAssertion::minimum_count(
-                    "conversation_events_exist",
-                    EvalEvidenceChannel::ConversationEvents,
-                    2,
-                )
-                .unwrap(),
-                EvalAssertion::minimum_count(
-                    "realtime_replay_exists",
-                    EvalEvidenceChannel::RealtimeReplay,
-                    2,
-                )
-                .unwrap(),
-            ],
-        )
-        .unwrap()
-    }
-
-    fn run_relationship_step(connection: &Connection, step: &EvalStep) -> Result<()> {
-        match step.id.as_str() {
-            "create_canonical_conversation" => {
-                find_or_create_canonical_conversation(
-                    connection,
-                    &CanonicalConversationRequest {
-                        surface: "chat".to_string(),
-                        subject_kind: "visitor_session".to_string(),
-                        subject_id: "visitor_session_eval_1".to_string(),
-                        connection_id: None,
-                        visitor_session_id: Some("visitor_session_eval_1".to_string()),
-                        created_by_actor_id: None,
-                    },
-                )?;
-            }
-            "submit_message" => {
-                let conversation = find_or_create_canonical_conversation(
-                    connection,
-                    &CanonicalConversationRequest {
-                        surface: "chat".to_string(),
-                        subject_kind: "visitor_session".to_string(),
-                        subject_id: "visitor_session_eval_1".to_string(),
-                        connection_id: None,
-                        visitor_session_id: Some("visitor_session_eval_1".to_string()),
-                        created_by_actor_id: None,
-                    },
-                )?;
-                let participant = create_conversation_participant(
-                    connection,
-                    &ConversationParticipantCreateRequest {
-                        conversation_id: conversation.id.clone(),
-                        participant_kind: "visitor".to_string(),
-                        actor_id: None,
-                        connection_id: None,
-                        visitor_session_id: Some("visitor_session_eval_1".to_string()),
-                        display_name: "Visitor".to_string(),
-                        role: "client".to_string(),
-                    },
-                )?;
-                create_conversation_message(
-                    connection,
-                    &ConversationMessageCreateRequest {
-                        conversation_id: conversation.id,
-                        segment_id: None,
-                        participant_id: participant.id,
-                        message_kind: "user".to_string(),
-                        body_markdown:
-                            "I need help choosing a package. Email me at alex@example.com or 555-123-4567. sk-eval-secret"
-                                .to_string(),
-                        visibility: "participants".to_string(),
-                        client_message_id: "eval-client-message-1".to_string(),
-                        reply_to_message_id: None,
-                        undo_expires_at: None,
-                    },
-                )?;
-            }
-            other => anyhow::bail!("unsupported eval step in test fixture: {other}"),
-        }
-        Ok(())
-    }
 
     #[test]
     fn isolated_eval_store_initializes_current_schema() {
@@ -1357,7 +1565,11 @@ mod tests {
             .with_artifact_path("tests/evals/backend/scorecards/relationship_message.json");
 
         let scorecard = harness
-            .run_case(&connection, &eval_case(), run_relationship_step)
+            .run_case(
+                &connection,
+                &relationship_conversation_message_case().unwrap(),
+                run_relationship_conversation_step,
+            )
             .unwrap();
 
         assert!(scorecard.passed);
@@ -1399,15 +1611,19 @@ mod tests {
     fn repeated_harness_runs_are_stable_except_durable_ids() {
         let first_connection = isolated_eval_connection().unwrap();
         let second_connection = isolated_eval_connection().unwrap();
-        let case = eval_case();
+        let case = relationship_conversation_message_case().unwrap();
 
         let mut first = DeterministicEvalHarness::new(DeterministicEvalClock::fixed());
         let mut second = DeterministicEvalHarness::new(DeterministicEvalClock::fixed());
         let first_scorecard = first
-            .run_case(&first_connection, &case, run_relationship_step)
+            .run_case(&first_connection, &case, run_relationship_conversation_step)
             .unwrap();
         let second_scorecard = second
-            .run_case(&second_connection, &case, run_relationship_step)
+            .run_case(
+                &second_connection,
+                &case,
+                run_relationship_conversation_step,
+            )
             .unwrap();
 
         assert_eq!(first_scorecard.fixture_hash, second_scorecard.fixture_hash);
@@ -1446,7 +1662,7 @@ mod tests {
     #[test]
     fn artifact_packet_writer_emits_redacted_packet_scorecard_and_manifest() {
         let connection = isolated_eval_connection().unwrap();
-        let case = eval_case();
+        let case = relationship_conversation_message_case().unwrap();
         let temp_dir = tempfile::TempDir::new().unwrap();
         let mut harness = DeterministicEvalHarness::new(DeterministicEvalClock::fixed())
             .with_artifact_path(
@@ -1456,7 +1672,7 @@ mod tests {
                     .to_string_lossy(),
             );
         let scorecard = harness
-            .run_case(&connection, &case, run_relationship_step)
+            .run_case(&connection, &case, run_relationship_conversation_step)
             .unwrap();
         let writer = EvalArtifactWriter::new(temp_dir.path(), "test-commit")
             .with_private_terms(vec!["package".to_string()]);
@@ -1490,14 +1706,18 @@ mod tests {
     fn normalized_artifact_packets_are_deterministic() {
         let first_connection = isolated_eval_connection().unwrap();
         let second_connection = isolated_eval_connection().unwrap();
-        let case = eval_case();
+        let case = relationship_conversation_message_case().unwrap();
         let mut first_harness = DeterministicEvalHarness::new(DeterministicEvalClock::fixed());
         let mut second_harness = DeterministicEvalHarness::new(DeterministicEvalClock::fixed());
         let first_scorecard = first_harness
-            .run_case(&first_connection, &case, run_relationship_step)
+            .run_case(&first_connection, &case, run_relationship_conversation_step)
             .unwrap();
         let second_scorecard = second_harness
-            .run_case(&second_connection, &case, run_relationship_step)
+            .run_case(
+                &second_connection,
+                &case,
+                run_relationship_conversation_step,
+            )
             .unwrap();
         let writer = EvalArtifactWriter::new("unused", "test-commit")
             .with_private_terms(vec!["package".to_string()]);
@@ -1530,5 +1750,73 @@ mod tests {
             "promptSlotCount": packet.prompt_slot_ledger.len(),
             "redactedCount": packet.redaction_summary.redacted_value_count,
         })
+    }
+
+    #[test]
+    fn relationship_workflow_eval_writes_artifacts() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run =
+            run_relationship_conversation_message_eval(&connection, temp_dir.path(), "test-commit")
+                .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "relationship_conversation_message");
+        assert!(run.artifact_paths.packet_path.exists());
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"caseId\": \"relationship_conversation_message\""));
+        assert!(packet.contains("\"conversationEventLedger\""));
+        assert!(packet.contains("[REDACTED:email]"));
+        assert!(!packet.contains("alex@example.com"));
+    }
+
+    #[test]
+    fn privacy_gateway_roundtrip_eval_records_privacy_accounting_and_artifacts() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        let artifact_dir = temp_dir.path().join("artifacts");
+
+        let run =
+            run_privacy_gateway_roundtrip_eval(&db_path, &connection, &artifact_dir, "test-commit")
+                .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "privacy_gateway_roundtrip");
+        assert!(run.artifact_paths.packet_path.exists());
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PolicyDecisions)
+                >= 1
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PromptSlotAccounting)
+                >= 2
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PrivacyTransforms)
+                >= 1
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::TokenLedger)
+                >= 2
+        );
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"caseId\": \"privacy_gateway_roundtrip\""));
+        assert!(packet.contains("\"promptSlotLedger\""));
+        assert!(packet.contains("\"privacyTransformLedger\""));
+        assert!(packet.contains("\"tokenLedger\""));
+        assert!(!packet.contains("Project Orchid"));
+        assert!(!packet.contains("alex@example.com"));
+        assert!(!packet.contains("555-123-4567"));
+        assert!(!packet.contains("sk-eval-secret"));
     }
 }

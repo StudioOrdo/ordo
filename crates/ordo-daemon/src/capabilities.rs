@@ -132,6 +132,32 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &[],
         ),
         capability(
+            "business.facts.list",
+            "List Business Facts",
+            "Read local business facts through visibility and publication filters.",
+            "business",
+            json!({ "type": "object", "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
+            "business.facts.write",
+            "Write Business Facts",
+            "Create or update local business facts with provenance, visibility, and publication state.",
+            "business",
+            json!({ "type": "object", "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
             "system.health.check",
             "System Health Check",
             "Create a governed system health check job.",
@@ -1011,6 +1037,8 @@ mod tests {
             "install.complete",
             "providers.list",
             "providers.update",
+            "business.facts.list",
+            "business.facts.write",
             "policy.decisions.list",
         ] {
             assert!(capabilities
@@ -1049,6 +1077,8 @@ mod tests {
                 | "install.complete"
                 | "providers.list"
                 | "providers.update"
+                | "business.facts.list"
+                | "business.facts.write"
                 | "policy.decisions.list"
         )));
     }
@@ -1063,6 +1093,8 @@ mod tests {
             "install.complete",
             "providers.list",
             "providers.update",
+            "business.facts.list",
+            "business.facts.write",
             "policy.decisions.list",
         ]
         .into_iter()

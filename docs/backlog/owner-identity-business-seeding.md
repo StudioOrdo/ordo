@@ -1,6 +1,6 @@
 # Owner Identity And Business Seeding MVP
 
-Status: partial backend exists
+Status: backend foundation in progress
 
 ## Why It Matters
 
@@ -10,7 +10,8 @@ Ordo represents before it can speak for the business.
 ## MVP Scope
 
 - Store owner identity basics and business profile basics.
-- Add editable business facts with provenance and visibility.
+- Add editable business facts with provenance, visibility, and publication
+	state.
 - Separate private owner facts from public business facts.
 - Show a compact System view of seeded truth and missing required fields.
 - Emit events when business truth changes.

@@ -1,6 +1,6 @@
 # Content Visibility And Publication MVP
 
-Status: not built
+Status: backend foundation in progress
 
 ## Why It Matters
 

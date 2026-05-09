@@ -28,6 +28,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "business_profile",
     "vault_items",
     "provider_configs",
+    "business_facts",
     "corpus_sources",
     "corpus_items",
     "schedules",
@@ -36,7 +37,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 9;
+pub const CURRENT_SCHEMA_VERSION: i64 = 10;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -91,6 +92,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 9,
         name: "add_local_install_and_provider_config",
         apply: add_local_install_and_provider_config,
+    },
+    SchemaMigration {
+        version: 10,
+        name: "add_business_truth_visibility_publication",
+        apply: add_business_truth_visibility_publication,
     },
 ];
 
@@ -758,6 +764,38 @@ fn add_local_install_and_provider_config(connection: &Connection) -> Result<()> 
     Ok(())
 }
 
+fn add_business_truth_visibility_publication(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS business_facts (
+            id TEXT PRIMARY KEY,
+            subject_type TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            fact_key TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_label TEXT,
+            source_uri TEXT,
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            visibility TEXT NOT NULL,
+            publication_state TEXT NOT NULL,
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            published_at TEXT,
+            archived_at TEXT,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_business_facts_subject ON business_facts(subject_type, subject_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_business_facts_key ON business_facts(fact_key, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_business_facts_visibility_publication ON business_facts(visibility, publication_state, updated_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -859,8 +897,8 @@ mod tests {
             .iter()
             .map(|migration| migration.version)
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 9);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 10);
     }
 
     #[test]
@@ -936,6 +974,7 @@ mod tests {
         assert!(table_exists(&connection, "appliance_owner"));
         assert!(table_exists(&connection, "business_profile"));
         assert!(table_exists(&connection, "provider_configs"));
+        assert!(table_exists(&connection, "business_facts"));
         assert!(table_exists(&connection, "corpus_sources"));
         assert!(table_exists(&connection, "corpus_items"));
 
@@ -1101,6 +1140,26 @@ mod tests {
             &connection,
             "provider_configs",
             "non_secret_config_json"
+        ));
+    }
+
+    #[test]
+    fn business_truth_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "business_facts"));
+        assert!(column_exists(&connection, "business_facts", "value_json"));
+        assert!(column_exists(
+            &connection,
+            "business_facts",
+            "provenance_json"
+        ));
+        assert!(column_exists(&connection, "business_facts", "visibility"));
+        assert!(column_exists(
+            &connection,
+            "business_facts",
+            "publication_state"
         ));
     }
 

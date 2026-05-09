@@ -32,8 +32,8 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 
 | Order | Phase | GitHub Issue | Backlog Spec | Backend Exit Criteria | Status |
 | --- | --- | --- | --- | --- | --- |
-| 0 | Local install, providers, and vault | #49 | [Install And Provider Setup](install-provider-setup.md) | Daemon routes, schema, vault encryption, secret redaction, backup key archival, protected policy decisions, and docs exist. | ready for PR |
-| 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | next |
+| 0 | Local install, providers, and vault | #49 | [Install And Provider Setup](install-provider-setup.md) | Daemon routes, schema, vault encryption, secret redaction, backup key archival, protected policy decisions, and docs exist. | complete |
+| 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | ready for PR |
 | 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | not started |
 | 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | not started |
 | 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | not started |
@@ -52,7 +52,7 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 Current local implementation work should be finished, validated, committed, and
 represented by a GitHub issue or PR before moving deeper into MVP backend work.
 
-GitHub issue: #49.
+GitHub issue: #49. Pull request: #61, merged.
 
 Done means:
 
@@ -74,6 +74,8 @@ Current validation evidence:
 
 This is the next implementation slice. It should add the durable truth and
 policy layer that public surfaces and RAG will consume.
+
+GitHub issue: #50.
 
 Done means:
 

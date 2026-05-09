@@ -28,6 +28,10 @@ surfaces land.
   The daemon exposes protected local install and provider endpoints with
   redacted provider read models so API keys remain write-only through HTTP
   surfaces.
+- SQLite stores durable business facts with provenance, visibility, and
+  publication state. The daemon exposes protected local business fact endpoints
+  so public surfaces and future retrieval can depend on explicit truth and
+  publication boundaries.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
@@ -92,6 +96,8 @@ surfaces land.
 - Frontend install wizard UI and provider network validation are not implemented
   yet; current install/provider support is daemon-owned backend state and
   protected local routes only.
+- Public About, Offers, Asks, and Feed routes are not implemented yet; current
+  business truth support is a protected backend foundation only.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
   integrations are not implemented yet.
 - Report submission transports to external systems are not implemented yet;
@@ -118,6 +124,9 @@ slices.
 - [Local Install And Providers](architecture/local-install-and-providers.md)
   describes the implemented backend install state and redacted provider
   configuration foundation.
+- [Business Truth, Visibility, And Publication](architecture/business-truth-visibility.md)
+  describes the backend foundation for durable business facts and publication
+  boundaries.
 - [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
   implemented retrieval safety foundation for future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,

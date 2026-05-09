@@ -300,6 +300,12 @@ Coverage:
 - deliverables project from artifacts with client-safe label and summary;
 - artifact detail briefs answer value, use, next action, producing job,
   provenance, and storage/health where available;
+- surface brief records require evidence refs and limitations;
+- deterministic surface brief jobs create completed briefs linked to generated
+  artifacts;
+- latest completed surface brief remains readable while a newer refresh is
+  queued, running, or failed;
+- newer completed surface briefs supersede older completed briefs;
 - brief candidates cite durable conversation evidence;
 - ethical recommendation candidates cite durable evidence and limitations;
 - provider-backed analysis uses the same privacy and token ledger path.
@@ -320,6 +326,8 @@ Coverage:
 - staff role defaults to `My Handoffs`;
 - admin role can navigate to appliance internals;
 - recommendation explanations are visible only in staff/admin context.
+- product surfaces render latest completed brief and refresh state before raw
+  surface detail.
 
 ## UI Smoke Tests
 

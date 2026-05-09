@@ -886,6 +886,32 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["brief.system"],
         ),
         capability(
+            "surface.brief.generate",
+            "Generate Surface Brief",
+            "Create a deterministic evidence-backed surface brief refresh job.",
+            "brief",
+            json!({ "type": "object", "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            true,
+            &["surface.brief", "artifact.surface_brief"],
+        ),
+        capability(
+            "artifacts.brief.generate",
+            "Generate Artifact Brief",
+            "Generate brief artifacts for product surfaces from durable evidence.",
+            "brief",
+            json!({ "type": "object", "additionalProperties": true }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["artifact.surface_brief"],
+        ),
+        capability(
             "backup.restore_jobs.list",
             "List Backup And Restore Jobs",
             "Read backup and restore job state from SQLite.",
@@ -1615,6 +1641,11 @@ fn is_mcp_export_policy_exported(policy: &str) -> bool {
 fn side_effects_for_capability(id: &str, mcp_export_policy: &str) -> Vec<String> {
     let side_effects = match id {
         "brief.system.generate" => &["creates_job", "writes_sqlite", "writes_brief_artifact"][..],
+        "surface.brief.generate" => &[
+            "creates_job",
+            "writes_sqlite",
+            "writes_surface_brief_artifact",
+        ][..],
         "backup.create" => &["creates_job", "writes_sqlite", "writes_backup_archive"][..],
         "restore.preflight.validate" => &[
             "creates_job",

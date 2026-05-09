@@ -382,6 +382,9 @@ Implemented behavior:
 - primary message actions have explicit accessible labels, visible focus rings,
   and reduced-motion behavior keeps state legible without relying on smooth
   scrolling;
+- product surfaces can render the latest completed surface brief before raw
+  surface detail while showing a queued/running/failed refresh state that does
+  not block the rest of the page;
 - smoke coverage exercises desktop and mobile layout, edit, undo, reactions,
   mark read/unread affordances, typing/presence, retry, recovery/replay,
   reduced motion, no horizontal overflow, and role-gated navigation.

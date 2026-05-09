@@ -1,7 +1,7 @@
 # Conversation Realtime Data Model
 
 Status: Draft schema plan with backend foundation implemented through daemon
-schema versions 19 through 25
+schema versions 19 through 26
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -39,7 +39,8 @@ foundation. Schema version 23 adds dedicated knowledge graph node and edge
 candidate tables. Schema version 24 adds referral records, business outcomes,
 and business outcome attribution candidates. Schema version 25 adds normalized
 artifacts, versions, evidence/influence links, and client-facing deliverable
-projections. Dedicated privacy transform tables remain deferred; privacy
+projections. Schema version 26 adds durable surface brief jobs/read models
+linked to generated artifacts. Dedicated privacy transform tables remain deferred; privacy
 transform run ids are recorded on invocations, while placeholder mappings stay
 behind the encrypted local vault boundary.
 
@@ -815,8 +816,10 @@ Columns:
 ### `surface_briefs`
 
 Stores latest completed evidence-backed briefs for major UI surfaces. Brief
-refresh jobs should update this table or equivalent artifact links without
-blocking the UI from loading the previous completed brief.
+refresh jobs update this table and linked `surface.brief` artifacts without
+blocking the UI from loading the previous completed brief. The #105 foundation
+implements deterministic generation first; provider-backed synthesis remains
+behind the governed LLM path.
 
 Columns:
 
@@ -824,18 +827,25 @@ Columns:
 - `surface_kind TEXT NOT NULL`
 - `subject_kind TEXT`
 - `subject_id TEXT`
-- `artifact_id TEXT`
 - `status TEXT NOT NULL`
+- `artifact_id TEXT`
+- `title TEXT NOT NULL`
 - `brief_markdown TEXT NOT NULL`
 - `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
 - `limitations_json TEXT NOT NULL DEFAULT '[]'`
 - `created_by_job_id TEXT`
 - `generated_at TEXT NOT NULL`
 - `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+- `completed_at TEXT`
+- `superseded_at TEXT`
+- `failure_message TEXT`
 
 Indexes:
 
-- `(surface_kind, subject_kind, subject_id, generated_at DESC)`.
+- `(surface_kind, subject_kind, subject_id, status, generated_at DESC)`;
+- `(artifact_id)`;
+- `(created_by_job_id)`.
 
 ### `privacy_transform_runs`
 

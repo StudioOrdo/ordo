@@ -252,6 +252,18 @@ test("Account tools are role-specific and keep affiliates outside the staff rail
   await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
 });
 
+test("Product surfaces load latest completed brief before raw surface detail", async ({ page }) => {
+  await page.goto("/offers?role=staff");
+
+  const latestBrief = page.getByLabel("Latest completed surface brief");
+  await expect(latestBrief).toBeVisible();
+  await expect(latestBrief).toContainText("Offer surface brief");
+  await expect(latestBrief).toContainText("Refresh running");
+  await expect(latestBrief).toContainText("offer_starter");
+  await expect(page.getByRole("heading", { name: "Offers", exact: true })).toBeVisible();
+  await expect(page.locator("main")).toContainText("Offers describe ways to buy from Studio Ordo.");
+});
+
 function startMockDaemon(): Promise<{ close: () => Promise<void>; state: MockDaemonState }> {
   const state: MockDaemonState = { backupCreated: false, reportCreated: false, requests: [] };
   const server = createServer((request, response) => handleRequest(request, response, state));

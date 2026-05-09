@@ -240,7 +240,7 @@ Exit criteria:
 
 ## Phase 8: Continuous Analysis And Briefs
 
-Status: foundation implemented in the #95, #102, #103, and #104 slices. Schema
+Status: foundation implemented in the #95, #102, #103, #104, and #105 slices. Schema
 version 22 adds `conversation_analysis_jobs`,
 `conversation_analysis_candidates`, `conversation_brief_candidates`, and
 `conversation_memory_candidates`. Schema version 23 adds
@@ -248,6 +248,7 @@ version 22 adds `conversation_analysis_jobs`,
 version 24 adds `referral_records`, `business_outcomes`, and
 `business_outcome_attributions`. Schema version 25 adds normalized `artifacts`,
 `artifact_versions`, `artifact_links`, and `artifact_deliverables`.
+Schema version 26 adds `surface_briefs`.
 Eligible visible durable messages queue idempotent local analysis jobs. The
 deterministic analyzer creates proposed operational candidates, a narrative
 brief candidate, and a relationship-memory candidate with evidence refs,
@@ -258,8 +259,11 @@ evidence-backed outcome and attribution candidates for offer, visitor session,
 and entry point influence when those ids exist. Artifact cards now use Artifact
 as the staff/system noun and Deliverable as the client-facing projection noun
 where intentionally exposed. Provider-backed analysis, surface brief jobs, and
-the full ethical persuasion prompt-slot contract remain owned by later accepted
-issues.
+where intentionally exposed. Surface brief refresh jobs now produce
+evidence-backed deterministic briefs linked to generated artifacts while the UI
+continues to load previous completed briefs during refresh. Provider-backed
+analysis and the full ethical persuasion prompt-slot contract remain owned by
+later accepted issues.
 
 Deliverables:
 
@@ -273,8 +277,8 @@ Deliverables:
   evidence-backed influence rows.
 - Record normalized artifacts, artifact links, version hashes, and client-safe
   deliverable projections.
-- Defer surface brief jobs for business, conversations, connections, offers,
-  asks, artifacts, jobs, affiliates, and customers to #105.
+- Record deterministic surface brief jobs/read models for initial surfaces, with
+  latest-completed-first loading and artifact linkage.
 - Defer full ethical persuasion prompt-slot behavior to #107.
 - Keep memory/corpus promotion behind a later governed approval path.
 

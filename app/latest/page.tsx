@@ -7,6 +7,14 @@ export default async function LatestPage({ searchParams }: { searchParams?: Sear
     topItemId: "latest",
     eyebrow: "Latest",
     title: "Latest",
+    surfaceBrief: {
+      title: "Latest surface brief",
+      generatedAt: "2026-05-09T09:50:00Z",
+      refreshStatus: "idle",
+      body: "Latest can show published artifacts, offer changes, asks, and briefs when those items have public-safe evidence.",
+      evidenceRefs: ["artifact_deliverables_v25", "surface_brief_jobs_v26"],
+      limitations: ["Feed production and external distribution are still out of scope."],
+    },
     brief: [
       "Latest will collect public and member-safe updates.",
       "Published artifacts, offer changes, asks, and briefs can appear here when evidence supports them.",

@@ -50,7 +50,7 @@ architecture doc together.
 | [Affiliate Attribution](affiliate-attribution.md) | Connect affiliates, referral assets, attribution, and credit review. | not built |
 | [Mediated Chat](mediated-chat.md) | Let owners and visitors communicate through Ordo with context and policy intact. | not built |
 | [Job Kernel V2](job-kernel-v2.md) | Add leases, ownership, cancel, retry, and resume semantics for longer work. | not built |
-| [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Move from corpus skeleton to governed retrieval and answer evidence. | governed retrieval backend ready for PR; RAG generation not built |
+| [Knowledge Corpus And RAG](knowledge-corpus-rag.md) | Move from corpus skeleton to governed retrieval and answer evidence. | answer draft backend ready for PR; provider-backed generation not built |
 | [MCP Packs And Tool Hardening](mcp-packs-tool-hardening.md) | Let domain tools and packs customize work without bypassing the trust boundary. | local MCP foundation exists |
 | [Worker Ordos And A2A](worker-ordos-a2a.md) | Define worker Ordos, artifact return, and peer support envelopes. | future direction |
 

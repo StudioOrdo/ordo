@@ -16,6 +16,10 @@ use std::time::Duration as StdDuration;
 use tokio::sync::broadcast;
 use tokio::time::{self, Duration};
 
+use crate::answer_drafts::{
+    list_answer_drafts, prepare_answer_draft, read_answer_draft, AnswerDraftListResponse,
+    AnswerDraftRequest, AnswerDraftResponse,
+};
 use crate::availability::{
     create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox,
     list_handoff_receipts, read_availability_state, resolve_handoff_inbox_item,
@@ -297,6 +301,9 @@ pub async fn serve(
         .route("/corpus/items/:item_id", get(corpus_item_read_handler))
         .route("/corpus/items/:item_id", put(corpus_item_update_handler))
         .route("/corpus/retrieve", post(corpus_retrieve_handler))
+        .route("/answer-drafts", get(answer_drafts_handler))
+        .route("/answer-drafts", post(answer_draft_prepare_handler))
+        .route("/answer-drafts/:draft_id", get(answer_draft_read_handler))
         .route("/reports/issues", get(list_issue_reports_handler))
         .route("/reports/issues/:report_id", get(read_issue_report_handler))
         .route(
@@ -1842,6 +1849,79 @@ async fn corpus_retrieve_handler(
         .map_err(invalid_request_error)
 }
 
+async fn answer_drafts_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<AnswerDraftListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/answer-drafts"),
+        Some("answer.drafts.list"),
+    )?;
+    list_answer_drafts(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn answer_draft_read_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(draft_id): AxumPath<String>,
+) -> Result<Json<AnswerDraftResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/answer-drafts/{draft_id}"),
+        ),
+        Some("answer.drafts.list"),
+    )?;
+    read_answer_draft(&state.db_path, &draft_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn answer_draft_prepare_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<AnswerDraftRequest>,
+) -> Result<Json<AnswerDraftResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Prepare,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/answer-drafts"),
+        Some("answer.drafts.prepare"),
+    )?;
+    let response = prepare_answer_draft(&state.db_path, request, "http", actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "answer.draft.prepared",
+        json!({
+            "draftId": response.draft.id,
+            "status": response.draft.status,
+            "citedItemIds": response.draft.cited_item_ids,
+            "providerCall": "not_performed",
+        }),
+    );
+    Ok(Json(response))
+}
+
 async fn list_issue_reports_handler(
     State(state): State<AppState>,
 ) -> Result<Json<IssueReportsResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -2940,5 +3020,65 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 10);
+    }
+
+    #[test]
+    fn answer_draft_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Prepare,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/answer-drafts"),
+            Some("answer.drafts.prepare"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            (
+                "/answer-drafts",
+                PolicyAction::Inspect,
+                "answer.drafts.list",
+            ),
+            (
+                "/answer-drafts/answer_draft_1",
+                PolicyAction::Inspect,
+                "answer.drafts.list",
+            ),
+            (
+                "/answer-drafts",
+                PolicyAction::Prepare,
+                "answer.drafts.prepare",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('answer.drafts.list', 'answer.drafts.prepare')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 4);
     }
 }

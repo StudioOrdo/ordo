@@ -1,7 +1,7 @@
 # Conversation Realtime Data Model
 
 Status: Draft schema plan with backend foundation implemented through daemon
-schema versions 19 through 26
+schema versions 19 through 27
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -1089,6 +1089,21 @@ Planned product intelligence tables still deferred:
 Candidate records should cite durable evidence and provenance, default to
 `proposed` where generated, and avoid raw private fixture values in public or
 client-facing projections.
+
+The first 0.1.4 product-surface eval slice does not add new tables for
+Home/About billboards or Offer/Ask intents. It validates a smaller current
+contract built from existing durable rows:
+
+- public `business_facts` with keys such as `about.billboards.<id>.*`,
+  `offers.<id>.*`, and `asks.<id>.*`;
+- `surface_briefs` and linked `artifacts` where a generated narrative brief
+  already exists;
+- `customer_reviews`, `business_outcomes`, and offer/referral rows only when
+  concrete ids exist.
+
+Dedicated billboard and intent tables should be added only when future evals
+show that the fact-backed contract cannot express the needed lifecycle,
+governance, or query shape cleanly.
 
 ## Migration Order
 

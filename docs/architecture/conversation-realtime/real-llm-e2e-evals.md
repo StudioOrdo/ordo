@@ -1101,6 +1101,31 @@ for deterministic evals. It does not implement Customer Feedback UI, Home/About
 review presentation, broad review solicitation automation, or autonomous
 artifact-review finding filing.
 
+Implemented Home/About and Offer/Ask product surface slice:
+
+1. `home_about_public_narrative_brief`
+   - Seeds public Home/About billboard facts, draft/private excluded facts, a
+     surface brief row, and a linked artifact.
+   - Reads the Home/About product surface contract from durable public business
+     facts rather than a dedicated billboard table.
+   - Confirms the public billboard preserves evidence refs, allowed state,
+     reduced-motion fallback, and source links including Chat.
+   - Confirms draft and staff/private fixture text do not enter the public
+     surface contract.
+2. `offer_ask_machine_readable_intent`
+   - Seeds public Offer and Ask intent facts with human-readable copy and
+     machine-readable metadata.
+   - Confirms intent objects preserve the future-A2A contract without claiming
+     external A2A implementation.
+   - Confirms humans/policy remain the boundary for what becomes real.
+   - Confirms unsupported public scarcity/social-proof style claims are rejected
+     by the product-surface contract.
+
+This slice extends eval packets with a product-surface ledger for business
+facts, offers, and outcomes. It intentionally does not add dedicated Home/About
+billboard, offer intent, or ask intent tables yet; existing public business
+facts are sufficient for this first deterministic eval proof.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`

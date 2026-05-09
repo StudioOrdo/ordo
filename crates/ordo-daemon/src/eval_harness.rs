@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::artifacts::{record_artifact, ArtifactInput};
 use crate::conversations::{
     conversation_queue, create_conversation_handoff, create_conversation_message,
     create_conversation_participant, find_or_create_canonical_conversation,
@@ -25,6 +26,7 @@ use crate::policy::{
     ActorContext, ActorKind, PolicyAction, PolicyDecisionCorrelation, ProtectedAccessEvidence,
     ResourceKind, ResourceRef,
 };
+use crate::public_surfaces::public_product_surface_contract_connection;
 
 pub const EVAL_HARNESS_SCHEMA_VERSION: &str = "ordo.eval_harness.v1";
 pub const EVAL_ARTIFACT_PACKET_SCHEMA_VERSION: &str = "ordo.eval_artifact_packet.v1";
@@ -72,6 +74,7 @@ pub enum EvalEvidenceChannel {
     ArtifactRecords,
     SurfaceBriefRecords,
     FeedbackReviewRecords,
+    ProductSurfaceRecords,
 }
 
 impl EvalEvidenceChannel {
@@ -89,6 +92,7 @@ impl EvalEvidenceChannel {
             Self::ArtifactRecords => "artifact_records",
             Self::SurfaceBriefRecords => "surface_brief_records",
             Self::FeedbackReviewRecords => "feedback_review_records",
+            Self::ProductSurfaceRecords => "product_surface_records",
         }
     }
 }
@@ -336,6 +340,7 @@ pub struct EvalArtifactPacket {
     pub surface_brief_ledger: Vec<EvalLedgerEntry>,
     pub feedback_ledger: Vec<EvalLedgerEntry>,
     pub review_ledger: Vec<EvalLedgerEntry>,
+    pub product_surface_ledger: Vec<EvalLedgerEntry>,
     pub redaction_summary: EvalRedactionSummary,
     pub artifact_review: EvalArtifactReviewPlaceholder,
 }
@@ -416,6 +421,7 @@ impl EvalArtifactWriter {
             surface_brief_ledger: surface_brief_ledger(connection)?,
             feedback_ledger: feedback_ledger(connection)?,
             review_ledger: review_ledger(connection)?,
+            product_surface_ledger: product_surface_ledger(connection)?,
             redaction_summary: EvalRedactionSummary {
                 redaction_applied: false,
                 redacted_value_count: 0,
@@ -617,6 +623,34 @@ pub fn run_review_candidate_consent_publication_boundary_eval(
         output_dir,
         source_commit,
         run_review_candidate_consent_publication_boundary_step,
+    )
+}
+
+pub fn run_home_about_public_narrative_brief_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    run_role_lifecycle_eval(
+        connection,
+        home_about_public_narrative_brief_case()?,
+        output_dir,
+        source_commit,
+        run_home_about_public_narrative_brief_step,
+    )
+}
+
+pub fn run_offer_ask_machine_readable_intent_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    run_role_lifecycle_eval(
+        connection,
+        offer_ask_machine_readable_intent_case()?,
+        output_dir,
+        source_commit,
+        run_offer_ask_machine_readable_intent_step,
     )
 }
 
@@ -1111,6 +1145,126 @@ fn review_candidate_consent_publication_boundary_case() -> Result<EvalCase> {
                 8,
             )?,
         ],
+    )
+}
+
+fn home_about_public_narrative_brief_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "home_about_public_narrative_brief",
+        "Home/About public narrative brief",
+        &json!({
+            "fixture": "home_about_public_narrative_brief",
+            "version": 1,
+            "surface": "home_about",
+            "reducedMotionFallbackRequired": true,
+        }),
+        vec![
+            EvalActorRole::AnonymousVisitor,
+            EvalActorRole::ClientMember,
+            EvalActorRole::Staff,
+        ],
+        vec![
+            eval_step_with_metadata(
+                "seed_home_about_surface_evidence",
+                EvalActorRole::Staff,
+                "home_about.evidence.seed",
+                vec![
+                    EvalEvidenceChannel::ProductSurfaceRecords,
+                    EvalEvidenceChannel::SurfaceBriefRecords,
+                    EvalEvidenceChannel::ArtifactRecords,
+                    EvalEvidenceChannel::FeedbackReviewRecords,
+                ],
+                json!({
+                    "surface": "home_about",
+                    "publicClaims": "evidence_backed_only",
+                    "includesPrivateDraftFixture": true,
+                }),
+            )?,
+            eval_step_with_metadata(
+                "assert_home_about_public_contract",
+                EvalActorRole::AnonymousVisitor,
+                "home_about.public_contract.read",
+                vec![EvalEvidenceChannel::ProductSurfaceRecords],
+                json!({
+                    "billboardStatesAllowed": ["pinned", "dynamic", "published"],
+                    "reducedMotionFallback": "required",
+                    "links": ["/offers/starter-sprint", "/asks/referrals", "/latest", "/chat"],
+                }),
+            )?,
+        ],
+        vec![
+            EvalAssertion::minimum_count(
+                "product_surface_records_created",
+                EvalEvidenceChannel::ProductSurfaceRecords,
+                6,
+            )?,
+            EvalAssertion::minimum_count(
+                "surface_brief_records_created",
+                EvalEvidenceChannel::SurfaceBriefRecords,
+                1,
+            )?,
+            EvalAssertion::minimum_count(
+                "artifact_records_created",
+                EvalEvidenceChannel::ArtifactRecords,
+                1,
+            )?,
+        ],
+    )
+}
+
+fn offer_ask_machine_readable_intent_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "offer_ask_machine_readable_intent",
+        "Offer and Ask machine-readable business intent",
+        &json!({
+            "fixture": "offer_ask_machine_readable_intent",
+            "version": 1,
+            "a2aStatus": "future_contract",
+            "decisionBoundary": "human_or_policy_decides",
+        }),
+        vec![
+            EvalActorRole::AnonymousVisitor,
+            EvalActorRole::ClientMember,
+            EvalActorRole::Staff,
+        ],
+        vec![
+            eval_step_with_metadata(
+                "seed_offer_ask_intent_evidence",
+                EvalActorRole::Staff,
+                "offer_ask.intent.seed",
+                vec![EvalEvidenceChannel::ProductSurfaceRecords],
+                json!({
+                    "offerIntent": "starter_sprint",
+                    "askIntent": "referrals",
+                    "fakeProofPolicy": "rejected_or_absent",
+                }),
+            )?,
+            eval_step_with_metadata(
+                "assert_offer_ask_intent_contract",
+                EvalActorRole::AnonymousVisitor,
+                "offer_ask.intent.read",
+                vec![EvalEvidenceChannel::ProductSurfaceRecords],
+                json!({
+                    "requiresHumanReadable": true,
+                    "requiresMachineReadable": true,
+                    "futureA2AOnly": true,
+                }),
+            )?,
+            eval_step_with_metadata(
+                "assert_fake_persuasion_rejected",
+                EvalActorRole::Staff,
+                "offer_ask.intent.guardrail",
+                vec![EvalEvidenceChannel::ProductSurfaceRecords],
+                json!({
+                    "rejects": ["fake_scarcity", "unsupported_social_proof", "fake_metrics"],
+                }),
+            )?,
+        ],
+        vec![EvalAssertion::minimum_count(
+            "offer_ask_intent_records_created",
+            EvalEvidenceChannel::ProductSurfaceRecords,
+            8,
+        )?],
     )
 }
 
@@ -1711,6 +1865,366 @@ fn run_review_candidate_consent_publication_boundary_step(
     Ok(())
 }
 
+fn run_home_about_public_narrative_brief_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "seed_home_about_surface_evidence" => {
+            seed_home_about_surface_evidence(connection)?;
+        }
+        "assert_home_about_public_contract" => {
+            seed_home_about_surface_evidence(connection)?;
+            let contract = public_product_surface_contract_connection(connection)?;
+            ensure!(
+                contract.home_about.billboards.len() == 1,
+                "Home/About should expose one public billboard from seeded evidence"
+            );
+            let billboard = &contract.home_about.billboards[0];
+            ensure!(
+                billboard.status == "pinned",
+                "Home/About billboard should preserve the public state contract"
+            );
+            ensure!(
+                !billboard.evidence.is_empty(),
+                "Home/About billboard claims require durable evidence"
+            );
+            ensure!(
+                !billboard.reduced_motion_fallback.trim().is_empty(),
+                "Home/About billboard requires a reduced-motion fallback"
+            );
+            ensure!(
+                billboard.links.contains(&"/chat".to_string()),
+                "Home/About should keep Chat reachable instead of replacing source surfaces"
+            );
+            let public_contract = serde_json::to_string(&contract)?;
+            ensure!(
+                !public_contract.contains("alex@example.com"),
+                "public Home/About contract must not expose private fixture text"
+            );
+            ensure!(
+                !public_contract.contains("Private operator-only positioning"),
+                "public Home/About contract must not expose staff/private facts"
+            );
+            ensure!(
+                !public_contract.contains("Draft billboard"),
+                "public Home/About contract must not expose draft billboards"
+            );
+        }
+        other => anyhow::bail!("unsupported Home/About product surface eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn run_offer_ask_machine_readable_intent_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "seed_offer_ask_intent_evidence" => {
+            seed_offer_ask_intent_evidence(connection)?;
+        }
+        "assert_offer_ask_intent_contract" => {
+            seed_offer_ask_intent_evidence(connection)?;
+            let contract = public_product_surface_contract_connection(connection)?;
+            ensure!(
+                contract.offer_intents.len() == 1,
+                "offer intent contract should expose one seeded public offer"
+            );
+            ensure!(
+                contract.ask_intents.len() == 1,
+                "ask intent contract should expose one seeded public ask"
+            );
+            let offer = &contract.offer_intents[0];
+            ensure!(
+                offer.human_readable.contains("Starter Sprint"),
+                "offer intent must keep human-readable page copy"
+            );
+            ensure!(
+                offer.machine_readable["intentKind"] == "offer",
+                "offer intent must include machine-readable intent kind"
+            );
+            ensure!(
+                offer.machine_readable["a2aStatus"] == "future_contract",
+                "offer intent should not claim external A2A implementation"
+            );
+            ensure!(
+                !offer.evidence.is_empty(),
+                "offer intent requires evidence refs"
+            );
+            let ask = &contract.ask_intents[0];
+            ensure!(
+                ask.machine_readable["decisionBoundary"]
+                    == "human_or_policy_decides_what_becomes_real",
+                "ask intent must preserve human/policy decision boundary"
+            );
+        }
+        "assert_fake_persuasion_rejected" => {
+            seed_offer_ask_intent_evidence(connection)?;
+            insert_eval_business_fact(
+                connection,
+                "business_fact_eval_offer_fake_title",
+                "offers.rush.title",
+                json!("Rush Offer"),
+                "public",
+                "published",
+                "eval_fixture",
+            )?;
+            insert_eval_business_fact(
+                connection,
+                "business_fact_eval_offer_fake_summary",
+                "offers.rush.summary",
+                json!("Act now before it disappears."),
+                "public",
+                "published",
+                "eval_fixture",
+            )?;
+            insert_eval_business_fact(
+                connection,
+                "business_fact_eval_offer_fake_scarcity",
+                "offers.rush.scarcity",
+                json!("Only two spots left."),
+                "public",
+                "published",
+                "eval_fixture",
+            )?;
+            let error = public_product_surface_contract_connection(connection)
+                .expect_err("unsupported public scarcity should be rejected");
+            ensure!(
+                error
+                    .to_string()
+                    .contains("unsupported public persuasion proof"),
+                "fake scarcity rejection should be structured and inspectable"
+            );
+        }
+        other => anyhow::bail!("unsupported Offer/Ask product surface eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn seed_home_about_surface_evidence(connection: &Connection) -> Result<()> {
+    for (id, fact_key, value, visibility, publication_state) in [
+        (
+            "business_fact_eval_home_status",
+            "about.billboards.hero.status",
+            json!("pinned"),
+            "public",
+            "published",
+        ),
+        (
+            "business_fact_eval_home_headline",
+            "about.billboards.hero.headline",
+            json!("Proof-backed client operations"),
+            "public",
+            "published",
+        ),
+        (
+            "business_fact_eval_home_body",
+            "about.billboards.hero.body",
+            json!("Ordo turns relationship evidence into a usable next action."),
+            "public",
+            "published",
+        ),
+        (
+            "business_fact_eval_home_motion",
+            "about.billboards.hero.reducedMotionFallback",
+            json!("Static proof-backed narrative with the same claims."),
+            "public",
+            "published",
+        ),
+        (
+            "business_fact_eval_home_links",
+            "about.billboards.hero.links",
+            json!([
+                "/offers/starter-sprint",
+                "/asks/referrals",
+                "/latest",
+                "/chat"
+            ]),
+            "public",
+            "published",
+        ),
+        (
+            "business_fact_eval_home_draft",
+            "about.billboards.draft.body",
+            json!("Draft billboard"),
+            "public",
+            "draft",
+        ),
+        (
+            "business_fact_eval_home_private",
+            "about.billboards.private.body",
+            json!("Private operator-only positioning for alex@example.com"),
+            "staff",
+            "published",
+        ),
+    ] {
+        insert_eval_business_fact(
+            connection,
+            id,
+            fact_key,
+            value,
+            visibility,
+            publication_state,
+            "eval_fixture",
+        )?;
+    }
+
+    record_artifact(
+        connection,
+        ArtifactInput {
+            artifact_kind: "home_about.narrative".to_string(),
+            title: "Home/About narrative evidence".to_string(),
+            status: "published".to_string(),
+            visibility_ceiling: "public".to_string(),
+            summary: "Evidence packet for the public Home/About narrative.".to_string(),
+            source_kind: Some("public_surface".to_string()),
+            source_id: Some("home_about".to_string()),
+            evidence_refs: vec![
+                "business_fact_eval_home_headline".to_string(),
+                "business_fact_eval_home_body".to_string(),
+            ],
+            provenance: json!({
+                "workflow": "home_about_public_narrative_brief",
+                "mode": "deterministic_eval",
+            }),
+            content_hash: stable_text_hash("home_about_public_narrative_brief"),
+            storage_uri: None,
+            health_status: Some("available".to_string()),
+            created_by_job_id: None,
+        },
+    )?;
+    connection.execute(
+        "INSERT OR IGNORE INTO surface_briefs (
+            id, surface_kind, subject_kind, subject_id, status, artifact_id, title,
+            brief_markdown, evidence_refs_json, limitations_json, created_by_job_id,
+            generated_at, created_at, updated_at, completed_at
+         ) VALUES (
+            'surface_brief_eval_home_about', 'home_about', NULL, NULL, 'completed',
+            (SELECT id FROM artifacts WHERE artifact_kind = 'home_about.narrative' ORDER BY created_at DESC LIMIT 1),
+            'Home/About public narrative',
+            'Proof-backed public narrative. Limitation: deterministic eval fixture only.',
+            '[\"business_fact_eval_home_headline\",\"business_fact_eval_home_body\"]',
+            '[\"No frontend scrollytelling is implemented in this eval slice.\"]',
+            NULL, '2026-05-09T00:00:00Z', '2026-05-09T00:00:00Z',
+            '2026-05-09T00:00:00Z', '2026-05-09T00:00:00Z'
+         )",
+        [],
+    )?;
+    Ok(())
+}
+
+fn seed_offer_ask_intent_evidence(connection: &Connection) -> Result<()> {
+    for (id, fact_key, value) in [
+        (
+            "business_fact_eval_offer_title",
+            "offers.starter_sprint.title",
+            json!("Starter Sprint"),
+        ),
+        (
+            "business_fact_eval_offer_summary",
+            "offers.starter_sprint.summary",
+            json!("A focused implementation sprint with evidence-backed scope."),
+        ),
+        (
+            "business_fact_eval_offer_intent",
+            "offers.starter_sprint.intent",
+            json!({
+                "object": "offer",
+                "outputArtifact": "implementation_plan",
+                "approvalRequired": true,
+                "startPath": "/chat",
+                "outcomeRefs": ["business_outcome_eval_1"]
+            }),
+        ),
+        (
+            "business_fact_eval_offer_terms",
+            "offers.starter_sprint.terms",
+            json!({
+                "humanReadable": "Start in chat; staff confirms fit before anything becomes real.",
+                "policyDecides": true
+            }),
+        ),
+        (
+            "business_fact_eval_ask_title",
+            "asks.referrals.title",
+            json!("Referral fit"),
+        ),
+        (
+            "business_fact_eval_ask_summary",
+            "asks.referrals.summary",
+            json!("Introduce teams that need proof-backed operations."),
+        ),
+        (
+            "business_fact_eval_ask_intent",
+            "asks.referrals.intent",
+            json!({
+                "object": "ask",
+                "requestedInput": "warm_intro",
+                "respondPath": "/chat",
+                "referralRefs": ["referral_eval_1"]
+            }),
+        ),
+        (
+            "business_fact_eval_ask_terms",
+            "asks.referrals.terms",
+            json!({
+                "humanReadable": "Only make intros with consent.",
+                "approvalRequired": true
+            }),
+        ),
+    ] {
+        insert_eval_business_fact(
+            connection,
+            id,
+            fact_key,
+            value,
+            "public",
+            "published",
+            "eval_fixture",
+        )?;
+    }
+    Ok(())
+}
+
+fn insert_eval_business_fact(
+    connection: &Connection,
+    id: &str,
+    fact_key: &str,
+    value: serde_json::Value,
+    visibility: &str,
+    publication_state: &str,
+    source_kind: &str,
+) -> Result<()> {
+    connection.execute(
+        "INSERT OR IGNORE INTO business_facts (
+            id, subject_type, subject_id, fact_key, value_json, source_kind, source_label,
+            source_uri, provenance_json, visibility, publication_state, created_by_actor_id,
+            created_at, updated_at, published_at, archived_at
+         ) VALUES (
+            ?1, 'public_surface', 'eval_business', ?2, ?3, ?4, 'Product surface eval',
+            NULL, ?5, ?6, ?7, 'actor_staff_eval_1',
+            '2026-05-09T00:00:00Z', '2026-05-09T00:00:00Z',
+            CASE WHEN ?7 = 'published' THEN '2026-05-09T00:00:00Z' ELSE NULL END,
+            CASE WHEN ?7 IN ('archived', 'revoked') THEN '2026-05-09T00:00:00Z' ELSE NULL END
+         )",
+        rusqlite::params![
+            id,
+            fact_key,
+            value.to_string(),
+            source_kind,
+            json!({
+                "workflow": "product_surface_workflow_eval",
+                "evidenceBacked": true,
+            })
+            .to_string(),
+            visibility,
+            publication_state,
+        ],
+    )?;
+    Ok(())
+}
+
 fn seed_feedback_source_message(connection: &Connection) -> Result<(String, String)> {
     let conversation =
         find_or_create_canonical_conversation(connection, &feedback_conversation_request())?;
@@ -2030,6 +2544,12 @@ pub fn collect_evidence_snapshot(
                     + table_count(connection, "feedback_tags")?
                     + table_count(connection, "customer_reviews")?,
             },
+            EvalEvidenceCount {
+                channel: EvalEvidenceChannel::ProductSurfaceRecords,
+                count: table_count(connection, "business_facts")?
+                    + table_count(connection, "offers")?
+                    + table_count(connection, "business_outcomes")?,
+            },
         ],
         conversation_event_max_sequence: max_i64(connection, "conversation_events", "sequence")?,
         realtime_replay_max_cursor: max_i64(connection, "realtime_events", "cursor")?,
@@ -2060,6 +2580,9 @@ fn total_evidence_rows(connection: &Connection) -> Result<i64> {
         "customer_feedback",
         "feedback_tags",
         "customer_reviews",
+        "business_facts",
+        "offers",
+        "business_outcomes",
     ];
     tables
         .iter()
@@ -2515,6 +3038,117 @@ fn review_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>> {
                 "publishedAt": row.get::<_, Option<String>>(12)?,
                 "featuredAt": row.get::<_, Option<String>>(13)?,
                 "retiredAt": row.get::<_, Option<String>>(14)?,
+            }),
+        })
+    })?;
+    collect_rows(rows)
+}
+
+fn product_surface_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>> {
+    let mut entries = business_fact_ledger(connection)?;
+    entries.extend(offer_ledger(connection)?);
+    entries.extend(business_outcome_ledger(connection)?);
+    entries.sort_by(|left, right| {
+        left.occurred_at
+            .cmp(&right.occurred_at)
+            .then_with(|| left.ledger.cmp(&right.ledger))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(entries)
+}
+
+fn business_fact_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>> {
+    let mut statement = connection.prepare(
+        "SELECT id, created_at, fact_key, subject_type, subject_id, value_json,
+                source_kind, source_label, source_uri, provenance_json, visibility,
+                publication_state, published_at, archived_at
+         FROM business_facts
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(EvalLedgerEntry {
+            ledger: "business_facts".to_string(),
+            id: row.get(0)?,
+            occurred_at: Some(row.get(1)?),
+            entry_type: row.get(2)?,
+            payload: json!({
+                "subjectType": row.get::<_, String>(3)?,
+                "subjectId": row.get::<_, String>(4)?,
+                "value": parse_json_value(row.get::<_, String>(5)?),
+                "sourceKind": row.get::<_, String>(6)?,
+                "sourceLabel": row.get::<_, Option<String>>(7)?,
+                "sourceUri": row.get::<_, Option<String>>(8)?,
+                "provenance": parse_json_value(row.get::<_, String>(9)?),
+                "visibility": row.get::<_, String>(10)?,
+                "publicationState": row.get::<_, String>(11)?,
+                "publishedAt": row.get::<_, Option<String>>(12)?,
+                "archivedAt": row.get::<_, Option<String>>(13)?,
+            }),
+        })
+    })?;
+    collect_rows(rows)
+}
+
+fn offer_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>> {
+    let mut statement = connection.prepare(
+        "SELECT id, created_at, slug, title, summary, status, visibility,
+                publication_state, trial_days, source_kind, source_ref, terms_json,
+                metadata_json, published_at, archived_at
+         FROM offers
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(EvalLedgerEntry {
+            ledger: "offers".to_string(),
+            id: row.get(0)?,
+            occurred_at: Some(row.get(1)?),
+            entry_type: row.get(2)?,
+            payload: json!({
+                "title": row.get::<_, String>(3)?,
+                "summary": row.get::<_, String>(4)?,
+                "status": row.get::<_, String>(5)?,
+                "visibility": row.get::<_, String>(6)?,
+                "publicationState": row.get::<_, String>(7)?,
+                "trialDays": row.get::<_, i64>(8)?,
+                "sourceKind": row.get::<_, String>(9)?,
+                "sourceRef": row.get::<_, Option<String>>(10)?,
+                "terms": parse_json_value(row.get::<_, String>(11)?),
+                "metadata": parse_json_value(row.get::<_, String>(12)?),
+                "publishedAt": row.get::<_, Option<String>>(13)?,
+                "archivedAt": row.get::<_, Option<String>>(14)?,
+            }),
+        })
+    })?;
+    collect_rows(rows)
+}
+
+fn business_outcome_ledger(connection: &Connection) -> Result<Vec<EvalLedgerEntry>> {
+    let mut statement = connection.prepare(
+        "SELECT id, created_at, outcome_kind, status, connection_id, conversation_id,
+                segment_id, offer_id, ask_id, artifact_id, entry_point_id,
+                visitor_session_id, referral_id, evidence_refs_json, provenance_json
+         FROM business_outcomes
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(EvalLedgerEntry {
+            ledger: "business_outcomes".to_string(),
+            id: row.get(0)?,
+            occurred_at: Some(row.get(1)?),
+            entry_type: row.get(2)?,
+            payload: json!({
+                "status": row.get::<_, String>(3)?,
+                "connectionId": row.get::<_, Option<String>>(4)?,
+                "conversationId": row.get::<_, Option<String>>(5)?,
+                "segmentId": row.get::<_, Option<String>>(6)?,
+                "offerId": row.get::<_, Option<String>>(7)?,
+                "askId": row.get::<_, Option<String>>(8)?,
+                "artifactId": row.get::<_, Option<String>>(9)?,
+                "entryPointId": row.get::<_, Option<String>>(10)?,
+                "visitorSessionId": row.get::<_, Option<String>>(11)?,
+                "referralId": row.get::<_, Option<String>>(12)?,
+                "evidenceRefs": parse_json_value(row.get::<_, String>(13)?),
+                "provenance": parse_json_value(row.get::<_, String>(14)?),
             }),
         })
     })?;
@@ -3173,6 +3807,64 @@ mod tests {
         assert!(packet.contains("consentEvidenceRefs"));
         assert!(packet.contains("approvalEvidenceRefs"));
         assert!(packet.contains("\"entryType\": \"retired\""));
+        assert!(!packet.contains("fake review"));
+    }
+
+    #[test]
+    fn home_about_public_narrative_eval_writes_surface_artifacts() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run =
+            run_home_about_public_narrative_brief_eval(&connection, temp_dir.path(), "test-commit")
+                .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "home_about_public_narrative_brief");
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::ProductSurfaceRecords)
+                >= 6
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::SurfaceBriefRecords)
+                >= 1
+        );
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"productSurfaceLedger\""));
+        assert!(packet.contains("about.billboards.hero.headline"));
+        assert!(packet.contains("reducedMotionFallback"));
+        assert!(packet.contains("/chat"));
+        assert!(packet.contains("[REDACTED:email]"));
+        assert!(!packet.contains("alex@example.com"));
+    }
+
+    #[test]
+    fn offer_ask_intent_eval_writes_machine_readable_contract_artifacts() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run =
+            run_offer_ask_machine_readable_intent_eval(&connection, temp_dir.path(), "test-commit")
+                .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "offer_ask_machine_readable_intent");
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::ProductSurfaceRecords)
+                >= 8
+        );
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("starter_sprint"));
+        assert!(packet.contains("referrals"));
+        assert!(packet.contains("futureA2AOnly"));
+        assert!(packet.contains("assert_fake_persuasion_rejected"));
+        assert!(packet.contains("fake_scarcity"));
         assert!(!packet.contains("fake review"));
     }
 }

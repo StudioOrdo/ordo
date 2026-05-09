@@ -356,7 +356,12 @@ Delivery order:
    implemented with `feedback_capture_private_business_intelligence` and
    `review_candidate_consent_publication_boundary`, backed by minimal durable
    feedback, tag, and review tables.
-7. Implement Home/About and Offer/Ask product surface workflow evals.
+7. Implement Home/About and Offer/Ask product surface workflow evals. The
+   initial slice is implemented with `home_about_public_narrative_brief` and
+   `offer_ask_machine_readable_intent`, backed by public business facts,
+   surface-brief/artifact evidence, product-surface packet ledgers, and
+   unsupported-proof guardrails. Dedicated Home/About billboard and offer/ask
+   intent tables remain deferred until later eval evidence requires them.
 8. Add replay-provider fixture support.
 9. Add real provider adapter behind the Rust-owned LLM gateway.
 10. Add opt-in live eval runner with network and spend guards.

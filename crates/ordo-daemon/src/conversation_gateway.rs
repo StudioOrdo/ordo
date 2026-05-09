@@ -24,6 +24,7 @@ use crate::policy::{ActorContext, ActorKind};
 
 const DEFAULT_REPLAY_LIMIT: usize = 100;
 const MAX_REPLAY_LIMIT: usize = 500;
+const MAX_TEXT_FRAME_BYTES: usize = 64 * 1024;
 const COMMAND_RATE_LIMIT: usize = 30;
 const COMMAND_RATE_WINDOW_SECONDS: i64 = 60;
 
@@ -131,14 +132,7 @@ pub async fn handle_conversation_socket(
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        let frame = command_rejected_error(
-                            None,
-                            None,
-                            "client_lagged",
-                            &format!("Conversation gateway client skipped {skipped} frame(s)."),
-                            true,
-                            &Utc::now().to_rfc3339(),
-                        );
+                        let frame = lagged_client_frame(skipped, &Utc::now().to_rfc3339());
                         if send_gateway_frame(&mut socket, &frame).await.is_err() {
                             return;
                         }
@@ -167,6 +161,16 @@ pub fn handle_gateway_text_frame(
     text: &str,
 ) -> ConversationGatewayOutput {
     let now = Utc::now().to_rfc3339();
+    if text.len() > MAX_TEXT_FRAME_BYTES {
+        return error_output(command_rejected_error(
+            None,
+            None,
+            "frame_too_large",
+            "Conversation gateway frame exceeds the maximum accepted size.",
+            false,
+            &now,
+        ));
+    }
     let Ok(envelope) = serde_json::from_str::<ConversationGatewayEnvelope>(text) else {
         return error_output(command_rejected_error(
             None,
@@ -328,19 +332,27 @@ fn command(
         "conversation.subscribe" => subscribe(db_path, session, envelope),
         "conversation.replay_after_cursor" => replay(db_path, envelope),
         "message.submit" => {
-            enforce_message_command_rate_limit(session)?;
+            if let Some(output) = enforce_message_command_rate_limit(session, &envelope)? {
+                return Ok(output);
+            }
             message_submit(db_path, session, envelope)
         }
         "message.edit" => {
-            enforce_message_command_rate_limit(session)?;
+            if let Some(output) = enforce_message_command_rate_limit(session, &envelope)? {
+                return Ok(output);
+            }
             message_edit(db_path, session, envelope)
         }
         "message.delete" => {
-            enforce_message_command_rate_limit(session)?;
+            if let Some(output) = enforce_message_command_rate_limit(session, &envelope)? {
+                return Ok(output);
+            }
             message_delete(db_path, session, envelope)
         }
         "message.undo" => {
-            enforce_message_command_rate_limit(session)?;
+            if let Some(output) = enforce_message_command_rate_limit(session, &envelope)? {
+                return Ok(output);
+            }
             message_undo(db_path, session, envelope)
         }
         "message.mark_read" => message_mark_read(db_path, session, envelope),
@@ -905,7 +917,10 @@ fn replay_conversation_events(
         .map_err(Into::into)
 }
 
-fn enforce_message_command_rate_limit(session: &mut ConversationGatewaySession) -> Result<()> {
+fn enforce_message_command_rate_limit(
+    session: &mut ConversationGatewaySession,
+    envelope: &ConversationGatewayEnvelope,
+) -> Result<Option<ConversationGatewayOutput>> {
     let now = Utc::now();
     let floor = now - ChronoDuration::seconds(COMMAND_RATE_WINDOW_SECONDS);
     while session
@@ -915,12 +930,18 @@ fn enforce_message_command_rate_limit(session: &mut ConversationGatewaySession) 
     {
         session.recent_message_commands.pop_front();
     }
-    ensure!(
-        session.recent_message_commands.len() < COMMAND_RATE_LIMIT,
-        "message command rate limit exceeded"
-    );
+    if session.recent_message_commands.len() >= COMMAND_RATE_LIMIT {
+        return Ok(Some(error_output(command_rejected_error(
+            envelope.client_id.as_deref(),
+            envelope.conversation_id.as_deref(),
+            "rate_limited",
+            "Message command rate limit exceeded.",
+            true,
+            &now.to_rfc3339(),
+        ))));
+    }
     session.recent_message_commands.push_back(now);
-    Ok(())
+    Ok(None)
 }
 
 fn mutation_actor(
@@ -981,6 +1002,19 @@ fn single_frame(frame: ConversationGatewayEnvelope) -> ConversationGatewayOutput
 
 fn error_output(frame: ConversationGatewayEnvelope) -> ConversationGatewayOutput {
     single_frame(frame)
+}
+
+fn lagged_client_frame(skipped: u64, occurred_at: &str) -> ConversationGatewayEnvelope {
+    command_rejected_error(
+        None,
+        None,
+        "client_lagged",
+        &format!(
+            "Conversation gateway client skipped {skipped} frame(s); replay from the latest durable cursor."
+        ),
+        true,
+        occurred_at,
+    )
 }
 
 #[cfg(test)]
@@ -1090,6 +1124,29 @@ mod tests {
             unsupported.frames[0].payload["code"],
             "unsupported_protocol_version"
         );
+
+        let oversized = handle_gateway_text_frame(
+            &db_path,
+            &mut session,
+            &"x".repeat(MAX_TEXT_FRAME_BYTES + 1),
+        );
+        assert_eq!(oversized.frames[0].op, ConversationGatewayOp::Error);
+        assert_eq!(oversized.frames[0].payload["code"], "frame_too_large");
+        assert_eq!(oversized.frames[0].payload["retryable"], false);
+    }
+
+    #[test]
+    fn lagged_client_error_is_retryable_and_points_to_replay() {
+        let frame = lagged_client_frame(7, "2026-05-09T00:00:00Z");
+
+        assert_eq!(frame.op, ConversationGatewayOp::Error);
+        assert_eq!(frame.frame_type, "command.rejected");
+        assert_eq!(frame.payload["code"], "client_lagged");
+        assert_eq!(frame.payload["retryable"], true);
+        assert!(frame.payload["message"]
+            .as_str()
+            .unwrap()
+            .contains("replay"));
     }
 
     #[test]
@@ -1216,6 +1273,139 @@ mod tests {
             .frames
             .windows(2)
             .all(|window| window[0].sequence <= window[1].sequence));
+
+        let latest_sequence = replay
+            .frames
+            .last()
+            .and_then(|frame| frame.sequence)
+            .unwrap();
+        let stale_replay = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.replay_after_cursor",
+                "client_replay_stale",
+                &conversation_id,
+                json!({ "afterSequence": latest_sequence + 100, "limit": 20 }),
+            ),
+        )
+        .unwrap();
+        assert!(stale_replay.frames.is_empty());
+    }
+
+    #[test]
+    fn duplicate_submit_retry_uses_canonical_message_without_duplicate_events() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+
+        let first = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "message.submit",
+                "client_submit_first",
+                &conversation_id,
+                json!({
+                    "bodyMarkdown": "hello",
+                    "clientMessageId": "client_msg_retry"
+                }),
+            ),
+        )
+        .unwrap();
+        let retry = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "message.submit",
+                "client_submit_retry",
+                &conversation_id,
+                json!({
+                    "bodyMarkdown": "hello",
+                    "clientMessageId": "client_msg_retry"
+                }),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            first.frames[0].payload["messageId"],
+            retry.frames[0].payload["messageId"]
+        );
+        assert_eq!(
+            retry.frames[0].client_id.as_deref(),
+            Some("client_submit_retry")
+        );
+
+        let connection = Connection::open(&db_path).unwrap();
+        let message_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages WHERE client_message_id = 'client_msg_retry'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let created_event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_events
+                 WHERE conversation_id = ?1
+                   AND event_type = 'message.created'
+                   AND payload_json LIKE '%client_msg_retry%'",
+                params![conversation_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(message_count, 1);
+        assert_eq!(created_event_count, 1);
+    }
+
+    #[test]
+    fn message_command_flood_returns_structured_rejection() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+
+        for index in 0..COMMAND_RATE_LIMIT {
+            let accepted = handle_gateway_envelope(
+                &db_path,
+                &mut session,
+                command(
+                    "message.submit",
+                    &format!("client_submit_{index}"),
+                    &conversation_id,
+                    json!({
+                        "bodyMarkdown": format!("message {index}"),
+                        "clientMessageId": format!("client_msg_{index}")
+                    }),
+                ),
+            )
+            .unwrap();
+            assert_eq!(accepted.frames[0].op, ConversationGatewayOp::Ack);
+        }
+
+        let rejected = handle_gateway_text_frame(
+            &db_path,
+            &mut session,
+            &serde_json::to_string(&command(
+                "message.submit",
+                "client_submit_over_limit",
+                &conversation_id,
+                json!({
+                    "bodyMarkdown": "too many",
+                    "clientMessageId": "client_msg_over_limit"
+                }),
+            ))
+            .unwrap(),
+        );
+        assert_eq!(rejected.frames[0].op, ConversationGatewayOp::Error);
+        assert_eq!(rejected.frames[0].payload["code"], "rate_limited");
+        assert_eq!(rejected.frames[0].payload["retryable"], true);
+        assert_eq!(
+            rejected.frames[0].client_id.as_deref(),
+            Some("client_submit_over_limit")
+        );
+        assert!(rejected.frames[0].payload["message"]
+            .as_str()
+            .unwrap()
+            .contains("rate limit"));
     }
 
     #[test]

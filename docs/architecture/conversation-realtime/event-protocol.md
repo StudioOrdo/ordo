@@ -409,8 +409,8 @@ The daemon should support two recovery paths:
 
 1. Global replay through the existing `/events?after=<cursor>` path for
    persisted appliance events.
-2. Conversation replay through `/conversations/:id/events?after=<sequence>` or
-   the WebSocket `resume` operation for per-conversation ordered state.
+2. Conversation replay through `/chat/ws` `subscribe`, `resume`, or `replay`
+   frames using per-conversation `afterSequence` and bounded `limit` values.
 
 The gateway should send current ephemeral snapshots after resume:
 
@@ -418,6 +418,12 @@ The gateway should send current ephemeral snapshots after resume:
 - current online/viewing participants allowed by policy;
 - current LLM run activity;
 - current connection health.
+
+The implemented `/chat/ws` gateway clamps replay windows to at most 500 durable
+conversation events. A replay after a future or already-consumed sequence
+returns no dispatch frames rather than duplicating state. If the local broadcast
+receiver lags behind the in-memory fanout buffer, the daemon emits retryable
+`client_lagged` so the browser can replay from its latest durable cursor.
 
 ## Error Events
 
@@ -439,12 +445,14 @@ Errors should be structured and correlate to `clientId`:
 
 Error codes should cover:
 
-- invalid envelope;
-- unsupported protocol version;
+- `invalid_envelope`;
+- `frame_too_large`;
+- `unsupported_protocol_version`;
 - auth required;
 - policy denied;
 - review required;
 - rate limited;
+- `client_lagged`;
 - conversation not found;
 - participant not found;
 - idempotency conflict;

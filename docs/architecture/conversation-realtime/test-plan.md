@@ -135,6 +135,7 @@ Evidence:
 Unit tests:
 
 - envelope parse rejects malformed JSON;
+- oversized frames are rejected before JSON parsing;
 - unsupported protocol version returns structured error;
 - unknown command returns structured error;
 - command ack includes original `clientId`;
@@ -151,7 +152,10 @@ Integration tests:
 - resume restores subscriptions and sends ephemeral snapshot;
 - slow client receives backpressure/degraded behavior instead of unbounded memory
   growth;
-- lagged broadcast emits a recoverable replay instruction.
+- lagged broadcast emits a recoverable replay instruction;
+- duplicate message-submit retry reconciles to the canonical message without
+  duplicate durable rows or duplicate `message.created` events;
+- high-frequency message command flood returns a structured rejection.
 - handoff lifecycle commands emit accepted, declined, assigned,
   returned-to-agent, and closed events;
 - conversation mode changes are durable and replayable;
@@ -348,6 +352,22 @@ Assertions:
 - bounded memory per connection;
 - durable message insert remains transactional;
 - high-volume ephemeral deltas do not create durable row explosion.
+
+Current release evidence for #96:
+
+- `/chat/ws` uses Tokio broadcast fanout with bounded receiver lag behavior and a
+  retryable `client_lagged` recovery frame;
+- inbound text frames over 64 KiB return `frame_too_large` before parsing;
+- replay windows are clamped to 500 durable conversation events;
+- message command rate limiting is covered at the gateway boundary;
+- duplicate message retries are idempotent through `clientMessageId`.
+
+Deferred performance evidence:
+
+- many-client load measurement and hard SLOs remain future release work;
+- explicit heartbeat timeout eviction remains future transport hardening;
+- cross-process fanout is out of scope while the daemon remains a local
+  appliance.
 
 ## Security And Abuse Tests
 

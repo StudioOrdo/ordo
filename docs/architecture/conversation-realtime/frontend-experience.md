@@ -346,6 +346,13 @@ should remain plain, respectful, and agency-preserving.
 The UI should never display fake scarcity, invented social proof, unsupported
 authority claims, or urgency that is not backed by real constraints.
 
+Implemented behavior: staff conversation detail can render an `Ethical business
+persuasion` guidance panel that shows the `ethical_business_persuasion` slot
+version, use case, principles, staff reasoning, evidence refs, source refs, and
+client-safe suggestion. The same panel is omitted from client/public chat
+surfaces so ordinary users do not see prompt slot mechanics or internal
+reasoning.
+
 ## Non-Goals For Initial UI
 
 - No marketing hero page.
@@ -385,6 +392,8 @@ Implemented behavior:
 - product surfaces can render the latest completed surface brief before raw
   surface detail while showing a queued/running/failed refresh state that does
   not block the rest of the page;
+- staff conversation detail can render evidence-backed ethical persuasion
+  guidance while client chat hides internal prompt mechanics;
 - smoke coverage exercises desktop and mobile layout, edit, undo, reactions,
   mark read/unread affordances, typing/presence, retry, recovery/replay,
   reduced motion, no horizontal overflow, and role-gated navigation.

@@ -4,7 +4,8 @@ Status: Staged delivery plan with protocol, schema, core service,
 bidirectional gateway, receipts/presence, first premium UI core, UI
 recovery/accessibility hardening, LLM foundations, continuous analysis,
 knowledge graph candidates, offer/ask attribution foundation, and realtime
-release hardening implemented.
+release hardening implemented. The final 0.1.3 slice implements the
+`ethical_business_persuasion` v1 prompt slot contract.
 
 This plan keeps the first implementation small enough to validate while
 preserving the architecture needed for premium realtime chat, brief-first
@@ -156,16 +157,21 @@ Exit criteria:
 
 ## Phase 5: LLM Gateway Streaming
 
-Status: foundation implemented in PR #117 and governed tool approval foundation
-implemented in the #92 slice. The implemented slices add the
+Status: foundation implemented in PR #117, governed tool approval foundation
+implemented in the #92 slice, and the ethical persuasion v1 prompt slot
+implemented in the #107 slice. The implemented slices add the
 Rust-owned provider adapter contract, deterministic local provider test path,
 prompt slot assembly, `llm.invoke` and `llm.cancel` capabilities, policy
 decision evidence, normalized ephemeral/durable LLM events, cancellation, and
 durable final assistant messages through the conversation event stream. Tool
 requests now record durable approval/rejection/execution evidence and require
-registered exported capabilities before execution. External provider calls,
-arbitrary MCP execution, the privacy egress firewall, and full token ledger
-tables remain deferred to their owning phases.
+registered exported capabilities before execution. The ethical persuasion
+builder requires evidence/source refs for each allowed principle, blocks
+unsupported persuasion claims and coercive language, exposes staff reasoning,
+keeps client language agency-preserving, and records the slot through prompt
+slot accounting. External provider calls, arbitrary MCP execution, the privacy
+egress firewall, and full token ledger tables remain deferred to their owning
+phases.
 
 Deliverables:
 
@@ -234,9 +240,9 @@ Exit criteria:
   available.
 - Tests prove accounting rows/events do not contain raw prompt text, user text,
   provider text, or privacy-sensitive values.
-- Full ethical persuasion behavior remains owned by #107; the
-  `ethical_business_persuasion` prompt slot is accounted like every other slot
-  and must keep evidence refs when included.
+- The `ethical_business_persuasion` prompt slot is accounted like every other
+  slot while keeping evidence/source refs, version, visibility, content hash,
+  and deterministic token estimates.
 
 ## Phase 8: Continuous Analysis And Briefs
 
@@ -258,12 +264,12 @@ candidates from completed analysis jobs. Offer acceptance now records an
 evidence-backed outcome and attribution candidates for offer, visitor session,
 and entry point influence when those ids exist. Artifact cards now use Artifact
 as the staff/system noun and Deliverable as the client-facing projection noun
-where intentionally exposed. Provider-backed analysis, surface brief jobs, and
 where intentionally exposed. Surface brief refresh jobs now produce
 evidence-backed deterministic briefs linked to generated artifacts while the UI
-continues to load previous completed briefs during refresh. Provider-backed
-analysis and the full ethical persuasion prompt-slot contract remain owned by
-later accepted issues.
+continues to load previous completed briefs during refresh. The
+`ethical_business_persuasion` v1 slot is implemented as an evidence-backed
+prompt slot and staff-only UI guidance contract. Provider-backed analysis
+remains deferred.
 
 Deliverables:
 
@@ -279,7 +285,8 @@ Deliverables:
   deliverable projections.
 - Record deterministic surface brief jobs/read models for initial surfaces, with
   latest-completed-first loading and artifact linkage.
-- Defer full ethical persuasion prompt-slot behavior to #107.
+- Record ethical persuasion prompt slot guidance with evidence/source refs,
+  staff-only reasoning, client-safe language, and prompt-slot accounting.
 - Keep memory/corpus promotion behind a later governed approval path.
 
 Exit criteria:
@@ -319,6 +326,4 @@ Deferred release-hardening work:
 - broad many-client load tests and measured SLOs;
 - heartbeat timeout eviction for abandoned browser sockets;
 - distributed fanout or cross-process gateway coordination;
-- graph candidates (#102), attribution (#103), artifact noun work (#104),
-  surface brief jobs (#105), and ethical persuasion prompt-slot enforcement
-  (#107).
+- provider-backed continuous analysis and measured production load envelopes.

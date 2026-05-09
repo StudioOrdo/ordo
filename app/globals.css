@@ -982,6 +982,16 @@ input:focus-visible {
   min-width: 0;
 }
 
+.persuasion-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(20, 83, 45, 0.18);
+  border-radius: var(--radius);
+  background: #fbfdf9;
+  padding: 14px;
+  min-width: 0;
+}
+
 .surface-brief-panel > p,
 .surface-brief-panel small {
   margin: 0;

@@ -225,9 +225,13 @@ Prompt builder:
 - raw provider prompts are not persisted unless an explicit debug mode is later
   designed and approved.
 - the `ethical_business_persuasion` slot records source refs, inclusion reason,
-  visibility ceiling, policy decision, transform run, and token estimates;
+  visibility ceiling, policy decision, transform run, slot version, content
+  hash, and token estimates through `llm_prompt_slot_usage`;
 - persuasion guidance cannot invent scarcity, social proof, authority,
   relationship context, urgency, or evidence.
+- staff-facing persuasion output exposes reasoning and evidence, while
+  client-facing output hides internal prompt mechanics and remains
+  agency-preserving.
 
 Tool mediation:
 
@@ -425,4 +429,6 @@ Coverage:
 - Conversation summaries and brief candidates cite durable evidence.
 - Handoff briefs cite durable messages/events before transcripts.
 - Ethical persuasion guidance stays evidence-backed and agency-preserving.
+- Staff-only ethical persuasion guidance renders evidence/source refs, and
+  client/public chat omits the internal prompt slot panel.
 - UI remains polished on desktop and mobile.

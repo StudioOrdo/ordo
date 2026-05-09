@@ -152,6 +152,7 @@ function ConversationExperience({
         <ConversationHeader detail={detail} gatewayStatus={gatewayStatus} gatewayRoute={CONVERSATION_GATEWAY_ROUTE} />
         <RecoveryBanner gatewayStatus={gatewayStatus} message={recoveryMessage} onReconnect={onReconnect} onSimulateOffline={onSimulateOffline} />
         <NarrativeBrief detail={detail} isStaff={isStaff} />
+        <PersuasionGuidance detail={detail} isStaff={isStaff} />
         <ArtifactCards cards={detail.artifactCards} isStaff={isStaff} />
         <div className="timeline-toolbar" aria-label="Timeline navigation">
           <button type="button" className="button-secondary compact-button" onClick={jumpToFirstUnread}>
@@ -344,6 +345,32 @@ function NarrativeBrief({ detail, isStaff }: { detail: ConversationDetail; isSta
         <BriefBlock title="Why it matters" text={detail.narrativeBrief.whyItMatters} />
         <BriefBlock title="Evidence" text={detail.narrativeBrief.evidence} />
         <BriefBlock title="Limitations" text={detail.narrativeBrief.limitation} />
+      </div>
+    </section>
+  );
+}
+
+function PersuasionGuidance({ detail, isStaff }: { detail: ConversationDetail; isStaff: boolean }) {
+  if (!isStaff || !detail.persuasionGuidance) {
+    return null;
+  }
+
+  return (
+    <section className="persuasion-panel" aria-label="Ethical persuasion guidance">
+      <div className="brief-heading-row">
+        <div>
+          <span className="eyebrow">Staff Guidance</span>
+          <h2 className="panel-title">Ethical business persuasion</h2>
+        </div>
+        <span className="status-pill">{detail.persuasionGuidance.slotVersion}</span>
+      </div>
+      <div className="brief-grid">
+        <BriefBlock title="Slot" text={`${detail.persuasionGuidance.slotId} / ${detail.persuasionGuidance.useCase}`} />
+        <BriefBlock title="Principles" text={detail.persuasionGuidance.principles.join(", ")} />
+        <BriefBlock title="Reasoning" text={detail.persuasionGuidance.staffReasoning} />
+        <BriefBlock title="Client-safe language" text={detail.persuasionGuidance.clientSafeSuggestion} />
+        <BriefBlock title="Evidence" text={detail.persuasionGuidance.evidenceRefs.join(", ")} />
+        <BriefBlock title="Sources" text={detail.persuasionGuidance.sourceRefs.join(", ")} />
       </div>
     </section>
   );

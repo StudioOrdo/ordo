@@ -469,6 +469,15 @@ The prompt slot should record the same metadata as other LLM slots: slot id,
 version, evidence/source refs, visibility ceiling, policy decision,
 transform run, token estimates, inclusion reason, and truncation reason.
 
+Implementation status: the `ethical_business_persuasion` v1 slot is a
+daemon-owned contract. The Rust builder requires explicit evidence/source refs
+for every included principle, rejects unsupported social proof, authority,
+scarcity, urgency, pressure, shame, fear, confusion, dependency, and internal
+mechanics in client-facing copy, and records usage through the shared prompt
+slot accounting ledger. Staff views may show reasoning and evidence. Client
+surfaces must show only the plain suggestion language, if any, and never the
+internal prompt slot mechanics.
+
 ## Non-Goals
 
 Do not use this product pass to build:

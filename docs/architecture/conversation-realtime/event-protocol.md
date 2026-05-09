@@ -99,6 +99,7 @@ Initial command catalog:
 | `llm.run.cancel` | durable `llm.run.cancelled` | `llm.cancel` |
 | `tool.approve` | durable approval event | `llm.tool.approve` |
 | `tool.reject` | durable rejection event | `llm.tool.reject` |
+| `tool.execute` | durable executing/completed or failed event after approval | `llm.tool.execute` |
 | `handoff.accept` | `handoff.item.accepted` | `conversation.handoff.manage` |
 | `handoff.decline` | `handoff.item.declined` | `conversation.handoff.manage` |
 | `handoff.assign` | `handoff.item.assigned` | `conversation.handoff.manage` |
@@ -185,7 +186,10 @@ LLM gateway:
 - `llm.tool.requested`
 - `llm.tool.approved`
 - `llm.tool.rejected`
+- `llm.tool.executing`
 - `llm.tool.completed`
+- `llm.tool.failed`
+- `llm.tool.cancelled`
 - `llm.text.completed`
 - `llm.usage.recorded`
 - `llm.run.completed`
@@ -199,6 +203,14 @@ inclusion, and provider start evidence are durable conversation events. Final
 assistant text is persisted as a normal `conversation_messages` row only after
 provider completion. Provider keys are not part of the command, event, prompt
 slot, or UI contract.
+
+Implemented tool governance behavior: LLM tool requests are durable
+conversation events with `toolRequestId`, `runId`, requested capability, reason,
+evidence refs, redacted input summary, visibility ceiling, status, and policy
+decision id. Unknown capabilities and non-exported/dangerous capabilities are
+rejected before request persistence. Execution requires an approved tool request
+and a registered exported capability, then emits `llm.tool.executing` followed
+by `llm.tool.completed` or `llm.tool.failed`.
 
 Analysis and briefs:
 

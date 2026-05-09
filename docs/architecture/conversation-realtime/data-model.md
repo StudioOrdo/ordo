@@ -559,6 +559,14 @@ Status: planned dedicated ledger table. The current Rust-owned LLM gateway
 foundation uses the conversation event stream for invocation metadata until the
 privacy egress firewall and token ledger phases add this table.
 
+Current tool-governance state is also event-sourced: `llm.tool.requested`,
+`llm.tool.approved`, `llm.tool.rejected`, `llm.tool.executing`,
+`llm.tool.completed`, and `llm.tool.failed` store the tool request id, run id,
+conversation id, requested capability id, actor evidence, evidence refs, redacted
+input summary, visibility ceiling, status, policy decision id, and timestamps in
+`conversation_events`. A dedicated invocation/tool table remains deferred until
+the token ledger and privacy phases require query-optimized accounting.
+
 Columns:
 
 - `id TEXT PRIMARY KEY`

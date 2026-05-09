@@ -31,8 +31,14 @@ The 0.1.5 Phase 1 persona library and validator are implemented under
 `docs/evals/personas/` and `crates/ordo-daemon/src/eval_personas.rs`.
 The 0.1.5 Phase 2 multi-case runner foundation is implemented in
 `crates/ordo-daemon/src/live_eval_runner.rs`; it plans persona-backed live
-journey cases and writes a guarded manifest without running the QR-to-trial
-journey yet.
+journey cases and writes a guarded manifest without executing a journey by
+itself.
+The 0.1.5 Phase 3 QR-to-trial journey eval is implemented in
+`crates/ordo-daemon/src/live_eval_runner.rs`; default tests use the
+deterministic provider path to create a public 30-day trial offer, event QR
+entry point, visitor session, relationship conversation, privacy/accounted LLM
+response, offer acceptance, started trial, business outcome, and attribution
+evidence. Live provider execution remains opt-in through the existing guards.
 
 ## Current Assessment
 

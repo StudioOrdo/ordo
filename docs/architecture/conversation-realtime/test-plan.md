@@ -630,13 +630,21 @@ Phase 8 simulator contract coverage now includes:
 - run manifests include persona ids, content hashes, planned case ids, guard
   decisions, and budget summaries without raw secrets or private persona
   narrative.
+- QR-to-trial journey execution with no provider keys and no network by
+  default;
+- tracked event QR entry point, visitor session, relationship conversation,
+  visitor message, and deterministic assistant response evidence;
+- daemon LLM gateway evidence for `ethical_business_persuasion`, privacy egress
+  transform events, prompt-slot accounting, and token ledger rows;
+- public OrdoStudio offer acceptance, started 30-day trial, business outcome,
+  and offer/session/entry-point attribution evidence;
+- packet, scorecard, harness manifest, and QR-to-trial journey manifest output
+  with raw provider secrets, raw persona narrative, emails, phone numbers,
+  configured private terms, fake urgency, fake scarcity, and unsupported social
+  proof absent.
 
 0.1.5 live product journey eval coverage should still add:
 
-- QR/event entry point to visitor session to relationship conversation evidence;
-- live LLM conversation evidence through privacy egress, prompt slots, token
-  ledger, and artifact packets;
-- OrdoStudio offer acceptance, 30-day trial, outcome, and attribution evidence;
 - simulated review-request email/link artifact before any real outbound email;
 - return visit, feedback capture, review candidate, consent, approval, publish,
   feature, and retire boundaries;

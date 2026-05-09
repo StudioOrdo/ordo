@@ -471,6 +471,26 @@ Phase 3 first deterministic workflow coverage now includes:
   packet;
 - provider-free, network-free execution suitable for local and CI runs.
 
+Phase 3A role lifecycle workflow coverage now includes:
+
+- `role_lifecycle_anonymous_to_client`, which validates anonymous visitor
+  relationship conversation creation, authenticated client/member relationship
+  conversation continuity, affiliate denial for unrelated customer conversation
+  access, and absence of handoff/prompt/privacy/token internals in the
+  client-facing lifecycle packet;
+- `role_lifecycle_staff_manager_owner_boundaries`, which creates a governed
+  handoff and asserts staff `My Handoffs`, manager/admin `Team Queue`,
+  owner/system admin `All Conversations`, ordinary staff denial for all
+  conversations, and protected-route policy evidence for system internals;
+- `role_lifecycle_agent_silence_boundary`, which sets human-led active mode and
+  asserts Ordo remains publicly silent without tag, delegation, or
+  policy-required intervention;
+- packet, scorecard, and manifest writing for all role lifecycle cases through
+  `EvalArtifactWriter`;
+- provider-free, network-free role boundary coverage with explicit policy,
+  handoff, conversation event, and realtime replay evidence where current
+  backend helpers support it.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

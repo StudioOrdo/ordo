@@ -8,12 +8,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::conversations::{
-    create_conversation_message, create_conversation_participant,
-    find_or_create_canonical_conversation, CanonicalConversationRequest,
-    ConversationMessageCreateRequest, ConversationParticipantCreateRequest,
+    conversation_queue, create_conversation_handoff, create_conversation_message,
+    create_conversation_participant, find_or_create_canonical_conversation,
+    may_agent_post_publicly, record_staff_activity_sets_human_led, CanonicalConversationRequest,
+    ConversationHandoffCreateRequest, ConversationMessageCreateRequest, ConversationMode,
+    ConversationParticipantCreateRequest, ConversationRole, PublicPostContext, QueueScope,
 };
 use crate::llm_gateway::{DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, PromptSlot};
-use crate::policy::ActorContext;
+use crate::policy::{
+    authorize_protected_daemon_action, authorize_resource_access, record_policy_decision,
+    ActorContext, ActorKind, PolicyAction, PolicyDecisionCorrelation, ProtectedAccessEvidence,
+    ResourceKind, ResourceRef,
+};
 
 pub const EVAL_HARNESS_SCHEMA_VERSION: &str = "ordo.eval_harness.v1";
 pub const EVAL_ARTIFACT_PACKET_SCHEMA_VERSION: &str = "ordo.eval_artifact_packet.v1";
@@ -533,6 +539,76 @@ pub fn run_privacy_gateway_roundtrip_eval(
     })
 }
 
+pub fn run_role_lifecycle_anonymous_to_client_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    run_role_lifecycle_eval(
+        connection,
+        role_lifecycle_anonymous_to_client_case()?,
+        output_dir,
+        source_commit,
+        run_role_lifecycle_anonymous_to_client_step,
+    )
+}
+
+pub fn run_role_lifecycle_staff_manager_owner_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    run_role_lifecycle_eval(
+        connection,
+        role_lifecycle_staff_manager_owner_case()?,
+        output_dir,
+        source_commit,
+        run_role_lifecycle_staff_manager_owner_step,
+    )
+}
+
+pub fn run_role_lifecycle_agent_silence_eval(
+    connection: &Connection,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+) -> Result<EvalWorkflowRun> {
+    run_role_lifecycle_eval(
+        connection,
+        role_lifecycle_agent_silence_case()?,
+        output_dir,
+        source_commit,
+        run_role_lifecycle_agent_silence_step,
+    )
+}
+
+fn run_role_lifecycle_eval<F>(
+    connection: &Connection,
+    case: EvalCase,
+    output_dir: impl Into<PathBuf>,
+    source_commit: impl Into<String>,
+    step_runner: F,
+) -> Result<EvalWorkflowRun>
+where
+    F: FnMut(&Connection, &EvalStep) -> Result<()>,
+{
+    let packet_path = output_dir.into().join(format!("{}-packet.json", case.id));
+    let mut harness = DeterministicEvalHarness::new(DeterministicEvalClock::fixed())
+        .with_artifact_path(packet_path.to_string_lossy());
+    let scorecard = harness.run_case(connection, &case, step_runner)?;
+    let output_dir = packet_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let writer = EvalArtifactWriter::new(output_dir, source_commit)
+        .with_private_terms(vec!["package".to_string(), "Project Orchid".to_string()]);
+    let artifact_paths = writer.write_packet(connection, &case, &scorecard)?;
+    Ok(EvalWorkflowRun {
+        case,
+        scorecard,
+        artifact_paths,
+    })
+}
+
 fn relationship_conversation_message_case() -> Result<EvalCase> {
     EvalCase::new(
         "relationship_conversation_message",
@@ -640,6 +716,226 @@ fn privacy_gateway_roundtrip_case() -> Result<EvalCase> {
     )
 }
 
+fn role_lifecycle_anonymous_to_client_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "role_lifecycle_anonymous_to_client",
+        "Role lifecycle anonymous visitor, client member, and affiliate boundaries",
+        &json!({
+            "fixture": "role_lifecycle_anonymous_to_client",
+            "version": 1,
+            "roles": ["anonymous_visitor", "client_member", "affiliate"],
+            "providerMode": "deterministic_only",
+        }),
+        vec![
+            EvalActorRole::AnonymousVisitor,
+            EvalActorRole::ClientMember,
+            EvalActorRole::Affiliate,
+        ],
+        vec![
+            eval_step_with_metadata(
+                "anonymous_visitor_relationship_message",
+                EvalActorRole::AnonymousVisitor,
+                "conversation.message.submit",
+                vec![
+                    EvalEvidenceChannel::SqliteRows,
+                    EvalEvidenceChannel::ConversationEvents,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+                json!({
+                    "surface": "chat",
+                    "subjectKind": "visitor_session",
+                    "visibilityExpectation": "relationship_conversation_without_staff_admin_internals",
+                }),
+            )?,
+            eval_step_with_metadata(
+                "authenticated_client_relationship_continuity",
+                EvalActorRole::ClientMember,
+                "conversation.relationship.attach",
+                vec![
+                    EvalEvidenceChannel::SqliteRows,
+                    EvalEvidenceChannel::ConversationEvents,
+                    EvalEvidenceChannel::RealtimeReplay,
+                    EvalEvidenceChannel::PolicyDecisions,
+                ],
+                json!({
+                    "surface": "client_portal",
+                    "subjectKind": "connection",
+                    "visibilityExpectation": "one_client_visible_relationship_conversation",
+                }),
+            )?,
+            eval_step_with_metadata(
+                "affiliate_unrelated_customer_denied",
+                EvalActorRole::Affiliate,
+                "conversation.boundary.denied",
+                vec![EvalEvidenceChannel::PolicyDecisions],
+                json!({
+                    "visibilityExpectation": "affiliate_cannot_access_unrelated_customer_conversation",
+                }),
+            )?,
+        ],
+        vec![
+            EvalAssertion::minimum_count(
+                "conversation_events_recorded",
+                EvalEvidenceChannel::ConversationEvents,
+                4,
+            )?,
+            EvalAssertion::minimum_count(
+                "realtime_replay_recorded",
+                EvalEvidenceChannel::RealtimeReplay,
+                4,
+            )?,
+            EvalAssertion::minimum_count(
+                "role_boundary_policy_decisions_recorded",
+                EvalEvidenceChannel::PolicyDecisions,
+                2,
+            )?,
+        ],
+    )
+}
+
+fn role_lifecycle_staff_manager_owner_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "role_lifecycle_staff_manager_owner_boundaries",
+        "Role lifecycle staff, manager, owner, and system internals boundaries",
+        &json!({
+            "fixture": "role_lifecycle_staff_manager_owner_boundaries",
+            "version": 1,
+            "roles": ["staff", "manager_admin", "owner_system_admin"],
+        }),
+        vec![
+            EvalActorRole::Staff,
+            EvalActorRole::ManagerAdmin,
+            EvalActorRole::OwnerSystemAdmin,
+        ],
+        vec![
+            eval_step_with_metadata(
+                "seed_staff_handoff",
+                EvalActorRole::Staff,
+                "handoff.create",
+                vec![
+                    EvalEvidenceChannel::SqliteRows,
+                    EvalEvidenceChannel::ConversationEvents,
+                    EvalEvidenceChannel::RealtimeReplay,
+                    EvalEvidenceChannel::HandoffState,
+                ],
+                json!({
+                    "defaultQueue": "my_handoffs",
+                    "assignedActorId": "actor_staff_eval_1",
+                }),
+            )?,
+            eval_step_with_metadata(
+                "assert_queue_role_boundaries",
+                EvalActorRole::ManagerAdmin,
+                "conversation.queue.read",
+                vec![
+                    EvalEvidenceChannel::HandoffState,
+                    EvalEvidenceChannel::PolicyDecisions,
+                ],
+                json!({
+                    "staffDefault": "my_handoffs",
+                    "managerAllowed": "team_queue",
+                    "ownerAllowed": "all_conversations",
+                    "staffDenied": "all_conversations",
+                }),
+            )?,
+            eval_step_with_metadata(
+                "assert_owner_system_boundary",
+                EvalActorRole::OwnerSystemAdmin,
+                "daemon.system.route.boundary",
+                vec![EvalEvidenceChannel::PolicyDecisions],
+                json!({
+                    "ordinaryBrowser": "denied_without_loopback_or_token",
+                    "ownerSystem": "allowed_with_loopback",
+                }),
+            )?,
+        ],
+        vec![
+            EvalAssertion::minimum_count(
+                "handoff_state_recorded",
+                EvalEvidenceChannel::HandoffState,
+                1,
+            )?,
+            EvalAssertion::minimum_count(
+                "queue_policy_decisions_recorded",
+                EvalEvidenceChannel::PolicyDecisions,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "conversation_events_recorded",
+                EvalEvidenceChannel::ConversationEvents,
+                2,
+            )?,
+        ],
+    )
+}
+
+fn role_lifecycle_agent_silence_case() -> Result<EvalCase> {
+    EvalCase::new(
+        "role_lifecycle_agent_silence_boundary",
+        "Role lifecycle Ordo agent silence during human-led active mode",
+        &json!({
+            "fixture": "role_lifecycle_agent_silence_boundary",
+            "version": 1,
+            "mode": "human_led_active",
+        }),
+        vec![
+            EvalActorRole::Staff,
+            EvalActorRole::OrdoAgent,
+            EvalActorRole::ClientMember,
+        ],
+        vec![
+            eval_step_with_metadata(
+                "staff_reply_sets_human_led_active",
+                EvalActorRole::Staff,
+                "conversation.mode.human_led_active",
+                vec![
+                    EvalEvidenceChannel::SqliteRows,
+                    EvalEvidenceChannel::ConversationEvents,
+                    EvalEvidenceChannel::RealtimeReplay,
+                ],
+                json!({
+                    "mode": "human_led_active",
+                    "ledByActorId": "actor_staff_eval_1",
+                }),
+            )?,
+            eval_step_with_metadata(
+                "agent_public_post_blocked_without_delegation",
+                EvalActorRole::OrdoAgent,
+                "agent.public_post.denied",
+                vec![EvalEvidenceChannel::PolicyDecisions],
+                json!({
+                    "expectedDecision": "human_led_active_requires_tag_delegation_or_policy",
+                    "clientVisibleMechanics": "hidden",
+                }),
+            )?,
+        ],
+        vec![
+            EvalAssertion::minimum_count(
+                "mode_events_recorded",
+                EvalEvidenceChannel::ConversationEvents,
+                2,
+            )?,
+            EvalAssertion::minimum_count(
+                "agent_silence_policy_evidence_recorded",
+                EvalEvidenceChannel::PolicyDecisions,
+                1,
+            )?,
+        ],
+    )
+}
+
+fn eval_step_with_metadata(
+    id: impl Into<String>,
+    actor_role: EvalActorRole,
+    action: impl Into<String>,
+    expected_evidence: Vec<EvalEvidenceChannel>,
+    metadata: Value,
+) -> Result<EvalStep> {
+    let mut step = EvalStep::new(id, actor_role, action, expected_evidence)?;
+    step.metadata = metadata;
+    Ok(step)
+}
+
 fn run_relationship_conversation_step(connection: &Connection, step: &EvalStep) -> Result<()> {
     match step.id.as_str() {
         "create_canonical_conversation" => {
@@ -719,6 +1015,317 @@ fn run_privacy_gateway_roundtrip_step(
             )?;
         }
         other => anyhow::bail!("unsupported privacy workflow eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn run_role_lifecycle_anonymous_to_client_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "anonymous_visitor_relationship_message" => {
+            run_relationship_conversation_step(
+                connection,
+                &EvalStep::new(
+                    "submit_message",
+                    EvalActorRole::AnonymousVisitor,
+                    "message.submit",
+                    vec![],
+                )?,
+            )?;
+        }
+        "authenticated_client_relationship_continuity" => {
+            let conversation = find_or_create_canonical_conversation(
+                connection,
+                &CanonicalConversationRequest {
+                    surface: "client_portal".to_string(),
+                    subject_kind: "connection".to_string(),
+                    subject_id: "connection_eval_1".to_string(),
+                    connection_id: Some("connection_eval_1".to_string()),
+                    visitor_session_id: None,
+                    created_by_actor_id: Some("actor_client_eval_1".to_string()),
+                },
+            )?;
+            let repeated = find_or_create_canonical_conversation(
+                connection,
+                &CanonicalConversationRequest {
+                    surface: "client_portal".to_string(),
+                    subject_kind: "connection".to_string(),
+                    subject_id: "connection_eval_1".to_string(),
+                    connection_id: Some("connection_eval_1".to_string()),
+                    visitor_session_id: None,
+                    created_by_actor_id: Some("actor_client_eval_1".to_string()),
+                },
+            )?;
+            ensure!(
+                conversation.id == repeated.id,
+                "client/member lifecycle must preserve one relationship conversation"
+            );
+            let participant = create_conversation_participant(
+                connection,
+                &ConversationParticipantCreateRequest {
+                    conversation_id: conversation.id.clone(),
+                    participant_kind: "connection".to_string(),
+                    actor_id: Some("actor_client_eval_1".to_string()),
+                    connection_id: Some("connection_eval_1".to_string()),
+                    visitor_session_id: None,
+                    display_name: "Eval Client".to_string(),
+                    role: "client".to_string(),
+                },
+            )?;
+            create_conversation_message(
+                connection,
+                &ConversationMessageCreateRequest {
+                    conversation_id: conversation.id.clone(),
+                    segment_id: None,
+                    participant_id: participant.id,
+                    message_kind: "user".to_string(),
+                    body_markdown:
+                        "Authenticated client asks for the next step without staff internals."
+                            .to_string(),
+                    visibility: "participants".to_string(),
+                    client_message_id: "eval-client-member-message-1".to_string(),
+                    reply_to_message_id: None,
+                    undo_expires_at: None,
+                },
+            )?;
+            let denied = authorize_protected_daemon_action(
+                ActorContext::new(
+                    ActorKind::BrowserOperator,
+                    "client_member_eval",
+                    Some("actor_client_eval_1".to_string()),
+                ),
+                PolicyAction::Read,
+                ResourceRef::new(ResourceKind::DaemonRoute, "/admin/policy-decisions"),
+                Some("policy.decisions.query"),
+                ProtectedAccessEvidence {
+                    loopback: false,
+                    token: false,
+                },
+            );
+            ensure!(
+                !denied.allowed(),
+                "client/member should not satisfy protected admin route access"
+            );
+            record_policy_decision(
+                connection,
+                &denied,
+                PolicyDecisionCorrelation {
+                    request_id: Some("eval_client_admin_boundary".to_string()),
+                    ..Default::default()
+                },
+            )?;
+        }
+        "affiliate_unrelated_customer_denied" => {
+            let denied = authorize_resource_access(
+                connection,
+                ActorContext::new(
+                    ActorKind::BrowserOperator,
+                    "affiliate_eval",
+                    Some("actor_affiliate_eval_1".to_string()),
+                ),
+                PolicyAction::Read,
+                ResourceRef::new(
+                    ResourceKind::Conversation,
+                    "conversation_unrelated_customer",
+                ),
+                Some("conversation.read"),
+            );
+            ensure!(
+                !denied.allowed(),
+                "affiliate should not access unrelated customer conversation"
+            );
+            record_policy_decision(
+                connection,
+                &denied,
+                PolicyDecisionCorrelation {
+                    request_id: Some("eval_affiliate_boundary".to_string()),
+                    ..Default::default()
+                },
+            )?;
+        }
+        other => anyhow::bail!("unsupported anonymous/client role lifecycle eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn run_role_lifecycle_staff_manager_owner_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
+    match step.id.as_str() {
+        "seed_staff_handoff" => {
+            let conversation = find_or_create_canonical_conversation(
+                connection,
+                &CanonicalConversationRequest {
+                    surface: "client_portal".to_string(),
+                    subject_kind: "connection".to_string(),
+                    subject_id: "connection_eval_1".to_string(),
+                    connection_id: Some("connection_eval_1".to_string()),
+                    visitor_session_id: None,
+                    created_by_actor_id: Some("actor_staff_eval_1".to_string()),
+                },
+            )?;
+            create_conversation_handoff(
+                connection,
+                &ConversationHandoffCreateRequest {
+                    conversation_id: conversation.id,
+                    segment_id: None,
+                    connection_id: Some("connection_eval_1".to_string()),
+                    requested_by_actor_id: Some("actor_client_eval_1".to_string()),
+                    assigned_to_actor_id: Some("actor_staff_eval_1".to_string()),
+                    reason: "Client needs staff follow-up".to_string(),
+                    urgency: "high".to_string(),
+                    required_capability_id: "conversation.handoff.manage".to_string(),
+                    evidence_summary: "Client asked for a human review of the next step."
+                        .to_string(),
+                    allowed_context: vec![
+                        "conversation_summary".to_string(),
+                        "client_request".to_string(),
+                    ],
+                    policy_decision_id: None,
+                },
+            )?;
+        }
+        "assert_queue_role_boundaries" => {
+            let staff_rows = conversation_queue(
+                connection,
+                ConversationRole::Staff,
+                Some("actor_staff_eval_1"),
+                None,
+            )?;
+            let manager_rows = conversation_queue(
+                connection,
+                ConversationRole::Manager,
+                None,
+                Some(QueueScope::TeamQueue),
+            )?;
+            let owner_rows = conversation_queue(
+                connection,
+                ConversationRole::Owner,
+                None,
+                Some(QueueScope::AllConversations),
+            )?;
+            let staff_all = conversation_queue(
+                connection,
+                ConversationRole::Staff,
+                Some("actor_staff_eval_1"),
+                Some(QueueScope::AllConversations),
+            );
+            ensure!(staff_rows.len() == 1, "staff should default to My Handoffs");
+            ensure!(
+                manager_rows.len() == 1,
+                "manager/admin should access Team Queue"
+            );
+            ensure!(
+                owner_rows.len() == 1,
+                "owner/system admin should access All Conversations"
+            );
+            ensure!(
+                staff_all.is_err(),
+                "ordinary staff should not access All Conversations"
+            );
+        }
+        "assert_owner_system_boundary" => {
+            let denied = authorize_protected_daemon_action(
+                ActorContext::browser_operator(),
+                PolicyAction::Read,
+                ResourceRef::new(ResourceKind::DaemonRoute, "/diagnostic-logs"),
+                Some("diagnostic_logs.read"),
+                ProtectedAccessEvidence {
+                    loopback: false,
+                    token: false,
+                },
+            );
+            let allowed = authorize_protected_daemon_action(
+                ActorContext::local_owner("eval_role_lifecycle"),
+                PolicyAction::Read,
+                ResourceRef::new(ResourceKind::DaemonRoute, "/diagnostic-logs"),
+                Some("diagnostic_logs.read"),
+                ProtectedAccessEvidence {
+                    loopback: true,
+                    token: false,
+                },
+            );
+            ensure!(!denied.allowed(), "non-owner browser should be denied");
+            ensure!(allowed.allowed(), "owner/system loopback should be allowed");
+            record_policy_decision(
+                connection,
+                &denied,
+                PolicyDecisionCorrelation {
+                    request_id: Some("eval_staff_system_boundary_denied".to_string()),
+                    ..Default::default()
+                },
+            )?;
+            record_policy_decision(
+                connection,
+                &allowed,
+                PolicyDecisionCorrelation {
+                    request_id: Some("eval_owner_system_boundary_allowed".to_string()),
+                    ..Default::default()
+                },
+            )?;
+        }
+        other => anyhow::bail!("unsupported staff/manager/owner role lifecycle eval step: {other}"),
+    }
+    Ok(())
+}
+
+fn run_role_lifecycle_agent_silence_step(connection: &Connection, step: &EvalStep) -> Result<()> {
+    match step.id.as_str() {
+        "staff_reply_sets_human_led_active" => {
+            let conversation = find_or_create_canonical_conversation(
+                connection,
+                &CanonicalConversationRequest {
+                    surface: "client_portal".to_string(),
+                    subject_kind: "connection".to_string(),
+                    subject_id: "connection_eval_1".to_string(),
+                    connection_id: Some("connection_eval_1".to_string()),
+                    visitor_session_id: None,
+                    created_by_actor_id: Some("actor_staff_eval_1".to_string()),
+                },
+            )?;
+            record_staff_activity_sets_human_led(
+                connection,
+                &conversation.id,
+                "actor_staff_eval_1",
+            )?;
+        }
+        "agent_public_post_blocked_without_delegation" => {
+            let decision = may_agent_post_publicly(
+                ConversationMode::HumanLedActive,
+                &PublicPostContext::default(),
+            );
+            ensure!(
+                !decision.allowed,
+                "agent should stay silent publicly during human-led active mode"
+            );
+            ensure!(
+                decision.reason == "human_led_active_requires_tag_delegation_or_policy",
+                "agent silence decision should cite the human-led boundary"
+            );
+            let policy_decision = authorize_resource_access(
+                connection,
+                ActorContext::new(
+                    ActorKind::System,
+                    "ordo_agent_eval",
+                    Some("actor_system".to_string()),
+                ),
+                PolicyAction::Create,
+                ResourceRef::new(ResourceKind::ConversationMessage, "public_agent_message"),
+                Some("conversation.message.create"),
+            );
+            record_policy_decision(
+                connection,
+                &policy_decision,
+                PolicyDecisionCorrelation {
+                    request_id: Some("eval_agent_public_post_blocked".to_string()),
+                    ..Default::default()
+                },
+            )?;
+        }
+        other => anyhow::bail!("unsupported agent silence role lifecycle eval step: {other}"),
     }
     Ok(())
 }
@@ -1530,6 +2137,18 @@ pub fn isolated_eval_connection() -> Result<Connection> {
          VALUES ('actor_staff_eval_1', 'staff', 'Eval Staff', 'active', '{}', 'now', 'now')",
         [],
     )?;
+    for (actor_id, actor_kind, display_name) in [
+        ("actor_client_eval_1", "client", "Eval Client"),
+        ("actor_affiliate_eval_1", "affiliate", "Eval Affiliate"),
+        ("actor_manager_eval_1", "manager", "Eval Manager"),
+        ("actor_owner_eval_1", "owner", "Eval Owner"),
+    ] {
+        connection.execute(
+            "INSERT INTO actors (id, actor_kind, display_name, status, metadata_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 'active', '{}', 'now', 'now')",
+            rusqlite::params![actor_id, actor_kind, display_name],
+        )?;
+    }
     connection.execute(
         "INSERT INTO connections (
             id, connection_type, display_name, status, identity_json, scope_json, metadata_json, created_at, updated_at
@@ -1818,5 +2437,121 @@ mod tests {
         assert!(!packet.contains("alex@example.com"));
         assert!(!packet.contains("555-123-4567"));
         assert!(!packet.contains("sk-eval-secret"));
+    }
+
+    #[test]
+    fn role_lifecycle_anonymous_client_affiliate_eval_writes_boundary_artifacts() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run = run_role_lifecycle_anonymous_to_client_eval(
+            &connection,
+            temp_dir.path(),
+            "test-commit",
+        )
+        .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "role_lifecycle_anonymous_to_client");
+        assert_eq!(
+            run.scorecard.actor_roles,
+            vec![
+                EvalActorRole::AnonymousVisitor,
+                EvalActorRole::ClientMember,
+                EvalActorRole::Affiliate,
+            ]
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PolicyDecisions)
+                >= 2
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM conversations
+                     WHERE subject_kind = 'connection' AND subject_id = 'connection_eval_1'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"caseId\": \"role_lifecycle_anonymous_to_client\""));
+        assert!(packet.contains("\"anonymous_visitor\""));
+        assert!(packet.contains("\"client_member\""));
+        assert!(packet.contains("\"affiliate\""));
+        assert!(packet.contains("affiliate_cannot_access_unrelated_customer_conversation"));
+        assert!(packet.contains("[REDACTED:email]"));
+        assert!(!packet.contains("alex@example.com"));
+        assert!(packet.contains("\"handoffLedger\": []"));
+        assert!(packet.contains("\"promptSlotLedger\": []"));
+        assert!(packet.contains("\"privacyTransformLedger\": []"));
+        assert!(packet.contains("\"tokenLedger\": []"));
+    }
+
+    #[test]
+    fn role_lifecycle_staff_manager_owner_eval_asserts_queue_and_system_boundaries() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run = run_role_lifecycle_staff_manager_owner_eval(
+            &connection,
+            temp_dir.path(),
+            "test-commit",
+        )
+        .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "role_lifecycle_staff_manager_owner_boundaries");
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::HandoffState)
+                >= 1
+        );
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PolicyDecisions)
+                >= 2
+        );
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"staff\""));
+        assert!(packet.contains("\"manager_admin\""));
+        assert!(packet.contains("\"owner_system_admin\""));
+        assert!(packet.contains("\"staffDefault\": \"my_handoffs\""));
+        assert!(packet.contains("\"managerAllowed\": \"team_queue\""));
+        assert!(packet.contains("\"ownerAllowed\": \"all_conversations\""));
+        assert!(packet.contains("Protected daemon route requires loopback access"));
+    }
+
+    #[test]
+    fn role_lifecycle_agent_silence_eval_records_human_led_boundary() {
+        let connection = isolated_eval_connection().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let run =
+            run_role_lifecycle_agent_silence_eval(&connection, temp_dir.path(), "test-commit")
+                .unwrap();
+
+        assert!(run.scorecard.passed);
+        assert_eq!(run.case.id, "role_lifecycle_agent_silence_boundary");
+        assert!(
+            run.scorecard
+                .evidence_after
+                .count_for(EvalEvidenceChannel::PolicyDecisions)
+                >= 1
+        );
+        let packet = fs::read_to_string(run.artifact_paths.packet_path).unwrap();
+        assert!(packet.contains("\"ordo_agent\""));
+        assert!(packet.contains("\"human_led_active\""));
+        assert!(packet.contains("human_led_active_requires_tag_delegation_or_policy"));
+        assert!(packet.contains("\"clientVisibleMechanics\": \"hidden\""));
+        assert!(packet.contains("\"promptSlotLedger\": []"));
+        assert!(packet.contains("\"privacyTransformLedger\": []"));
+        assert!(packet.contains("\"tokenLedger\": []"));
     }
 }

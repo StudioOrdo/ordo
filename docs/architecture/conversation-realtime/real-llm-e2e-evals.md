@@ -1051,6 +1051,35 @@ Offer/Ask product-surface coverage, replay-provider fixtures, or live-provider
 readiness. Handoff, mode, and delegation workflows may continue to use direct
 domain helpers until #141 wires the corresponding gateway command coverage.
 
+Implemented role lifecycle slice:
+
+1. `role_lifecycle_anonymous_to_client`
+   - Exercises anonymous visitor relationship conversation creation, client
+     relationship conversation continuity, and affiliate denial for unrelated
+     customer conversation access.
+   - Records protected-route and resource policy decisions for client/member
+     and affiliate trust boundaries.
+   - Confirms packet output keeps handoff, prompt-slot, privacy-transform, and
+     token-ledger ledgers empty for this client-facing lifecycle case.
+2. `role_lifecycle_staff_manager_owner_boundaries`
+   - Creates a governed handoff assigned to staff.
+   - Asserts staff defaults to `My Handoffs`, manager/admin can inspect `Team
+     Queue`, owner/system admin can inspect `All Conversations`, and ordinary
+     staff cannot access `All Conversations`.
+   - Records protected-route policy evidence for non-owner denial and owner
+     loopback allowance on system internals.
+3. `role_lifecycle_agent_silence_boundary`
+   - Sets a conversation to `human_led_active`.
+   - Asserts Ordo is blocked from public posting without tag, delegation, or
+     policy-required intervention.
+   - Records policy evidence for the blocked public-agent-post boundary while
+     keeping prompt/provider internals out of the packet.
+
+The role lifecycle slice still stays backend-only, deterministic, and
+provider-free. It does not implement Customer Feedback/Review workflows,
+Home/About or Offer/Ask product surface workflows, replay fixtures, live
+provider adapters, or the full handoff/mode/delegation gateway command surface.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`
@@ -1089,16 +1118,20 @@ compare quality across providers and prompt revisions.
    implemented cases are `relationship_conversation_message` and
    `privacy_gateway_roundtrip`; the remaining workflow inventory should be
    added in focused follow-on issues.
-4. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
+4. Add role lifecycle workflow evals. The initial implemented cases are
+   `role_lifecycle_anonymous_to_client`,
+   `role_lifecycle_staff_manager_owner_boundaries`, and
+   `role_lifecycle_agent_silence_boundary`.
+5. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
    `policy_gap`, `privacy_gap`, `prompt_gap`, `handoff_gap`, `analysis_gap`,
    `accounting_gap`, `ux_contract_gap`, and `provider_gap`.
-5. Wire currently direct-domain handoff/mode workflows through gateway commands
+6. Wire currently direct-domain handoff/mode workflows through gateway commands
    as those commands are implemented.
-6. Add customer and operator simulator prompts with redacted transcript turn
+7. Add customer and operator simulator prompts with redacted transcript turn
    capture.
-7. Add replay fixture support for provider-shaped responses.
-8. Add real provider adapter behind `LlmProviderAdapter` with
+8. Add replay fixture support for provider-shaped responses.
+9. Add real provider adapter behind `LlmProviderAdapter` with
    OpenAI-compatible non-streaming support.
-9. Add opt-in live eval runner with env guards and spend caps.
-10. Add Anthropic and DeepSeek provider coverage.
-11. Add SSE streaming normalization once non-streaming passes.
+10. Add opt-in live eval runner with env guards and spend caps.
+11. Add Anthropic and DeepSeek provider coverage.
+12. Add SSE streaming normalization once non-streaming passes.

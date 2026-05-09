@@ -422,6 +422,23 @@ Coverage:
 0.1.4 evals should prove product lifecycle behavior through deterministic
 backend workflows before live providers are involved.
 
+Phase 1 harness coverage now includes:
+
+- isolated in-memory SQLite eval store initialized through the current daemon
+  schema and built-in capability/template seeds;
+- eval case types for case id, fixture hash, actor roles, ordered scenario
+  steps, expected evidence channels, assertion results, scorecard summaries,
+  and placeholder artifact paths;
+- deterministic clock behavior for stable scorecard timestamps;
+- explicit deterministic-only provider mode and `network_enabled = false`;
+- evidence snapshots for SQLite rows, conversation events, realtime replay,
+  policy decisions, prompt-slot accounting, privacy transforms, token ledger,
+  analysis candidates, handoff state, artifacts, and surface briefs;
+- tests proving missing optional evidence channels are represented as zero
+  counts, not ignored;
+- tests proving repeated harness runs are stable apart from durable ids owned by
+  the underlying domain services.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

@@ -211,6 +211,30 @@ also matches Ordo's architecture: SQLite is the source of truth, Rust is the
 control point, and WebSocket/UI state is a projection that can be validated
 after the durable spine is proven.
 
+Implemented Phase 1 harness foundation:
+
+- `crates/ordo-daemon/src/eval_harness.rs` defines the deterministic backend
+  eval harness contract.
+- Eval cases declare case id, title, fixture hash, actor roles, ordered steps,
+  expected evidence channels, and assertion thresholds.
+- Actor roles cover anonymous visitor, client/member, affiliate, staff,
+  manager/admin, owner/system admin, Ordo agent, and the
+  LLM/tool/provider-boundary actor.
+- Evidence snapshots explicitly count SQLite rows, conversation events,
+  realtime replay rows, policy decisions, prompt slot accounting, privacy
+  transforms, token ledger entries, analysis candidates, handoff state,
+  artifact records, and surface brief records.
+- Missing optional channels are represented with count `0`; they are not
+  silently ignored.
+- Scorecard summaries are deterministic, provider-free, network-free, and carry
+  a placeholder artifact path for Phase 2 transcript packet work.
+- The first harness test exercises an anonymous visitor relationship
+  conversation and message path through the current schema and durable event
+  spine.
+
+The harness does not yet write full transcript artifact packets or scorecard
+files. That remains the Phase 2 scope.
+
 ## Workflow Pressure Tests
 
 The eval suite should work like a pressure test for the application. A coding

@@ -39,6 +39,13 @@ deterministic provider path to create a public 30-day trial offer, event QR
 entry point, visitor session, relationship conversation, privacy/accounted LLM
 response, offer acceptance, started trial, business outcome, and attribution
 evidence. Live provider execution remains opt-in through the existing guards.
+The 0.1.5 Phase 4 review-return journey eval is implemented in
+`crates/ordo-daemon/src/live_eval_runner.rs`; default tests reuse the
+QR-to-trial setup, create a redacted simulated review-request email/link
+artifact, resume the relationship conversation through a return visitor
+session, capture private feedback, create a review candidate, prove publication
+is blocked before consent and approval, and exercise publish, feature, and
+retire visibility boundaries without real email delivery or network calls.
 
 ## Current Assessment
 
@@ -1380,5 +1387,12 @@ compare quality across providers and prompt revisions.
    `analysis_gap`, `accounting_gap`, `ux_contract_gap`, `provider_gap`, and
    `test_fixture_gap`. Implemented as a local deterministic packet classifier
    with JSON and Markdown outputs and no automatic GitHub filing.
-13. Add Anthropic and DeepSeek provider coverage.
-14. Add SSE streaming normalization once non-streaming passes.
+13. Add live product journey evals. The initial implemented cases are
+   QR-to-trial and review-return. QR-to-trial covers event QR, visitor session,
+   relationship conversation, privacy/accounted daemon LLM response, offer
+   acceptance, trial, outcome, and attribution. Review-return covers simulated
+   review-request email/link evidence, return session, private feedback, review
+   candidate, consent/approval publication guard, and publish/feature/retire
+   visibility.
+14. Add Anthropic and DeepSeek provider coverage.
+15. Add SSE streaming normalization once non-streaming passes.

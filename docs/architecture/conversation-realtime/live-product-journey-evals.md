@@ -66,12 +66,22 @@ Implemented journey execution:
 - The implemented journey asserts no fake urgency, fake scarcity, unsupported
   social proof, raw provider secrets, raw persona narrative, emails, phone
   numbers, configured private terms, or staff internals in artifacts.
+- #166 adds a deterministic review-request return journey case in
+  `live_eval_runner.rs`. It reuses the QR-to-trial setup, simulates a delayed
+  review-request email/link artifact without delivery, creates a return entry
+  point and visitor session, resumes the relationship conversation, captures
+  private feedback from durable message evidence, creates a review candidate,
+  proves publication is blocked before consent and approval, then exercises
+  requested, received, consent-confirmed, approved, published, featured, and
+  retired review states.
+- The default #166 path remains provider-free, network-free, and real-email
+  free. It writes redacted packet, scorecard, harness manifest, QR setup, and
+  review-return journey artifacts.
 
 Known gaps:
 
 - the smoke eval remains one provider call, while multi-persona live journey
-  planning and QR-to-trial execution remain deterministic by default;
-- no orchestrator runs the full review-return journey;
+  planning and journey execution remain deterministic by default;
 - no outbound email adapter exists; review-request email should start as a
   redacted simulated artifact/link;
 - no affiliate referral journey eval ties affiliate connection, referral entry
@@ -203,6 +213,38 @@ The journey manifest is schema `ordo.qr_to_trial_journey_eval.v1`. It stores
 durable ids and evidence refs only, not raw persona narrative or private
 payloads.
 
+## Review-Return Journey Contract
+
+Status: implemented by #166.
+
+The first review-return eval runs a deterministic one-persona journey using the
+QR-to-trial setup as durable source evidence. It simulates elapsed time, records
+a `simulated_review_request_email` artifact marked `simulated_not_delivered`,
+creates a return entry point and visitor session, resumes the same relationship
+conversation, and submits a persona-backed return message through the
+deterministic daemon LLM path.
+
+The case records:
+
+- QR-to-trial setup artifacts and evidence refs;
+- simulated review-request email/link artifact with no outbound delivery;
+- return entry point and visitor session;
+- resumed relationship conversation and return visitor message;
+- deterministic assistant response with privacy egress, prompt-slot
+  accounting, and token ledger evidence;
+- private feedback captured from conversation/message evidence;
+- review candidate created from private feedback;
+- blocked publication attempt before consent and approval;
+- requested, received, consent-confirmed, approved, published, featured, and
+  retired review lifecycle transitions;
+- public review visibility after publish/feature and removal after retire;
+- redacted packet, scorecard, harness manifest, QR setup, and review-return
+  journey manifest.
+
+The review-return journey manifest is schema
+`ordo.review_return_journey_eval.v1`. It stores durable ids and evidence refs
+only. Real outbound email delivery remains owned by #170.
+
 ## Ethical Persuasion Boundary
 
 The journey can test whether Ordo helps a person decide whether OrdoStudio is a
@@ -268,7 +310,10 @@ GitHub issues until a governed filing path is implemented and accepted.
    deterministic persona-backed event QR, visitor session, conversation, LLM
    gateway, offer acceptance, trial, outcome, and attribution eval.
 5. #166 Implement review-request return journey with simulated email/link
-   artifact.
+   artifact. Implemented with a deterministic simulated email/link artifact,
+   return session, conversation continuity, private feedback, review candidate,
+   consent/approval/publication guard, publish/feature/retire lifecycle, and
+   redacted artifacts.
 6. #167 Implement affiliate referral journey eval.
 7. #168 Implement admin/staff handoff and moderation journey evals.
 8. #169 Add cross-persona analyzed journey report.

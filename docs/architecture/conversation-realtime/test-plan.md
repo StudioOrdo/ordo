@@ -642,12 +642,28 @@ Phase 8 simulator contract coverage now includes:
   with raw provider secrets, raw persona narrative, emails, phone numbers,
   configured private terms, fake urgency, fake scarcity, and unsupported social
   proof absent.
+- review-return journey execution with no provider keys, no network, and no
+  real outbound email by default;
+- QR-to-trial setup evidence reused as the source for review-return;
+- simulated review-request email/link artifact that is durable, redacted,
+  non-delivered, and marked as simulated;
+- return entry point, return visitor session, relationship conversation
+  continuity, return visitor message, and deterministic assistant response
+  evidence;
+- private feedback captured from durable conversation/message evidence and a
+  review candidate created from that feedback;
+- blocked review publication before consent and approval, followed by durable
+  requested, received, consent-confirmed, approved, published, featured, and
+  retired lifecycle transitions;
+- public review visibility appears after publish/feature and is removed after
+  retire;
+- review-return packet, scorecard, harness manifest, QR setup, and journey
+  manifest output with raw provider secrets, raw persona narrative, emails,
+  phone numbers, configured private terms, fake reviews, fake metrics, fake
+  urgency, fake scarcity, and unsupported social proof absent.
 
 0.1.5 live product journey eval coverage should still add:
 
-- simulated review-request email/link artifact before any real outbound email;
-- return visit, feedback capture, review candidate, consent, approval, publish,
-  feature, and retire boundaries;
 - affiliate connection, referral entry point, referred visitor, referral record,
   and outcome attribution evidence;
 - staff/admin handoff, delegation, review approval, affiliate management, and

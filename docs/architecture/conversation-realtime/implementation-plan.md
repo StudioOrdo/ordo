@@ -410,8 +410,9 @@ Phase boundaries:
 ## Phase 11: Live Product Journey Evals
 
 Status: accepted planning arc for 0.1.5. Phase 1 persona library/validator,
-Phase 2 multi-case runner planning foundation, and Phase 3 QR-to-trial journey
-eval are implemented. The full contract is documented in
+Phase 2 multi-case runner planning foundation, Phase 3 QR-to-trial journey
+eval, and Phase 4 review-return journey eval are implemented. The full
+contract is documented in
 `docs/architecture/conversation-realtime/live-product-journey-evals.md`.
 
 Delivery order:
@@ -427,7 +428,11 @@ Delivery order:
    daemon LLM response, offer acceptance, 30-day trial, business outcome, and
    attribution evidence.
 5. #166 Implement review-request return journey with simulated email/link
-   artifact.
+   artifact. Implemented as a deterministic eval that reuses QR-to-trial
+   evidence, records a simulated non-delivered review-request email/link,
+   creates a return session, resumes the relationship conversation, captures
+   private feedback, creates a review candidate, blocks publication before
+   consent and approval, and exercises publish, feature, and retire visibility.
 6. #167 Implement affiliate referral journey eval.
 7. #168 Implement admin/staff handoff and moderation journey evals.
 8. #169 Add cross-persona analyzed journey report.

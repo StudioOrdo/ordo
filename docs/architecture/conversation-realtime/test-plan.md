@@ -581,6 +581,20 @@ Phase 6 opt-in live eval runner coverage now includes:
 - redaction assertions that raw provider secrets and private fixture values do
   not appear in packet artifacts or run summaries.
 
+Phase 7 artifact review classifier coverage now includes:
+
+- passing packet reviews with no failure/blocker findings;
+- failed assertion classification into the smallest responsible category;
+- missing token, handoff, and analysis evidence classification into
+  `accounting_gap`, `handoff_gap`, and `analysis_gap`;
+- provider failure evidence classification into `provider_gap` with safe
+  metadata only;
+- privacy blocker classification for raw email, phone, API-key-shaped, and
+  private-term fixture values;
+- deterministic review JSON and `artifact-review.md` output;
+- proof that review generation is local, provider-free, network-free, and does
+  not auto-file GitHub issues.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

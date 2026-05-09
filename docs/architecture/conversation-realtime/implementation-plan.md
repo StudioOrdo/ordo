@@ -381,7 +381,11 @@ Delivery order:
     max-case and budget caps, mocked no-network default tests, and a packet-
     backed `live_openai_compatible_smoke` path through the existing LLM gateway.
 12. Add artifact review automation that classifies findings and drives
-    follow-on issues.
+    follow-on issues. Implemented as `eval_artifact_review`, a deterministic
+    local classifier for eval packets that writes review JSON and
+    `artifact-review.md`, maps findings to subsystem categories/severities,
+    emits local redacted issue drafts where appropriate, and does not call
+    GitHub, providers, or the network.
 
 Phase boundaries:
 

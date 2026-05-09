@@ -411,6 +411,24 @@ The review output should classify findings:
 - `ux_contract_gap`: backend cannot yet support the desired product experience;
 - `provider_gap`: live/replay provider response handling is wrong.
 
+Implemented Phase 7 artifact review classifier behavior:
+
+- `eval_artifact_review` reads `ordo.eval_artifact_packet.v1` packet JSON and
+  writes `ordo.eval_artifact_review.v1` review JSON plus `artifact-review.md`.
+- Findings are deterministic local candidates with category, severity, status,
+  case id, source artifact hash, evidence refs, suggested owner subsystem, and
+  optional local GitHub issue draft text.
+- The classifier maps failed assertions and missing ledger evidence to the
+  smallest responsible subsystem. Examples include token ledger gaps to
+  `accounting_gap`, handoff ledger gaps to `handoff_gap`, analysis candidate
+  gaps to `analysis_gap`, and provider failure evidence to `provider_gap`.
+- Raw emails, phone numbers, API-key-shaped strings, bearer-token-shaped
+  strings, and configured private fixture terms become `privacy_gap` blockers.
+- Redaction markers are recorded as containment evidence, not automatic
+  failures.
+- The classifier does not call providers, GitHub, or the network. Issue drafts
+  are local redacted text only; filing remains a governed human/agent workflow.
+
 ### Real-World Workflow Eval Suite
 
 These workflows bundle the 100-plus atomic cases into product journeys. The
@@ -1312,5 +1330,10 @@ compare quality across providers and prompt revisions.
    mocked gateway integration path.
 11. Add opt-in live eval runner with env guards and spend caps. Implemented for
    one guarded OpenAI-compatible smoke case and mocked no-network default tests.
-12. Add Anthropic and DeepSeek provider coverage.
-13. Add SSE streaming normalization once non-streaming passes.
+12. Add artifact reviewer that classifies findings by `schema_gap`,
+   `event_gap`, `policy_gap`, `privacy_gap`, `prompt_gap`, `handoff_gap`,
+   `analysis_gap`, `accounting_gap`, `ux_contract_gap`, `provider_gap`, and
+   `test_fixture_gap`. Implemented as a local deterministic packet classifier
+   with JSON and Markdown outputs and no automatic GitHub filing.
+13. Add Anthropic and DeepSeek provider coverage.
+14. Add SSE streaming normalization once non-streaming passes.

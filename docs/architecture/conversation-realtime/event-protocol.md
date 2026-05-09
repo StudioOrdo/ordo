@@ -234,6 +234,12 @@ as replay and deterministic providers. Missing live/network guards, provider
 config, or spend budget block before provider construction and are reported as
 runner JSON summaries rather than conversation events.
 
+Artifact review classification also introduces no runtime conversation events.
+`artifact-review.md` and `ordo.eval_artifact_review.v1` JSON are local eval
+artifacts derived from redacted packet evidence. Candidate findings can suggest
+GitHub issue drafts, but they are not automatically filed and are not part of
+the WebSocket protocol.
+
 Implemented tool governance behavior: LLM tool requests are durable
 conversation events with `toolRequestId`, `runId`, requested capability, reason,
 evidence refs, redacted input summary, visibility ceiling, status, and policy

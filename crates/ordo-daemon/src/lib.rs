@@ -16,6 +16,7 @@ pub mod diagnostics;
 pub mod entry_points;
 pub mod errors;
 pub mod ethical_persuasion;
+pub mod eval_artifact_review;
 pub mod eval_harness;
 pub mod events;
 pub mod feedback;

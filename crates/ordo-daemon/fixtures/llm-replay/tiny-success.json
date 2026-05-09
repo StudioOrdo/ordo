@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "ordo.llm_replay_fixture.v1",
+  "fixtureId": "tiny_success",
+  "providerId": "replay_fixture",
+  "modelId": "replay-chat",
+  "requestFingerprint": "sha256:3b457a8ea2e79b5a79593aa1f955b5dce0ea5c260a6f83cf94746534de914ef1",
+  "promptHash": "sha256:197ad99ab4288e96c3ba72761741eb0b5f1a96cd2df6f6ab03c7fdabb7d11695",
+  "expectedPromptSlotIds": [
+    "conversation_brief"
+  ],
+  "events": [
+    {
+      "event": "text_delta",
+      "delta": "Replay "
+    },
+    {
+      "event": "text_delta",
+      "delta": "fixture answer"
+    },
+    {
+      "event": "completed",
+      "text": "Replay fixture answer",
+      "usage": {
+        "inputTokens": 21,
+        "outputTokens": 3
+      }
+    }
+  ],
+  "redactionSummary": {
+    "redactedValueCount": 0,
+    "detectors": [
+      "email",
+      "phone",
+      "secret",
+      "private_term"
+    ]
+  },
+  "provenanceRefs": [
+    "docs/architecture/conversation-realtime/real-llm-e2e-evals.md#layer-2-replay-provider-e2e"
+  ],
+  "createdAt": "2026-05-09T00:00:00Z",
+  "updatedAt": "2026-05-09T00:00:00Z"
+}

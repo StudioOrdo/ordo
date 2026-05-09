@@ -366,7 +366,10 @@ Delivery order:
    with `/chat/ws` commands for handoff create/lifecycle, conversation mode
    set/human-led/return-to-agent, and scoped agent delegate/revoke, plus durable
    replay and trust-boundary tests.
-9. Add replay-provider fixture support.
+9. Add replay-provider fixture support. Implemented with
+   `ReplayLlmProvider`, `ordo.llm_replay_fixture.v1`, a redacted tiny fixture,
+   request fingerprint matching, usage replay through the token ledger, and a
+   packet-backed `replay_provider_fixture` eval.
 10. Add real provider adapter behind the Rust-owned LLM gateway.
 11. Add opt-in live eval runner with network and spend guards.
 12. Add artifact review automation that classifies findings and drives

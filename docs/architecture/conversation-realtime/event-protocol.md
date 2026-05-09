@@ -213,6 +213,13 @@ assistant text is persisted as a normal `conversation_messages` row only after
 provider completion. Provider keys are not part of the command, event, prompt
 slot, or UI contract.
 
+Replay-provider fixtures do not add new runtime event types. A replayed fixture
+must normalize through the same `llm.provider.started`, ephemeral
+`llm.text.delta`, durable `llm.text.completed`, `llm.usage.recorded`,
+`llm.run.completed`, and `llm.run.failed` events as any other provider adapter.
+Unknown replay fingerprints fail as provider failures without final assistant
+messages.
+
 Implemented tool governance behavior: LLM tool requests are durable
 conversation events with `toolRequestId`, `runId`, requested capability, reason,
 evidence refs, redacted input summary, visibility ceiling, status, and policy

@@ -661,11 +661,28 @@ Phase 8 simulator contract coverage now includes:
   manifest output with raw provider secrets, raw persona narrative, emails,
   phone numbers, configured private terms, fake reviews, fake metrics, fake
   urgency, fake scarcity, and unsupported social proof absent.
+- affiliate-referral journey execution with no provider keys and no network by
+  default;
+- affiliate/referrer persona selection from the committed persona library;
+- active affiliate connection and scoped connection grant evidence;
+- referral entry point, referred visitor session, relationship conversation,
+  referred visitor message, and deterministic assistant response evidence;
+- public OrdoStudio offer acceptance and started 30-day trial for the referred
+  visitor;
+- referral record and referral-linked business outcome citing concrete
+  affiliate, entry point, visitor session, offer acceptance, trial, and
+  conversation/message evidence;
+- referral and affiliate-connection attribution proposed only after concrete
+  referral/source ids exist;
+- affiliate visibility checks that allow the scoped referred conversation and
+  deny unrelated conversation access;
+- affiliate-referral packet, scorecard, harness manifest, and journey manifest
+  output with raw provider secrets, raw persona narrative, emails, phone
+  numbers, configured private terms, fake referrals, fake metrics, fake
+  urgency, fake scarcity, fake reviews, and unsupported social proof absent.
 
 0.1.5 live product journey eval coverage should still add:
 
-- affiliate connection, referral entry point, referred visitor, referral record,
-  and outcome attribution evidence;
 - staff/admin handoff, delegation, review approval, affiliate management, and
   client-safe versus staff-only visibility evidence;
 - cross-persona analyzed report with conversion, trial, review, referral,

@@ -1,7 +1,7 @@
 # Conversation Realtime Data Model
 
 Status: Draft schema plan with backend foundation implemented through daemon
-schema versions 19 through 23
+schema versions 19 through 24
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -36,9 +36,10 @@ the first dedicated LLM accounting tables for invocation metadata, prompt slot
 usage, and append-only token ledger entries. Schema version 22 adds the first
 continuous conversation analysis, brief candidate, and memory candidate
 foundation. Schema version 23 adds dedicated knowledge graph node and edge
-candidate tables. Dedicated privacy transform tables remain deferred; privacy
-transform run ids are recorded on invocations, while placeholder mappings stay
-behind the encrypted local vault boundary.
+candidate tables. Schema version 24 adds referral records, business outcomes,
+and business outcome attribution candidates. Dedicated privacy transform tables
+remain deferred; privacy transform run ids are recorded on invocations, while
+placeholder mappings stay behind the encrypted local vault boundary.
 
 ### `conversations`
 
@@ -610,9 +611,13 @@ Indexes:
 
 ### `business_outcomes`
 
-Stores offer, ask, referral, and relationship-to-outcome evidence. The first
-implementation may defer this table until offer/ask attribution work begins,
-but conversation schema should not assume offers and asks are only content.
+Stores offer, ask, referral, and relationship-to-outcome evidence.
+
+Status: implemented in schema version 24. Outcomes require evidence refs and
+provenance. Public offer acceptance records an evidence-backed
+`offer_acceptance` outcome when the offer/trial acceptance is persisted.
+Payments, payout automation, and external analytics integrations remain out of
+scope.
 
 Columns:
 
@@ -624,17 +629,94 @@ Columns:
 - `segment_id TEXT`
 - `offer_id TEXT`
 - `ask_id TEXT`
-- `referral_id TEXT`
 - `artifact_id TEXT`
 - `entry_point_id TEXT`
 - `visitor_session_id TEXT`
+- `referral_id TEXT`
+- `value_micros INTEGER`
+- `currency TEXT`
 - `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
-- `metadata_json TEXT NOT NULL DEFAULT '{}'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
 - `occurred_at TEXT NOT NULL`
 - `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
 
-Outcome kinds include buy-from-us, sell-to-us, referral, partnership, support,
-trial-started, trial-converted, and declined/lost.
+Outcome kinds include `offer_acceptance`, `ask_response`, `referral`,
+`qualified_lead`, `conversion`, `retained_customer`, `declined`, `voided`, and
+`expired`. The current implementation records offer acceptance outcomes and
+supports the broader shape for asks, referrals, artifacts, entry points,
+visitor sessions, and conversations without inventing missing evidence.
+
+Indexes:
+
+- `(outcome_kind, status, occurred_at DESC)`;
+- `(conversation_id, occurred_at DESC)`;
+- `(connection_id, occurred_at DESC)`;
+- `(offer_id, occurred_at DESC)`;
+- `(entry_point_id, occurred_at DESC)`.
+
+### `business_outcome_attributions`
+
+Stores proposed attribution candidates for an outcome. Attribution is
+evidence-backed influence, not automatic credit assignment.
+
+Status: implemented in schema version 24. Attributions default to `proposed`
+and support confirmed, rejected, and superseded lifecycle transitions. Public
+offer acceptance proposes direct offer influence and, when evidence exists,
+visitor-session and entry-point influence.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `outcome_id TEXT NOT NULL`
+- `attribution_kind TEXT NOT NULL`
+- `source_id TEXT NOT NULL`
+- `influence_role TEXT NOT NULL`
+- `candidate_state TEXT NOT NULL`
+- `confidence REAL NOT NULL`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+- `state_changed_at TEXT`
+- `state_reason TEXT`
+
+Attribution kinds include `conversation`, `message`, `artifact`,
+`entry_point`, `visitor_session`, `offer`, `ask`, `referral`, and `campaign`.
+Influence roles are `first_touch`, `assisted`, `direct`, `confirming`, and
+`excluded`.
+
+Indexes:
+
+- `(outcome_id, candidate_state, created_at ASC)`;
+- `(attribution_kind, source_id, candidate_state, created_at DESC)`.
+
+### `referral_records`
+
+Stores durable referral evidence before or alongside outcomes.
+
+Status: implemented in schema version 24. Referral records require evidence
+refs and provenance, and may link to referrer/referred connections,
+conversation, entry point, and visitor session evidence. External affiliate
+payouts remain out of scope.
+
+Columns:
+
+- `id TEXT PRIMARY KEY`
+- `status TEXT NOT NULL`
+- `referrer_connection_id TEXT`
+- `referred_connection_id TEXT`
+- `conversation_id TEXT`
+- `entry_point_id TEXT`
+- `visitor_session_id TEXT`
+- `evidence_refs_json TEXT NOT NULL DEFAULT '[]'`
+- `provenance_json TEXT NOT NULL DEFAULT '{}'`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
+- `closed_at TEXT`
+
+Referral statuses include `captured`, `qualified`, `converted`, `lost`, and
+`voided`.
 
 ### `surface_briefs`
 

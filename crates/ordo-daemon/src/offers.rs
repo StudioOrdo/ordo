@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 use uuid::Uuid;
 
+use crate::attribution::{record_offer_acceptance_outcome_tx, OfferAcceptanceOutcomeInput};
 use crate::business::{BusinessFactVisibility, PublicationState};
 use crate::events::{append_realtime_event_tx, system_event, RealtimeEvent};
 use crate::public_surfaces::{public_surfaces, PublicSurfaceItem};
@@ -624,6 +625,18 @@ pub fn accept_public_offer(
         }),
         &now_text,
     )?;
+    record_offer_acceptance_outcome_tx(
+        &transaction,
+        OfferAcceptanceOutcomeInput {
+            acceptance_id: &acceptance_id,
+            trial_id: &trial_id,
+            offer_id: &offer.id,
+            offer_slug: &offer.slug,
+            visitor_session_id: visitor_session_id.as_deref(),
+            entry_point_id: entry_point_id.as_deref(),
+            occurred_at: &now_text,
+        },
+    )?;
     let event = append_realtime_event_tx(
         &transaction,
         &system_event(
@@ -1191,6 +1204,27 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM trial_events", [], |row| row.get(0))
             .unwrap();
         assert_eq!(trial_events, 1);
+        let outcome_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM business_outcomes
+                 WHERE outcome_kind = 'offer_acceptance'
+                   AND offer_id = ?1
+                   AND evidence_refs_json LIKE ?2",
+                params![offer.id, format!("%{}%", acceptance.id)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(outcome_count, 1);
+        let attribution_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM business_outcome_attributions
+                 WHERE attribution_kind = 'offer'
+                   AND source_id = ?1",
+                [offer.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(attribution_count, 1);
     }
 
     #[test]

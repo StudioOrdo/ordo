@@ -72,6 +72,9 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "conversation_memory_candidates",
     "knowledge_graph_node_candidates",
     "knowledge_graph_edge_candidates",
+    "referral_records",
+    "business_outcomes",
+    "business_outcome_attributions",
     "corpus_sources",
     "corpus_items",
     "corpus_items_fts",
@@ -85,7 +88,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 23;
+pub const CURRENT_SCHEMA_VERSION: i64 = 24;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -210,6 +213,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 23,
         name: "add_knowledge_graph_candidate_schema",
         apply: add_knowledge_graph_candidate_schema,
+    },
+    SchemaMigration {
+        version: 24,
+        name: "add_business_outcome_attribution_schema",
+        apply: add_business_outcome_attribution_schema,
     },
 ];
 
@@ -2044,6 +2052,104 @@ fn add_knowledge_graph_candidate_schema(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_business_outcome_attribution_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS referral_records (
+            id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            referrer_connection_id TEXT,
+            referred_connection_id TEXT,
+            conversation_id TEXT,
+            entry_point_id TEXT,
+            visitor_session_id TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            closed_at TEXT,
+            FOREIGN KEY (referrer_connection_id) REFERENCES connections(id) ON DELETE SET NULL,
+            FOREIGN KEY (referred_connection_id) REFERENCES connections(id) ON DELETE SET NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL,
+            FOREIGN KEY (entry_point_id) REFERENCES tracked_entry_points(id) ON DELETE SET NULL,
+            FOREIGN KEY (visitor_session_id) REFERENCES visitor_sessions(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_referral_records_status
+            ON referral_records(status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_referral_records_referrer
+            ON referral_records(referrer_connection_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_referral_records_conversation
+            ON referral_records(conversation_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS business_outcomes (
+            id TEXT PRIMARY KEY,
+            outcome_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            connection_id TEXT,
+            conversation_id TEXT,
+            segment_id TEXT,
+            offer_id TEXT,
+            ask_id TEXT,
+            artifact_id TEXT,
+            entry_point_id TEXT,
+            visitor_session_id TEXT,
+            referral_id TEXT,
+            value_micros INTEGER,
+            currency TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            occurred_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE SET NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL,
+            FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE SET NULL,
+            FOREIGN KEY (entry_point_id) REFERENCES tracked_entry_points(id) ON DELETE SET NULL,
+            FOREIGN KEY (visitor_session_id) REFERENCES visitor_sessions(id) ON DELETE SET NULL,
+            FOREIGN KEY (referral_id) REFERENCES referral_records(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_business_outcomes_kind_status
+            ON business_outcomes(outcome_kind, status, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_business_outcomes_conversation
+            ON business_outcomes(conversation_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_business_outcomes_connection
+            ON business_outcomes(connection_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_business_outcomes_offer
+            ON business_outcomes(offer_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_business_outcomes_entry_point
+            ON business_outcomes(entry_point_id, occurred_at DESC);
+
+        CREATE TABLE IF NOT EXISTS business_outcome_attributions (
+            id TEXT PRIMARY KEY,
+            outcome_id TEXT NOT NULL,
+            attribution_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            influence_role TEXT NOT NULL,
+            candidate_state TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            state_changed_at TEXT,
+            state_reason TEXT,
+            FOREIGN KEY (outcome_id) REFERENCES business_outcomes(id) ON DELETE CASCADE,
+            UNIQUE(outcome_id, attribution_kind, source_id, influence_role)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_business_outcome_attributions_outcome
+            ON business_outcome_attributions(outcome_id, candidate_state, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_business_outcome_attributions_source
+            ON business_outcome_attributions(attribution_kind, source_id, candidate_state, created_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -2149,9 +2255,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 23);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 24);
     }
 
     #[test]
@@ -2887,6 +2994,35 @@ mod tests {
             &connection,
             "knowledge_graph_edge_candidates",
             "target_node_candidate_id"
+        ));
+        assert!(table_exists(&connection, "referral_records"));
+        assert!(column_exists(
+            &connection,
+            "referral_records",
+            "referrer_connection_id"
+        ));
+        assert!(table_exists(&connection, "business_outcomes"));
+        assert!(column_exists(
+            &connection,
+            "business_outcomes",
+            "evidence_refs_json"
+        ));
+        assert!(column_exists(&connection, "business_outcomes", "ask_id"));
+        assert!(column_exists(
+            &connection,
+            "business_outcomes",
+            "artifact_id"
+        ));
+        assert!(table_exists(&connection, "business_outcome_attributions"));
+        assert!(column_exists(
+            &connection,
+            "business_outcome_attributions",
+            "candidate_state"
+        ));
+        assert!(column_exists(
+            &connection,
+            "business_outcome_attributions",
+            "influence_role"
         ));
     }
 

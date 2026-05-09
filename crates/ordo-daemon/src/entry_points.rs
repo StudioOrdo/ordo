@@ -8,6 +8,7 @@ use std::path::Path;
 use uuid::Uuid;
 
 use crate::events::{append_realtime_event_tx, system_event, RealtimeEvent};
+use crate::offers::list_public_available_offers;
 use crate::public_surfaces::public_surfaces;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -536,16 +537,26 @@ fn ensure_public_destination(
                 bail!("About destination is not publicly ready.");
             }
         }
-        PublicDestinationSurface::Offers => ensure_item_destination(
-            "Offer",
-            destination_id,
-            surfaces.offers.readiness.ready,
-            surfaces
+        PublicDestinationSurface::Offers => {
+            let mut offer_ids = surfaces
                 .offers
                 .items
                 .iter()
-                .map(|item| item.item_id.as_str()),
-        )?,
+                .map(|item| item.item_id.clone())
+                .collect::<Vec<_>>();
+            offer_ids.extend(
+                list_public_available_offers(db_path)?
+                    .offers
+                    .into_iter()
+                    .map(|offer| offer.id),
+            );
+            ensure_item_destination(
+                "Offer",
+                destination_id,
+                surfaces.offers.readiness.ready || !offer_ids.is_empty(),
+                offer_ids.iter().map(String::as_str),
+            )?
+        }
         PublicDestinationSurface::Asks => ensure_item_destination(
             "Ask",
             destination_id,

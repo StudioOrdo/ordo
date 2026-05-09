@@ -409,9 +409,9 @@ Phase boundaries:
 
 ## Phase 11: Live Product Journey Evals
 
-Status: accepted planning arc for 0.1.5. Phase 1 persona library/validator and
-Phase 2 multi-case runner planning foundation are implemented. The full
-contract is documented in
+Status: accepted planning arc for 0.1.5. Phase 1 persona library/validator,
+Phase 2 multi-case runner planning foundation, and Phase 3 QR-to-trial journey
+eval are implemented. The full contract is documented in
 `docs/architecture/conversation-realtime/live-product-journey-evals.md`.
 
 Delivery order:
@@ -421,7 +421,11 @@ Delivery order:
    synthetic personas and `eval_personas` validation.
 3. #164 Add multi-case live journey runner foundation. Implemented as guarded
    persona-backed planning and manifest output without QR-to-trial execution.
-4. #165 Implement QR event to 30-day trial journey.
+4. #165 Implement QR event to 30-day trial journey. Implemented as a
+   deterministic persona-backed eval that creates a public offer, event QR
+   entry point, visitor session, relationship conversation, privacy/accounted
+   daemon LLM response, offer acceptance, 30-day trial, business outcome, and
+   attribution evidence.
 5. #166 Implement review-request return journey with simulated email/link
    artifact.
 6. #167 Implement affiliate referral journey eval.

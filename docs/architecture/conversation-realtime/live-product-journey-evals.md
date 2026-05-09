@@ -35,6 +35,9 @@ The current codebase can already support substantial parts of this journey:
   and writes a redacted manifest without executing the QR-to-trial journey.
 - `offers.rs` supports public offer acceptance and starts a 30-day trial by
   default.
+- `entry_points.rs` can target explicit public offers, so event QR links can
+  resolve to a concrete public 30-day trial offer before the broader public
+  surface read model is fully built out.
 - `attribution.rs` records offer-acceptance outcomes and proposed attribution
   for offer, visitor session, and entry point evidence. It also supports
   referral records.
@@ -48,11 +51,27 @@ The current codebase can already support substantial parts of this journey:
 - `eval_simulators.rs` validates customer, operator, and reviewer simulator
   outputs as non-authoritative pressure signals.
 
+Implemented journey execution:
+
+- #165 adds a deterministic QR-to-trial journey case in
+  `live_eval_runner.rs`. It loads a validated persona, creates a public
+  OrdoStudio 30-day trial offer, creates a tracked event QR entry point and
+  visitor session, opens a visitor-session-backed relationship conversation,
+  runs the deterministic daemon LLM gateway path with privacy egress and prompt
+  slot accounting, accepts the offer, starts the trial, records the business
+  outcome, records offer/session/entry-point attribution, and writes packet,
+  scorecard, harness manifest, and journey manifest artifacts.
+- The default #165 path remains provider-free and network-free. Live provider
+  execution stays behind the existing guard contract and later journey phases.
+- The implemented journey asserts no fake urgency, fake scarcity, unsupported
+  social proof, raw provider secrets, raw persona narrative, emails, phone
+  numbers, configured private terms, or staff internals in artifacts.
+
 Known gaps:
 
 - the smoke eval remains one provider call, while multi-persona live journey
-  planning is implemented without provider execution;
-- no orchestrator runs the full QR-to-trial-to-review journey;
+  planning and QR-to-trial execution remain deterministic by default;
+- no orchestrator runs the full review-return journey;
 - no outbound email adapter exists; review-request email should start as a
   redacted simulated artifact/link;
 - no affiliate referral journey eval ties affiliate connection, referral entry
@@ -147,9 +166,42 @@ contract, then writes a JSON manifest with:
 Default behavior remains network-free. Missing live/network guards still load
 and validate personas, then write a skipped manifest. A budget overrun blocks
 before any provider or journey execution. Unknown persona ids are rejected as
-configuration errors. The actual QR scan, visitor session, live conversation,
-offer acceptance, trial, attribution, review-return, affiliate, handoff, and
-cross-run report workflows remain in #165-#169.
+configuration errors. QR scan, visitor session, deterministic conversation,
+offer acceptance, trial, and attribution execution are implemented by #165.
+Review-return, affiliate, handoff, and cross-run report workflows remain in
+#166-#169.
+
+## QR-To-Trial Journey Eval
+
+Status: implemented by #165.
+
+The first executable journey case is
+`live_journey_qr_to_trial_<persona_id>`. It uses the committed persona library
+and a deterministic local provider path so default tests can run without
+provider keys or network access.
+
+The case records:
+
+- public OrdoStudio 30-day trial offer;
+- tracked `event_qr` entry point with QR payload;
+- visitor session created from that entry point;
+- canonical relationship conversation for the visitor session;
+- anonymous visitor and Ordo agent participants;
+- persona-backed visitor message;
+- deterministic daemon LLM completion with `ethical_business_persuasion` and
+  offer-context prompt slots;
+- privacy egress transform metadata;
+- prompt-slot accounting and token ledger rows;
+- public offer acceptance;
+- started 30-day trial;
+- business outcome;
+- proposed attribution for offer, visitor session, and entry point;
+- redacted packet, scorecard, harness manifest, and QR-to-trial journey
+  manifest.
+
+The journey manifest is schema `ordo.qr_to_trial_journey_eval.v1`. It stores
+durable ids and evidence refs only, not raw persona narrative or private
+payloads.
 
 ## Ethical Persuasion Boundary
 
@@ -212,7 +264,9 @@ GitHub issues until a governed filing path is implemented and accepted.
 1. #162 Align live product journey eval canon and GitHub manufacturing setup.
 2. #163 Add persona markdown library and parser/validator.
 3. #164 Add multi-case live journey runner foundation.
-4. #165 Implement QR event to 30-day trial journey.
+4. #165 Implement QR event to 30-day trial journey. Implemented with a
+   deterministic persona-backed event QR, visitor session, conversation, LLM
+   gateway, offer acceptance, trial, outcome, and attribution eval.
 5. #166 Implement review-request return journey with simulated email/link
    artifact.
 6. #167 Implement affiliate referral journey eval.

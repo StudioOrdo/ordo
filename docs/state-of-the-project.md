@@ -35,6 +35,10 @@ surfaces land.
 - The daemon exposes read-only public surface read models for About, Offers,
   Asks, and Feed. These JSON contracts only derive from published public
   business facts and include explicit readiness and provenance evidence.
+- SQLite stores tracked entry points, visitor sessions, and visitor session
+  events. The daemon exposes protected management routes and public-safe
+  resolution/session creation routes that only point at published public surface
+  destinations.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
@@ -101,6 +105,9 @@ surfaces land.
   protected local routes only.
 - Public About, Offers, Asks, and Feed frontend UI routes are not implemented
   yet; current support is daemon-owned JSON read models only.
+- Visitor-facing UI, analytics dashboards, and offer/trial attribution consumers
+  are not implemented yet; current visitor session support is backend state and
+  event evidence only.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
   integrations are not implemented yet.
 - Report submission transports to external systems are not implemented yet;
@@ -132,6 +139,9 @@ slices.
   boundaries.
 - [Public Surface Read Models](architecture/public-surfaces.md) describes the
   implemented daemon contracts for public About, Offers, Asks, and Feed data.
+- [Tracked Entry Points And Visitor Sessions](architecture/tracked-entry-points.md)
+  describes the implemented backend foundation for QR/link/campaign entry
+  context and visitor session evidence.
 - [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
   implemented retrieval safety foundation for future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,

@@ -35,7 +35,7 @@ GitHub milestone: `0.1.2 Backend MVP Readiness`
 | 0 | Local install, providers, and vault | #49 | [Install And Provider Setup](install-provider-setup.md) | Daemon routes, schema, vault encryption, secret redaction, backup key archival, protected policy decisions, and docs exist. | complete |
 | 1 | Business truth, visibility, and publication spine | #50 | [Owner Identity And Business Seeding](owner-identity-business-seeding.md), [Content Visibility And Publication](content-visibility-publication.md) | Durable business facts, provenance, visibility, publication state, and policy helpers exist with tests proving public/private boundaries. | complete |
 | 2 | Public surface read models | #51 | [Public Surfaces](public-surfaces.md) | Backend read models for About, Offers, Asks, and Feed return only published public resources. | complete |
-| 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | next |
+| 3 | Tracked entry points and visitor sessions | #52 | [Tracked Entry Points And Visitor Sessions](tracked-entry-points-visitor-sessions.md) | Entry point records, QR/link payloads, visitor sessions, attribution context, and visit/session events exist. | ready for PR |
 | 4 | Offers and trial lifecycle | #53 | [Offer Acceptance And Trial State](offer-trial-state.md) | Offers, offer acceptance, 30-day trial state, conversion/void/follow-up state, and attribution links exist. | not started |
 | 5 | Connections foundation | #54 | [Connections](connections.md) | Connections, grants, revocations, scoped access policy, connection events, and support/affiliate-ready types exist. | not started |
 | 6 | Availability and handoff inbox | #55 | [Availability And Presence](availability-presence.md), [Handoff Inbox](handoff-inbox.md) | Availability schedule, operator presence, interruption threshold, handoff eligibility, inbox items, approval state, and receipts exist. | not started |
@@ -123,12 +123,23 @@ Current validation evidence:
 This phase gives the product a durable path from QR/link/campaign entry into
 visitor activity.
 
+GitHub issue: #52.
+
 Done means:
 
 - tracked entry points can be created and resolved;
 - visitor sessions carry entry context;
 - session events preserve enough attribution evidence for offers and affiliate
   credit later.
+
+Current implementation evidence:
+
+- tracked entry point, visitor session, and visitor session event tables exist;
+- protected owner/operator management routes exist for entry points and session
+  inspection;
+- public-safe resolve and session creation routes only work for destinations
+  available through published public surface read models;
+- visitor session starts persist session event rows and realtime events.
 
 ### 4. Offers And Trial Lifecycle
 

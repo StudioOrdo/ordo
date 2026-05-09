@@ -32,6 +32,12 @@ use crate::diagnostics::{
     diagnostic_log, list_diagnostic_logs, record_diagnostic_log, DiagnosticLogQuery,
     DiagnosticLogsResponse, NewDiagnosticLogEntry,
 };
+use crate::entry_points::{
+    create_entry_point, create_visitor_session, list_entry_points, list_visitor_sessions,
+    resolve_entry_point, update_entry_point, EntryPointListResponse, EntryPointWriteRequest,
+    PublicEntryPointView, TrackedEntryPointView, VisitorSessionCreateRequest,
+    VisitorSessionListResponse, VisitorSessionView,
+};
 use crate::errors::{DaemonErrorCode, ErrorResponse};
 use crate::events::{
     append_system_event, replay_events, system_event, EventReplayResponse, RealtimeEvent,
@@ -163,6 +169,18 @@ pub async fn serve(
         .route("/public/offers", get(public_offers_handler))
         .route("/public/asks", get(public_asks_handler))
         .route("/public/feed", get(public_feed_handler))
+        .route("/entry-points", get(entry_points_handler))
+        .route("/entry-points", post(entry_point_create_handler))
+        .route(
+            "/entry-points/:entry_point_id",
+            put(entry_point_update_handler),
+        )
+        .route("/visitor-sessions", get(visitor_sessions_handler))
+        .route("/public/e/:slug", get(public_entry_point_handler))
+        .route(
+            "/public/visitor-sessions",
+            post(public_session_create_handler),
+        )
         .route("/logs", get(logs_handler))
         .route("/policy-decisions", get(policy_decisions_handler))
         .route("/briefs/system/latest", get(latest_system_brief_handler))
@@ -721,6 +739,114 @@ async fn public_feed_handler(
     public_feed(&state.db_path)
         .map(Json)
         .map_err(internal_error)
+}
+
+async fn entry_points_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<EntryPointListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/entry-points"),
+        Some("entry_points.list"),
+    )?;
+    list_entry_points(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn entry_point_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<EntryPointWriteRequest>,
+) -> Result<Json<TrackedEntryPointView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/entry-points"),
+        Some("entry_points.write"),
+    )?;
+    let (entry_point, event) = create_entry_point(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(entry_point))
+}
+
+async fn entry_point_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(entry_point_id): AxumPath<String>,
+    Json(request): Json<EntryPointWriteRequest>,
+) -> Result<Json<TrackedEntryPointView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/entry-points/{entry_point_id}"),
+        ),
+        Some("entry_points.write"),
+    )?;
+    let (entry_point, event) = update_entry_point(
+        &state.db_path,
+        &entry_point_id,
+        request,
+        actor_id(&decision),
+    )
+    .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(entry_point))
+}
+
+async fn visitor_sessions_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<VisitorSessionListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/visitor-sessions"),
+        Some("visitor_sessions.list"),
+    )?;
+    list_visitor_sessions(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn public_entry_point_handler(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<PublicEntryPointView>, (StatusCode, Json<ErrorResponse>)> {
+    resolve_entry_point(&state.db_path, &slug)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+async fn public_session_create_handler(
+    State(state): State<AppState>,
+    Json(request): Json<VisitorSessionCreateRequest>,
+) -> Result<Json<VisitorSessionView>, (StatusCode, Json<ErrorResponse>)> {
+    let (session, event) =
+        create_visitor_session(&state.db_path, request).map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(session))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1383,5 +1509,58 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn entry_point_management_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/entry-points"),
+            Some("entry_points.write"),
+        );
+        assert!(denied.is_err());
+
+        let allowed_entry_points = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/entry-points"),
+            Some("entry_points.list"),
+        );
+        assert!(allowed_entry_points.is_ok());
+
+        let allowed_sessions = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/visitor-sessions"),
+            Some("visitor_sessions.list"),
+        );
+        assert!(allowed_sessions.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('entry_points.write', 'entry_points.list', 'visitor_sessions.list')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 3);
     }
 }

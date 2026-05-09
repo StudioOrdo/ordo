@@ -1,6 +1,6 @@
 # Tracked Entry Points And Visitor Sessions MVP
 
-Status: not built
+Status: backend foundation implemented
 
 ## Why It Matters
 
@@ -9,11 +9,16 @@ context so Ordo can connect visits, conversations, offers, and attribution.
 
 ## MVP Scope
 
-- Create tracked entry point records.
-- Generate stable links and QR payloads.
-- Create visitor sessions with entry context.
+- Create tracked entry point records. Implemented in SQLite.
+- Generate stable links and QR payloads. Implemented as daemon read models and
+	payload JSON.
+- Create visitor sessions with entry context. Implemented through public-safe
+	session creation.
 - Carry attribution into future public Ordo conversation and offer acceptance.
-- Record visit/session events.
+	Implemented as durable session attribution context; future consumers are not
+	built.
+- Record visit/session events. Implemented as durable session event rows and
+	persisted realtime events.
 
 ## Durable Product Nouns
 

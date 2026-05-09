@@ -63,6 +63,9 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "conversation_receipts",
     "conversation_read_states",
     "conversation_presence_snapshots",
+    "llm_invocations",
+    "llm_prompt_slot_usage",
+    "llm_token_ledger_entries",
     "corpus_sources",
     "corpus_items",
     "corpus_items_fts",
@@ -76,7 +79,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 20;
+pub const CURRENT_SCHEMA_VERSION: i64 = 21;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -186,6 +189,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 20,
         name: "add_conversation_message_protocol_schema",
         apply: add_conversation_message_protocol_schema,
+    },
+    SchemaMigration {
+        version: 21,
+        name: "add_llm_token_ledger_schema",
+        apply: add_llm_token_ledger_schema,
     },
 ];
 
@@ -1736,6 +1744,97 @@ fn add_conversation_message_protocol_schema(connection: &Connection) -> Result<(
     Ok(())
 }
 
+fn add_llm_token_ledger_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS llm_invocations (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            capability_id TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            prompt_hash TEXT NOT NULL,
+            privacy_transform_run_ids_json TEXT NOT NULL DEFAULT '[]',
+            policy_decision_id TEXT,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            failure_code TEXT,
+            failure_message_hash TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL,
+            FOREIGN KEY (capability_id) REFERENCES capabilities(id) ON DELETE RESTRICT,
+            FOREIGN KEY (policy_decision_id) REFERENCES policy_decisions(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_llm_invocations_conversation
+            ON llm_invocations(conversation_id, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_invocations_provider_model
+            ON llm_invocations(provider_id, model_id, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_invocations_capability
+            ON llm_invocations(capability_id, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_invocations_status
+            ON llm_invocations(status, started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS llm_prompt_slot_usage (
+            id TEXT PRIMARY KEY,
+            invocation_id TEXT NOT NULL,
+            slot_id TEXT NOT NULL,
+            slot_version TEXT NOT NULL,
+            source_refs_json TEXT NOT NULL DEFAULT '[]',
+            visibility TEXT NOT NULL,
+            estimated_tokens INTEGER NOT NULL DEFAULT 0,
+            actual_tokens INTEGER,
+            content_hash TEXT NOT NULL,
+            included INTEGER NOT NULL DEFAULT 1,
+            truncation_reason TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (invocation_id) REFERENCES llm_invocations(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_llm_prompt_slot_usage_invocation
+            ON llm_prompt_slot_usage(invocation_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_llm_prompt_slot_usage_slot
+            ON llm_prompt_slot_usage(slot_id, slot_version, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_prompt_slot_usage_visibility
+            ON llm_prompt_slot_usage(visibility, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS llm_token_ledger_entries (
+            id TEXT PRIMARY KEY,
+            invocation_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            capability_id TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            usage_kind TEXT NOT NULL,
+            token_count INTEGER NOT NULL,
+            estimated_cost_micros INTEGER NOT NULL DEFAULT 0,
+            pricing_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (invocation_id) REFERENCES llm_invocations(id) ON DELETE CASCADE,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (capability_id) REFERENCES capabilities(id) ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_llm_token_ledger_entries_invocation
+            ON llm_token_ledger_entries(invocation_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_llm_token_ledger_entries_conversation
+            ON llm_token_ledger_entries(conversation_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_token_ledger_entries_provider_model
+            ON llm_token_ledger_entries(provider_id, model_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_token_ledger_entries_capability
+            ON llm_token_ledger_entries(capability_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_token_ledger_entries_usage_kind
+            ON llm_token_ledger_entries(usage_kind, created_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1839,9 +1938,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 20);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 21);
     }
 
     #[test]
@@ -2471,6 +2570,46 @@ mod tests {
             &connection,
             "conversation_presence_snapshots",
             "expires_at"
+        ));
+    }
+
+    #[test]
+    fn llm_token_ledger_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "llm_invocations"));
+        assert!(column_exists(
+            &connection,
+            "llm_invocations",
+            "privacy_transform_run_ids_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_invocations",
+            "failure_message_hash"
+        ));
+        assert!(table_exists(&connection, "llm_prompt_slot_usage"));
+        assert!(column_exists(
+            &connection,
+            "llm_prompt_slot_usage",
+            "estimated_tokens"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_prompt_slot_usage",
+            "actual_tokens"
+        ));
+        assert!(table_exists(&connection, "llm_token_ledger_entries"));
+        assert!(column_exists(
+            &connection,
+            "llm_token_ledger_entries",
+            "estimated_cost_micros"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_token_ledger_entries",
+            "pricing_snapshot_json"
         ));
     }
 

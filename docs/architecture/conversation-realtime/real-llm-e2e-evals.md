@@ -59,6 +59,13 @@ create a relationship conversation, governed handoff, staff and manager queue
 evidence, human-led/delegated/returned mode boundaries, moderated review
 publication, affiliate grant revocation, and redacted packet/manifest artifacts
 without provider keys or network calls.
+The 0.1.5 Phase 7 cross-persona analyzed report is implemented in
+`crates/ordo-daemon/src/live_journey_report.rs`; default tests read journey
+manifests, packets, scorecards, and artifact-review outputs from the Phase 3-6
+journeys, then write deterministic JSON and Markdown reports with aggregate
+conversion, review, referral, handoff, privacy, accounting, persuasion,
+artifact-finding, explicit-gap, and local-only issue-draft summaries without
+provider, network, or GitHub calls.
 
 ## Current Assessment
 
@@ -180,10 +187,11 @@ evidence rather than live-model impressions:
     workflow pressure.
 11. Live product journey evals that run persona-driven QR-to-trial,
     review-return, affiliate-referral, and staff/admin handoff paths behind
-    explicit live-provider guards. Phases 1-6 now provide the committed
+    explicit live-provider guards. Phases 1-7 now provide the committed
     synthetic persona library, deterministic validator, multi-case guard/cap
     planner, QR-to-trial execution, review-return execution,
-    affiliate-referral execution, and admin/staff moderation execution.
+    affiliate-referral execution, admin/staff moderation execution, and
+    cross-persona analyzed reporting.
 
 Every implementation phase should begin by re-reading the issue, current docs,
 and current code because earlier eval work may change the best implementation

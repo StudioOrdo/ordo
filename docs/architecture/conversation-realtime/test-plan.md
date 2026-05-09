@@ -696,11 +696,24 @@ Phase 8 simulator contract coverage now includes:
   with staff/admin internals, policy/provider mechanics, raw provider secrets,
   raw persona narrative, emails, phone numbers, and configured private terms
   absent from client/public-safe artifacts.
+- cross-persona live journey report generation with no provider keys, no
+  network, and no GitHub calls by default;
+- report input readers for QR-to-trial, review-return, affiliate-referral, and
+  admin/staff journey manifests plus packet and artifact-review JSON;
+- deterministic JSON and Markdown report output under fixed source commit and
+  generated timestamp;
+- aggregate conversion/trial, review, referral, handoff/moderation,
+  privacy/redaction, prompt-slot, token/accounting, persuasion-boundary, and
+  artifact-review finding summaries;
+- explicit missing/not-run gaps when a journey type is absent;
+- local follow-up issue drafts generated only from missing artifact evidence or
+  failure/blocker artifact-review findings, with no automatic filing;
+- report output with raw provider secrets, raw persona narrative, emails, phone
+  numbers, staff-only internals, and configured private terms absent.
 
 0.1.5 live product journey eval coverage should still add:
 
-- cross-persona analyzed report with conversion, trial, review, referral,
-  handoff, privacy, persuasion, token, and artifact-review summaries.
+- governed email simulation or adapter path decision.
 
 Role lifecycle:
 

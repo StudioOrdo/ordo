@@ -27,6 +27,7 @@ pub mod install;
 pub mod kernel;
 pub mod knowledge_graph;
 pub mod live_eval_runner;
+pub mod live_journey_report;
 pub mod llm_accounting;
 pub mod llm_gateway;
 pub mod mcp;

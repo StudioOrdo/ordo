@@ -55,6 +55,14 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "conversation_handoffs",
     "conversation_modes",
     "conversation_events",
+    "conversation_participants",
+    "conversation_messages",
+    "conversation_message_revisions",
+    "conversation_message_artifacts",
+    "conversation_reactions",
+    "conversation_receipts",
+    "conversation_read_states",
+    "conversation_presence_snapshots",
     "corpus_sources",
     "corpus_items",
     "corpus_items_fts",
@@ -68,7 +76,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 19;
+pub const CURRENT_SCHEMA_VERSION: i64 = 20;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -173,6 +181,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 19,
         name: "add_conversation_product_foundation",
         apply: add_conversation_product_foundation,
+    },
+    SchemaMigration {
+        version: 20,
+        name: "add_conversation_message_protocol_schema",
+        apply: add_conversation_message_protocol_schema,
     },
 ];
 
@@ -1533,6 +1546,196 @@ fn add_conversation_product_foundation(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_conversation_message_protocol_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS conversation_participants (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            participant_kind TEXT NOT NULL,
+            actor_id TEXT,
+            connection_id TEXT,
+            visitor_session_id TEXT,
+            display_name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            status TEXT NOT NULL,
+            privacy_settings_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            joined_at TEXT NOT NULL,
+            last_seen_at TEXT,
+            left_at TEXT,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE SET NULL,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE SET NULL,
+            FOREIGN KEY (visitor_session_id) REFERENCES visitor_sessions(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_participants_conversation
+            ON conversation_participants(conversation_id, status);
+        CREATE INDEX IF NOT EXISTS idx_conversation_participants_actor
+            ON conversation_participants(actor_id, conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_conversation_participants_connection
+            ON conversation_participants(connection_id, conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_conversation_participants_visitor_session
+            ON conversation_participants(visitor_session_id, conversation_id);
+
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            segment_id TEXT,
+            participant_id TEXT NOT NULL,
+            message_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            body_markdown TEXT NOT NULL,
+            body_format TEXT NOT NULL DEFAULT 'markdown',
+            redaction_state TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            reply_to_message_id TEXT,
+            client_message_id TEXT,
+            sequence INTEGER NOT NULL,
+            event_cursor INTEGER,
+            undo_expires_at TEXT,
+            undo_cancelled_at TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            edited_at TEXT,
+            deleted_at TEXT,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (segment_id) REFERENCES conversation_segments(id) ON DELETE SET NULL,
+            FOREIGN KEY (participant_id) REFERENCES conversation_participants(id) ON DELETE RESTRICT,
+            FOREIGN KEY (reply_to_message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL,
+            UNIQUE(conversation_id, sequence),
+            UNIQUE(conversation_id, participant_id, client_message_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_sequence
+            ON conversation_messages(conversation_id, sequence ASC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_created
+            ON conversation_messages(conversation_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_messages_participant
+            ON conversation_messages(participant_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_messages_reply
+            ON conversation_messages(reply_to_message_id);
+
+        CREATE TABLE IF NOT EXISTS conversation_message_revisions (
+            id TEXT PRIMARY KEY,
+            message_id TEXT NOT NULL,
+            revision_number INTEGER NOT NULL,
+            body_markdown TEXT NOT NULL,
+            edited_by_participant_id TEXT NOT NULL,
+            reason TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (message_id) REFERENCES conversation_messages(id) ON DELETE CASCADE,
+            FOREIGN KEY (edited_by_participant_id) REFERENCES conversation_participants(id) ON DELETE RESTRICT,
+            UNIQUE(message_id, revision_number)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_message_revisions_message
+            ON conversation_message_revisions(message_id, revision_number);
+
+        CREATE TABLE IF NOT EXISTS conversation_message_artifacts (
+            id TEXT PRIMARY KEY,
+            message_id TEXT NOT NULL,
+            artifact_kind TEXT NOT NULL,
+            artifact_id TEXT NOT NULL,
+            label TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (message_id) REFERENCES conversation_messages(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_message_artifacts_message
+            ON conversation_message_artifacts(message_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_message_artifacts_artifact
+            ON conversation_message_artifacts(artifact_kind, artifact_id);
+
+        CREATE TABLE IF NOT EXISTS conversation_reactions (
+            id TEXT PRIMARY KEY,
+            message_id TEXT NOT NULL,
+            participant_id TEXT NOT NULL,
+            reaction_key TEXT NOT NULL,
+            reaction_kind TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            removed_at TEXT,
+            FOREIGN KEY (message_id) REFERENCES conversation_messages(id) ON DELETE CASCADE,
+            FOREIGN KEY (participant_id) REFERENCES conversation_participants(id) ON DELETE CASCADE
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_reactions_active
+            ON conversation_reactions(message_id, participant_id, reaction_key)
+            WHERE removed_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_conversation_reactions_message
+            ON conversation_reactions(message_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS conversation_receipts (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            message_id TEXT,
+            participant_id TEXT NOT NULL,
+            receipt_kind TEXT NOT NULL,
+            event_cursor INTEGER,
+            sequence INTEGER,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL,
+            FOREIGN KEY (participant_id) REFERENCES conversation_participants(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_receipts_participant
+            ON conversation_receipts(conversation_id, participant_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_receipts_message
+            ON conversation_receipts(message_id, receipt_kind, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversation_receipts_cursor
+            ON conversation_receipts(event_cursor);
+
+        CREATE TABLE IF NOT EXISTS conversation_read_states (
+            conversation_id TEXT NOT NULL,
+            participant_id TEXT NOT NULL,
+            last_delivered_message_id TEXT,
+            last_delivered_at TEXT,
+            last_displayed_message_id TEXT,
+            last_displayed_at TEXT,
+            last_read_message_id TEXT,
+            last_read_event_cursor INTEGER,
+            last_read_at TEXT,
+            manual_unread_from_message_id TEXT,
+            unread_count INTEGER NOT NULL DEFAULT 0,
+            unread_mentions_count INTEGER NOT NULL DEFAULT 0,
+            unread_action_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (conversation_id, participant_id),
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (participant_id) REFERENCES conversation_participants(id) ON DELETE CASCADE,
+            FOREIGN KEY (last_delivered_message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL,
+            FOREIGN KEY (last_displayed_message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL,
+            FOREIGN KEY (last_read_message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL,
+            FOREIGN KEY (manual_unread_from_message_id) REFERENCES conversation_messages(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS conversation_presence_snapshots (
+            participant_id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            status_message TEXT,
+            device_class TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            expires_at TEXT,
+            FOREIGN KEY (participant_id) REFERENCES conversation_participants(id) ON DELETE CASCADE,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversation_presence_conversation
+            ON conversation_presence_snapshots(conversation_id, status, updated_at DESC);
+        "#,
+    )?;
+
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -1636,9 +1839,9 @@ mod tests {
             .collect();
         assert_eq!(
             versions,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 19);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 20);
     }
 
     #[test]
@@ -1743,6 +1946,19 @@ mod tests {
         assert!(table_exists(&connection, "issue_report_status_events"));
         assert!(table_exists(&connection, "support_packets"));
         assert!(table_exists(&connection, "support_packet_receipts"));
+        assert!(table_exists(&connection, "conversations"));
+        assert!(table_exists(&connection, "conversation_segments"));
+        assert!(table_exists(&connection, "conversation_handoffs"));
+        assert!(table_exists(&connection, "conversation_modes"));
+        assert!(table_exists(&connection, "conversation_events"));
+        assert!(table_exists(&connection, "conversation_participants"));
+        assert!(table_exists(&connection, "conversation_messages"));
+        assert!(table_exists(&connection, "conversation_message_revisions"));
+        assert!(table_exists(&connection, "conversation_message_artifacts"));
+        assert!(table_exists(&connection, "conversation_reactions"));
+        assert!(table_exists(&connection, "conversation_receipts"));
+        assert!(table_exists(&connection, "conversation_read_states"));
+        assert!(table_exists(&connection, "conversation_presence_snapshots"));
 
         let job_capability_id: String = connection
             .query_row(
@@ -2190,6 +2406,71 @@ mod tests {
             &connection,
             "conversation_events",
             "realtime_cursor"
+        ));
+    }
+
+    #[test]
+    fn conversation_message_protocol_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "conversation_participants"));
+        assert!(column_exists(
+            &connection,
+            "conversation_participants",
+            "participant_kind"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_participants",
+            "privacy_settings_json"
+        ));
+        assert!(table_exists(&connection, "conversation_messages"));
+        assert!(column_exists(
+            &connection,
+            "conversation_messages",
+            "client_message_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_messages",
+            "undo_expires_at"
+        ));
+        assert!(column_exists(
+            &connection,
+            "conversation_messages",
+            "undo_cancelled_at"
+        ));
+        assert!(table_exists(&connection, "conversation_message_revisions"));
+        assert!(column_exists(
+            &connection,
+            "conversation_message_revisions",
+            "revision_number"
+        ));
+        assert!(table_exists(&connection, "conversation_message_artifacts"));
+        assert!(table_exists(&connection, "conversation_reactions"));
+        assert!(column_exists(
+            &connection,
+            "conversation_reactions",
+            "removed_at"
+        ));
+        assert!(table_exists(&connection, "conversation_receipts"));
+        assert!(column_exists(
+            &connection,
+            "conversation_receipts",
+            "receipt_kind"
+        ));
+        assert!(table_exists(&connection, "conversation_read_states"));
+        assert!(column_exists(
+            &connection,
+            "conversation_read_states",
+            "manual_unread_from_message_id"
+        ));
+        assert!(table_exists(&connection, "conversation_presence_snapshots"));
+        assert!(column_exists(
+            &connection,
+            "conversation_presence_snapshots",
+            "expires_at"
         ));
     }
 

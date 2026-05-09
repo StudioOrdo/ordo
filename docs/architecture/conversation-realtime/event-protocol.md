@@ -1,6 +1,7 @@
 # Conversation Event Protocol
 
-Status: Draft protocol contract
+Status: Draft protocol contract with backend protocol/seam types implemented
+for `conversation.gateway.v1`; `/chat/ws` transport remains deferred
 
 The conversation protocol should evolve Ordo from a simple outbound WebSocket
 projection into a bidirectional, resumable conversation gateway while preserving
@@ -88,12 +89,13 @@ Initial command catalog:
 | `message.submit` | `message.created` | `conversation.message.create` |
 | `message.edit` | `message.edited` | `conversation.message.edit` |
 | `message.delete` | `message.deleted` | `conversation.message.delete` |
+| `message.undo` | `message.undo.cancelled` | `conversation.message.delete` |
 | `message.react` | `message.reaction.added` or `message.reaction.removed` | `conversation.reaction.write` |
 | `message.mark_read` | `message.read` and unread rollup events | `conversation.receipt.write` |
 | `message.mark_unread` | `message.marked_unread` and unread rollup events | `conversation.receipt.write` |
 | `typing.start` | ephemeral `typing.started` | `conversation.presence.write` |
 | `typing.stop` | ephemeral `typing.stopped` | `conversation.presence.write` |
-| `presence.update` | ephemeral and optional durable presence snapshot | `presence.write` |
+| `presence.update` | ephemeral and optional durable presence snapshot | `conversation.presence.write` |
 | `llm.run.request` | durable `llm.run.started` plus stream events | `llm.invoke` |
 | `llm.run.cancel` | durable or ephemeral cancel event | `llm.cancel` |
 | `tool.approve` | durable approval event | `llm.tool.approve` |
@@ -107,6 +109,9 @@ Initial command catalog:
 
 All commands should include `clientId`. Mutating commands should be idempotent
 for a bounded retry window using `clientId`, actor id, and conversation id.
+The first backend seam defines protocol envelope and capability mappings in
+Rust and TypeScript, while command execution and the `/chat/ws` read loop remain
+deferred.
 
 ## Durable Event Catalog
 

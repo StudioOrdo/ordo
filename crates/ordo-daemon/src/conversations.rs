@@ -305,6 +305,80 @@ pub struct ConversationQueueRow {
     pub evidence_summary: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationParticipantCreateRequest {
+    pub conversation_id: String,
+    pub participant_kind: String,
+    pub actor_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub visitor_session_id: Option<String>,
+    pub display_name: String,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationParticipantView {
+    pub id: String,
+    pub conversation_id: String,
+    pub participant_kind: String,
+    pub actor_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub visitor_session_id: Option<String>,
+    pub display_name: String,
+    pub role: String,
+    pub status: String,
+    pub joined_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMessageCreateRequest {
+    pub conversation_id: String,
+    pub segment_id: Option<String>,
+    pub participant_id: String,
+    pub message_kind: String,
+    pub body_markdown: String,
+    pub visibility: String,
+    pub client_message_id: String,
+    pub reply_to_message_id: Option<String>,
+    pub undo_expires_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMessageView {
+    pub id: String,
+    pub conversation_id: String,
+    pub segment_id: Option<String>,
+    pub participant_id: String,
+    pub message_kind: String,
+    pub status: String,
+    pub body_markdown: String,
+    pub visibility: String,
+    pub client_message_id: Option<String>,
+    pub sequence: i64,
+    pub event_cursor: Option<i64>,
+    pub undo_expires_at: Option<String>,
+    pub undo_cancelled_at: Option<String>,
+    pub created_at: String,
+    pub edited_at: Option<String>,
+    pub deleted_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMessageRevisionView {
+    pub id: String,
+    pub message_id: String,
+    pub revision_number: i64,
+    pub body_markdown: String,
+    pub edited_by_participant_id: String,
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
 pub fn find_or_create_canonical_conversation(
     connection: &Connection,
     request: &CanonicalConversationRequest,
@@ -856,6 +930,261 @@ pub fn conversation_queue(
         .map_err(Into::into)
 }
 
+pub fn create_conversation_participant(
+    connection: &Connection,
+    request: &ConversationParticipantCreateRequest,
+) -> Result<ConversationParticipantView> {
+    require_text("conversation_id", &request.conversation_id)?;
+    require_text("participant_kind", &request.participant_kind)?;
+    require_text("display_name", &request.display_name)?;
+    require_text("role", &request.role)?;
+
+    let now = Utc::now().to_rfc3339();
+    let participant_id = format!("participant_{}", Uuid::new_v4());
+    connection.execute(
+        "INSERT INTO conversation_participants (
+            id, conversation_id, participant_kind, actor_id, connection_id, visitor_session_id,
+            display_name, role, status, joined_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active', ?9)",
+        params![
+            participant_id,
+            request.conversation_id,
+            request.participant_kind,
+            request.actor_id,
+            request.connection_id,
+            request.visitor_session_id,
+            request.display_name,
+            request.role,
+            now
+        ],
+    )?;
+    append_conversation_event(
+        connection,
+        &request.conversation_id,
+        None,
+        None,
+        "participant.joined",
+        json!({
+            "participantId": participant_id,
+            "participantKind": request.participant_kind,
+            "role": request.role,
+        }),
+        None,
+    )?;
+
+    load_participant(connection, &participant_id)
+}
+
+pub fn create_conversation_message(
+    connection: &Connection,
+    request: &ConversationMessageCreateRequest,
+) -> Result<ConversationMessageView> {
+    require_text("conversation_id", &request.conversation_id)?;
+    require_text("participant_id", &request.participant_id)?;
+    require_text("message_kind", &request.message_kind)?;
+    require_text("body_markdown", &request.body_markdown)?;
+    require_text("visibility", &request.visibility)?;
+    require_text("client_message_id", &request.client_message_id)?;
+
+    if let Some(existing_id) = connection
+        .query_row(
+            "SELECT id FROM conversation_messages
+             WHERE conversation_id = ?1 AND participant_id = ?2 AND client_message_id = ?3",
+            params![
+                request.conversation_id,
+                request.participant_id,
+                request.client_message_id
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+    {
+        return load_message(connection, &existing_id);
+    }
+
+    let sequence = next_conversation_sequence(connection, &request.conversation_id)?;
+    let now = Utc::now().to_rfc3339();
+    let message_id = format!("message_{}", Uuid::new_v4());
+    let realtime = append_realtime_event(
+        connection,
+        &RealtimeEvent {
+            cursor: None,
+            schema_version: "conversation.gateway.v1".to_string(),
+            family: "conversation".to_string(),
+            event_type: "message.created".to_string(),
+            job_id: None,
+            task_key: None,
+            sequence: Some(sequence),
+            payload: json!({
+                "conversationId": request.conversation_id,
+                "messageId": message_id,
+                "participantId": request.participant_id,
+                "clientMessageId": request.client_message_id,
+            }),
+            occurred_at: now.clone(),
+        },
+    )?;
+    connection.execute(
+        "INSERT INTO conversation_messages (
+            id, conversation_id, segment_id, participant_id, message_kind, status,
+            body_markdown, redaction_state, visibility, reply_to_message_id,
+            client_message_id, sequence, event_cursor, undo_expires_at, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'sent', ?6, 'none', ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            message_id,
+            request.conversation_id,
+            request.segment_id,
+            request.participant_id,
+            request.message_kind,
+            request.body_markdown,
+            request.visibility,
+            request.reply_to_message_id,
+            request.client_message_id,
+            sequence,
+            realtime.cursor,
+            request.undo_expires_at,
+            now
+        ],
+    )?;
+    connection.execute(
+        "INSERT INTO conversation_receipts (
+            id, conversation_id, message_id, participant_id, receipt_kind, event_cursor, sequence, created_at
+         ) VALUES (?1, ?2, ?3, ?4, 'persisted', ?5, ?6, ?7)",
+        params![
+            format!("receipt_{}", Uuid::new_v4()),
+            request.conversation_id,
+            message_id,
+            request.participant_id,
+            realtime.cursor,
+            sequence,
+            now
+        ],
+    )?;
+    connection.execute(
+        "INSERT INTO conversation_events (
+            id, conversation_id, segment_id, sequence, event_type, payload_json, realtime_cursor, occurred_at
+         ) VALUES (?1, ?2, ?3, ?4, 'message.created', ?5, ?6, ?7)",
+        params![
+            format!("conversation_event_{}", Uuid::new_v4()),
+            request.conversation_id,
+            request.segment_id,
+            sequence,
+            json!({
+                "messageId": message_id,
+                "participantId": request.participant_id,
+                "clientMessageId": request.client_message_id,
+            })
+            .to_string(),
+            realtime.cursor,
+            now
+        ],
+    )?;
+    connection.execute(
+        "UPDATE conversations
+         SET last_meaningful_change = 'message.created', updated_at = ?1
+         WHERE id = ?2",
+        params![now, request.conversation_id],
+    )?;
+
+    load_message(connection, &message_id)
+}
+
+pub fn edit_conversation_message(
+    connection: &Connection,
+    message_id: &str,
+    edited_by_participant_id: &str,
+    body_markdown: &str,
+    reason: Option<&str>,
+) -> Result<ConversationMessageView> {
+    require_text("message_id", message_id)?;
+    require_text("edited_by_participant_id", edited_by_participant_id)?;
+    require_text("body_markdown", body_markdown)?;
+    let current = load_message(connection, message_id)?;
+    let revision_number: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(revision_number), 0) + 1
+         FROM conversation_message_revisions
+         WHERE message_id = ?1",
+        [message_id],
+        |row| row.get(0),
+    )?;
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "INSERT INTO conversation_message_revisions (
+            id, message_id, revision_number, body_markdown, edited_by_participant_id, reason, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            format!("revision_{}", Uuid::new_v4()),
+            message_id,
+            revision_number,
+            current.body_markdown,
+            edited_by_participant_id,
+            reason,
+            now
+        ],
+    )?;
+    connection.execute(
+        "UPDATE conversation_messages
+         SET body_markdown = ?1, edited_at = ?2
+         WHERE id = ?3",
+        params![body_markdown, now, message_id],
+    )?;
+    append_conversation_event(
+        connection,
+        &current.conversation_id,
+        current.segment_id.as_deref(),
+        None,
+        "message.edited",
+        json!({
+            "messageId": message_id,
+            "revisionNumber": revision_number,
+            "editedByParticipantId": edited_by_participant_id,
+        }),
+        None,
+    )?;
+
+    load_message(connection, message_id)
+}
+
+pub fn undo_conversation_message(
+    connection: &Connection,
+    message_id: &str,
+    participant_id: &str,
+) -> Result<ConversationMessageView> {
+    require_text("message_id", message_id)?;
+    require_text("participant_id", participant_id)?;
+    let current = load_message(connection, message_id)?;
+    ensure!(
+        current.participant_id == participant_id,
+        "only the author participant can undo this message"
+    );
+    ensure!(
+        current.deleted_at.is_none(),
+        "message is already deleted or cancelled"
+    );
+
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "UPDATE conversation_messages
+         SET status = 'cancelled', body_markdown = '', undo_cancelled_at = ?1, deleted_at = ?1
+         WHERE id = ?2",
+        params![now, message_id],
+    )?;
+    append_conversation_event(
+        connection,
+        &current.conversation_id,
+        current.segment_id.as_deref(),
+        None,
+        "message.undo.cancelled",
+        json!({
+            "messageId": message_id,
+            "participantId": participant_id,
+        }),
+        None,
+    )?;
+
+    load_message(connection, message_id)
+}
+
 fn load_conversation_summary(
     connection: &Connection,
     conversation_id: &str,
@@ -913,6 +1242,36 @@ fn load_conversation_mode(
              WHERE conversation_id = ?1",
             [conversation_id],
             mode_from_row,
+        )
+        .map_err(Into::into)
+}
+
+fn load_participant(
+    connection: &Connection,
+    participant_id: &str,
+) -> Result<ConversationParticipantView> {
+    connection
+        .query_row(
+            "SELECT id, conversation_id, participant_kind, actor_id, connection_id, visitor_session_id,
+                    display_name, role, status, joined_at
+             FROM conversation_participants
+             WHERE id = ?1",
+            [participant_id],
+            participant_from_row,
+        )
+        .map_err(Into::into)
+}
+
+fn load_message(connection: &Connection, message_id: &str) -> Result<ConversationMessageView> {
+    connection
+        .query_row(
+            "SELECT id, conversation_id, segment_id, participant_id, message_kind, status,
+                    body_markdown, visibility, client_message_id, sequence, event_cursor,
+                    undo_expires_at, undo_cancelled_at, created_at, edited_at, deleted_at
+             FROM conversation_messages
+             WHERE id = ?1",
+            [message_id],
+            message_from_row,
         )
         .map_err(Into::into)
 }
@@ -1071,6 +1430,42 @@ fn queue_row_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationQueueRow> {
     })
 }
 
+fn participant_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationParticipantView> {
+    Ok(ConversationParticipantView {
+        id: row.get(0)?,
+        conversation_id: row.get(1)?,
+        participant_kind: row.get(2)?,
+        actor_id: row.get(3)?,
+        connection_id: row.get(4)?,
+        visitor_session_id: row.get(5)?,
+        display_name: row.get(6)?,
+        role: row.get(7)?,
+        status: row.get(8)?,
+        joined_at: row.get(9)?,
+    })
+}
+
+fn message_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationMessageView> {
+    Ok(ConversationMessageView {
+        id: row.get(0)?,
+        conversation_id: row.get(1)?,
+        segment_id: row.get(2)?,
+        participant_id: row.get(3)?,
+        message_kind: row.get(4)?,
+        status: row.get(5)?,
+        body_markdown: row.get(6)?,
+        visibility: row.get(7)?,
+        client_message_id: row.get(8)?,
+        sequence: row.get(9)?,
+        event_cursor: row.get(10)?,
+        undo_expires_at: row.get(11)?,
+        undo_cancelled_at: row.get(12)?,
+        created_at: row.get(13)?,
+        edited_at: row.get(14)?,
+        deleted_at: row.get(15)?,
+    })
+}
+
 fn validate_handoff_request(request: &ConversationHandoffCreateRequest) -> Result<()> {
     require_text("conversation_id", &request.conversation_id)?;
     require_text("reason", &request.reason)?;
@@ -1164,6 +1559,25 @@ mod tests {
 
     fn create_conversation(connection: &Connection) -> ConversationSummary {
         find_or_create_canonical_conversation(connection, &canonical_request()).unwrap()
+    }
+
+    fn create_participant(
+        connection: &Connection,
+        conversation_id: &str,
+    ) -> ConversationParticipantView {
+        create_conversation_participant(
+            connection,
+            &ConversationParticipantCreateRequest {
+                conversation_id: conversation_id.to_string(),
+                participant_kind: "staff".to_string(),
+                actor_id: Some("actor_staff".to_string()),
+                connection_id: None,
+                visitor_session_id: None,
+                display_name: "Staff".to_string(),
+                role: "staff".to_string(),
+            },
+        )
+        .unwrap()
     }
 
     #[test]
@@ -1427,5 +1841,123 @@ mod tests {
         assert_eq!(team_rows.len(), 1);
         assert_eq!(all_rows.len(), 1);
         assert!(denied.is_err());
+    }
+
+    #[test]
+    fn message_create_is_durable_sequenced_and_idempotent_by_client_message_id() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let participant = create_participant(&connection, &conversation.id);
+        let request = ConversationMessageCreateRequest {
+            conversation_id: conversation.id.clone(),
+            segment_id: None,
+            participant_id: participant.id.clone(),
+            message_kind: "human".to_string(),
+            body_markdown: "First durable message".to_string(),
+            visibility: "participants".to_string(),
+            client_message_id: "client_msg_1".to_string(),
+            reply_to_message_id: None,
+            undo_expires_at: Some("2026-05-09T00:00:30Z".to_string()),
+        };
+
+        let first = create_conversation_message(&connection, &request).unwrap();
+        let second = create_conversation_message(&connection, &request).unwrap();
+
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.sequence, 4);
+        assert!(first.event_cursor.is_some());
+        assert_eq!(
+            first.undo_expires_at.as_deref(),
+            Some("2026-05-09T00:00:30Z")
+        );
+
+        let receipt_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_receipts WHERE message_id = ?1 AND receipt_kind = 'persisted'",
+                [&first.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(receipt_count, 1);
+    }
+
+    #[test]
+    fn message_edit_preserves_revision_history() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let participant = create_participant(&connection, &conversation.id);
+        let message = create_conversation_message(
+            &connection,
+            &ConversationMessageCreateRequest {
+                conversation_id: conversation.id.clone(),
+                segment_id: None,
+                participant_id: participant.id.clone(),
+                message_kind: "human".to_string(),
+                body_markdown: "Original".to_string(),
+                visibility: "participants".to_string(),
+                client_message_id: "client_msg_edit".to_string(),
+                reply_to_message_id: None,
+                undo_expires_at: None,
+            },
+        )
+        .unwrap();
+
+        let edited = edit_conversation_message(
+            &connection,
+            &message.id,
+            &participant.id,
+            "Edited",
+            Some("clarity"),
+        )
+        .unwrap();
+
+        assert_eq!(edited.body_markdown, "Edited");
+        assert!(edited.edited_at.is_some());
+        let original_revision: String = connection
+            .query_row(
+                "SELECT body_markdown FROM conversation_message_revisions WHERE message_id = ?1 AND revision_number = 1",
+                [&message.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(original_revision, "Original");
+    }
+
+    #[test]
+    fn message_undo_records_cancellation_without_losing_event_history() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let participant = create_participant(&connection, &conversation.id);
+        let message = create_conversation_message(
+            &connection,
+            &ConversationMessageCreateRequest {
+                conversation_id: conversation.id.clone(),
+                segment_id: None,
+                participant_id: participant.id.clone(),
+                message_kind: "human".to_string(),
+                body_markdown: "Undo me".to_string(),
+                visibility: "participants".to_string(),
+                client_message_id: "client_msg_undo".to_string(),
+                reply_to_message_id: None,
+                undo_expires_at: Some("2026-05-09T00:00:30Z".to_string()),
+            },
+        )
+        .unwrap();
+
+        let cancelled =
+            undo_conversation_message(&connection, &message.id, &participant.id).unwrap();
+
+        assert_eq!(cancelled.status, "cancelled");
+        assert_eq!(cancelled.body_markdown, "");
+        assert!(cancelled.undo_cancelled_at.is_some());
+        assert!(cancelled.deleted_at.is_some());
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_events WHERE conversation_id = ?1",
+                [&conversation.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(event_count >= 4);
     }
 }

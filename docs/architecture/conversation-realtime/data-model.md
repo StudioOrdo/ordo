@@ -1,7 +1,7 @@
 # Conversation Realtime Data Model
 
 Status: Draft schema plan with backend foundation implemented through daemon
-schema version 19
+schema versions 19 and 20
 
 The conversation data model should extend the current SQLite appliance schema
 through ordered daemon migrations. It should reuse existing actor, role,
@@ -28,9 +28,11 @@ provider, and realtime event foundations.
 
 The first backend foundation implements the canonical conversation, internal
 segment/episode candidate, governed handoff, current mode, and replayable
-conversation event tables. Message, participant, tag, receipt, presence,
-analysis, graph candidate, and memory tables remain planned for the realtime
-gateway and LLM work.
+conversation event tables in schema version 19. Schema version 20 adds
+participants, messages, revisions, message artifact links, reactions, receipts,
+read states, and presence snapshots for the protocol layer. Tags, analysis,
+graph candidates, memory, LLM runs, and business outcome tables remain planned
+for later gateway and LLM work.
 
 ### `conversations`
 
@@ -219,6 +221,8 @@ Columns:
 - `created_at TEXT NOT NULL`
 - `edited_at TEXT`
 - `deleted_at TEXT`
+- `undo_expires_at TEXT`
+- `undo_cancelled_at TEXT`
 
 Indexes:
 

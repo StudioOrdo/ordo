@@ -1029,6 +1029,28 @@ domain functions directly because gateway commands are not fully wired yet.
 Those same workflows should later be re-run through `/chat/ws` once the command
 surface catches up.
 
+Implemented first slice:
+
+1. `relationship_conversation_message`
+   - Creates or finds the canonical visitor relationship conversation.
+   - Adds a visitor participant and submits a sensitive fixture message through
+     the current backend service path.
+   - Asserts durable conversation events and realtime replay evidence.
+   - Writes packet, scorecard, and manifest artifacts with email, phone,
+     API-key-shaped, and configured private-term redaction.
+2. `privacy_gateway_roundtrip`
+   - Runs the Rust-owned LLM gateway through the deterministic local provider.
+   - Exercises prompt-slot accounting, privacy egress metadata, policy evidence,
+     token ledger rows, durable conversation events, and realtime replay.
+   - Confirms provider-bound sensitive fixture content is not serialized into
+     eval packet artifacts.
+
+This slice deliberately stays backend-only and provider-free. It does not claim
+full role lifecycle coverage, Customer Feedback/Review coverage, Home/About or
+Offer/Ask product-surface coverage, replay-provider fixtures, or live-provider
+readiness. Handoff, mode, and delegation workflows may continue to use direct
+domain helpers until #141 wires the corresponding gateway command coverage.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`
@@ -1063,7 +1085,10 @@ compare quality across providers and prompt revisions.
 1. Add backend-only eval case schema and isolated SQLite fixture setup.
 2. Add transcript artifact packet writer with redacted transcript, timeline,
    ledgers, scorecard, replay check, and artifact review output.
-3. Add deterministic backend eval runner and the first ten workflow cases.
+3. Add deterministic backend eval runner and first workflow cases. The initial
+   implemented cases are `relationship_conversation_message` and
+   `privacy_gateway_roundtrip`; the remaining workflow inventory should be
+   added in focused follow-on issues.
 4. Add artifact reviewer that classifies findings by `schema_gap`, `event_gap`,
    `policy_gap`, `privacy_gap`, `prompt_gap`, `handoff_gap`, `analysis_gap`,
    `accounting_gap`, `ux_contract_gap`, and `provider_gap`.

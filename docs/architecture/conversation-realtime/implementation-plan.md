@@ -345,15 +345,18 @@ Delivery order:
 3. Add transcript artifact packets and scorecards. Implemented with
    `EvalArtifactWriter`, JSON packet/scorecard/manifest output, durable ledger
    sections, redaction summaries, and artifact-review placeholders for #140.
-4. Implement role lifecycle workflow evals for anonymous, client/member,
+4. Implement first deterministic backend workflow evals. The initial slice is
+   implemented with `relationship_conversation_message` and
+   `privacy_gateway_roundtrip`, both provider-free and packet-backed.
+5. Implement role lifecycle workflow evals for anonymous, client/member,
    affiliate, staff, manager/admin, owner/system admin, Ordo agent, and
    LLM/tool/provider boundaries.
-5. Implement Customer Feedback and Review workflow evals.
-6. Implement Home/About and Offer/Ask product surface workflow evals.
-7. Add replay-provider fixture support.
-8. Add real provider adapter behind the Rust-owned LLM gateway.
-9. Add opt-in live eval runner with network and spend guards.
-10. Add artifact review automation that classifies findings and drives
+6. Implement Customer Feedback and Review workflow evals.
+7. Implement Home/About and Offer/Ask product surface workflow evals.
+8. Add replay-provider fixture support.
+9. Add real provider adapter behind the Rust-owned LLM gateway.
+10. Add opt-in live eval runner with network and spend guards.
+11. Add artifact review automation that classifies findings and drives
     follow-on issues.
 
 Phase boundaries:

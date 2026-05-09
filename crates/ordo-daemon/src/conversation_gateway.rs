@@ -17,7 +17,8 @@ use crate::conversation_protocol::{
     CONVERSATION_GATEWAY_SCHEMA_VERSION,
 };
 use crate::conversations::{
-    ConversationMessageCreateRequest, ConversationMutationActor, ConversationService,
+    ConversationMessageCreateRequest, ConversationMutationActor, ConversationPresenceUpdateRequest,
+    ConversationService, ReactionAction,
 };
 use crate::policy::{ActorContext, ActorKind};
 
@@ -342,6 +343,10 @@ fn command(
             enforce_message_command_rate_limit(session)?;
             message_undo(db_path, session, envelope)
         }
+        "message.mark_read" => message_mark_read(db_path, session, envelope),
+        "message.mark_unread" => message_mark_unread(db_path, session, envelope),
+        "message.react" => message_react(db_path, session, envelope),
+        "presence.update" => presence_update(db_path, session, envelope),
         "typing.start" | "typing.stop" => typing(session, envelope),
         _ => Ok(error_output(command_rejected_error(
             envelope.client_id.as_deref(),
@@ -508,6 +513,199 @@ fn message_undo(
     )
 }
 
+fn message_mark_read(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct MarkReadPayload {
+        participant_id: Option<String>,
+        message_id: String,
+    }
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: MarkReadPayload = serde_json::from_value(envelope.payload.clone())?;
+    let participant_id = payload
+        .participant_id
+        .or_else(|| session.participant_id.clone())
+        .ok_or_else(|| anyhow::anyhow!("participantId is required"))?;
+    let actor = mutation_actor(session, envelope.client_id.clone());
+    let connection = Connection::open(db_path)?;
+    let receipt = ConversationService::mark_read(
+        &connection,
+        &actor,
+        &conversation_id,
+        &participant_id,
+        &payload.message_id,
+    )?;
+    ack_with_optional_message_dispatch(
+        &envelope,
+        "message.mark_read.ack",
+        json!({
+            "messageId": payload.message_id,
+            "readState": receipt.value.value,
+            "changed": receipt.value.changed,
+        }),
+        receipt.value.event_type.as_deref(),
+        receipt.value.changed,
+        db_path,
+        &payload.message_id,
+    )
+}
+
+fn message_mark_unread(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct MarkUnreadPayload {
+        participant_id: Option<String>,
+        message_id: String,
+    }
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: MarkUnreadPayload = serde_json::from_value(envelope.payload.clone())?;
+    let participant_id = payload
+        .participant_id
+        .or_else(|| session.participant_id.clone())
+        .ok_or_else(|| anyhow::anyhow!("participantId is required"))?;
+    let actor = mutation_actor(session, envelope.client_id.clone());
+    let connection = Connection::open(db_path)?;
+    let receipt = ConversationService::mark_unread(
+        &connection,
+        &actor,
+        &conversation_id,
+        &participant_id,
+        &payload.message_id,
+    )?;
+    ack_with_optional_message_dispatch(
+        &envelope,
+        "message.mark_unread.ack",
+        json!({
+            "messageId": payload.message_id,
+            "readState": receipt.value.value,
+            "changed": receipt.value.changed,
+        }),
+        receipt.value.event_type.as_deref(),
+        receipt.value.changed,
+        db_path,
+        &payload.message_id,
+    )
+}
+
+fn message_react(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ReactPayload {
+        participant_id: Option<String>,
+        message_id: String,
+        reaction_key: String,
+        reaction_kind: Option<String>,
+        action: Option<String>,
+    }
+    let payload: ReactPayload = serde_json::from_value(envelope.payload.clone())?;
+    let participant_id = payload
+        .participant_id
+        .or_else(|| session.participant_id.clone())
+        .ok_or_else(|| anyhow::anyhow!("participantId is required"))?;
+    let action = ReactionAction::try_from(payload.action.as_deref().unwrap_or("toggle"))?;
+    let actor = mutation_actor(session, envelope.client_id.clone());
+    let connection = Connection::open(db_path)?;
+    let receipt = ConversationService::react_to_message(
+        &connection,
+        &actor,
+        &payload.message_id,
+        &participant_id,
+        &payload.reaction_key,
+        payload.reaction_kind.as_deref().unwrap_or("emoji"),
+        action,
+    )?;
+    ack_with_optional_message_dispatch(
+        &envelope,
+        "message.react.ack",
+        json!({
+            "messageId": payload.message_id,
+            "reaction": receipt.value.value,
+            "changed": receipt.value.changed,
+        }),
+        receipt.value.event_type.as_deref(),
+        receipt.value.changed,
+        db_path,
+        &payload.message_id,
+    )
+}
+
+fn presence_update(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PresencePayload {
+        participant_id: Option<String>,
+        status: String,
+        visibility: Option<String>,
+        status_message: Option<String>,
+        device_class: Option<String>,
+        expires_at: Option<String>,
+    }
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: PresencePayload = serde_json::from_value(envelope.payload.clone())?;
+    let participant_id = payload
+        .participant_id
+        .or_else(|| session.participant_id.clone())
+        .ok_or_else(|| anyhow::anyhow!("participantId is required"))?;
+    let actor = mutation_actor(session, envelope.client_id.clone());
+    let connection = Connection::open(db_path)?;
+    let receipt = ConversationService::update_presence(
+        &connection,
+        &actor,
+        &ConversationPresenceUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            participant_id: participant_id.clone(),
+            status: payload.status,
+            visibility: payload
+                .visibility
+                .unwrap_or_else(|| "participants".to_string()),
+            status_message: payload.status_message,
+            device_class: payload.device_class,
+            expires_at: payload.expires_at,
+        },
+    )?;
+    let dispatch = ConversationGatewayEnvelope {
+        schema_version: CONVERSATION_GATEWAY_SCHEMA_VERSION.to_string(),
+        op: ConversationGatewayOp::Dispatch,
+        frame_type: "presence.changed".to_string(),
+        client_id: envelope.client_id.clone(),
+        server_id: None,
+        conversation_id: Some(conversation_id.clone()),
+        segment_id: None,
+        sequence: None,
+        cursor: None,
+        durability: ConversationGatewayDurability::Ephemeral,
+        scope: ConversationGatewayScope::Conversation,
+        payload: json!({ "presence": receipt.value }),
+        occurred_at: Utc::now().to_rfc3339(),
+    };
+    Ok(ConversationGatewayOutput {
+        frames: vec![ack_envelope(
+            required_client_id(&envelope)?,
+            Some(&conversation_id),
+            "presence.update.ack",
+            json!({ "participantId": participant_id }),
+            &Utc::now().to_rfc3339(),
+        )],
+        broadcast: vec![dispatch],
+    })
+}
+
 fn typing(
     session: &mut ConversationGatewaySession,
     envelope: ConversationGatewayEnvelope,
@@ -584,6 +782,42 @@ fn command_ack_and_dispatch(
             &Utc::now().to_rfc3339(),
         )],
         broadcast: vec![dispatch],
+    })
+}
+
+fn ack_with_optional_message_dispatch(
+    envelope: &ConversationGatewayEnvelope,
+    ack_type: &str,
+    payload: Value,
+    event_type: Option<&str>,
+    changed: bool,
+    db_path: &Path,
+    message_id: &str,
+) -> Result<ConversationGatewayOutput> {
+    let conversation_id = required_conversation_id(envelope)?.to_string();
+    let broadcast = if changed {
+        if let Some(event_type) = event_type {
+            vec![latest_message_event(
+                db_path,
+                &conversation_id,
+                message_id,
+                event_type,
+            )?]
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+    Ok(ConversationGatewayOutput {
+        frames: vec![ack_envelope(
+            required_client_id(envelope)?,
+            Some(&conversation_id),
+            ack_type,
+            payload,
+            &Utc::now().to_rfc3339(),
+        )],
+        broadcast,
     })
 }
 
@@ -1019,5 +1253,114 @@ mod tests {
             typing.broadcast[0].durability,
             ConversationGatewayDurability::Ephemeral
         );
+    }
+
+    #[test]
+    fn receipt_reaction_and_presence_commands_return_ack_and_expected_dispatch() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+
+        let submit = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "message.submit",
+                "client_submit_1",
+                &conversation_id,
+                json!({ "bodyMarkdown": "hello", "clientMessageId": "client_msg_1" }),
+            ),
+        )
+        .unwrap();
+        let message_id = submit.frames[0].payload["messageId"].as_str().unwrap();
+
+        let read = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "message.mark_read",
+                "client_read_1",
+                &conversation_id,
+                json!({ "messageId": message_id }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(read.frames[0].client_id.as_deref(), Some("client_read_1"));
+        assert_eq!(read.broadcast[0].frame_type, "message.read");
+
+        let reaction = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "message.react",
+                "client_react_1",
+                &conversation_id,
+                json!({
+                    "messageId": message_id,
+                    "reactionKey": "heart",
+                    "reactionKind": "emoji",
+                    "action": "add"
+                }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            reaction.frames[0].client_id.as_deref(),
+            Some("client_react_1")
+        );
+        assert_eq!(reaction.broadcast[0].frame_type, "message.reaction.added");
+
+        let before_messages: i64 = Connection::open(&db_path)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let presence = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "presence.update",
+                "client_presence_1",
+                &conversation_id,
+                json!({ "status": "online", "visibility": "participants" }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            presence.frames[0].client_id.as_deref(),
+            Some("client_presence_1")
+        );
+        assert_eq!(presence.broadcast[0].frame_type, "presence.changed");
+        assert_eq!(
+            presence.broadcast[0].durability,
+            ConversationGatewayDurability::Ephemeral
+        );
+        let after_messages: i64 = Connection::open(&db_path)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(before_messages, after_messages);
+
+        let replay = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "conversation.replay_after_cursor",
+                "client_replay_2",
+                &conversation_id,
+                json!({ "afterSequence": 0, "limit": 20 }),
+            ),
+        )
+        .unwrap();
+        let durable_types = replay
+            .frames
+            .iter()
+            .map(|frame| frame.frame_type.as_str())
+            .collect::<Vec<_>>();
+        assert!(durable_types.contains(&"message.read"));
+        assert!(durable_types.contains(&"message.reaction.added"));
+        assert!(!durable_types.contains(&"presence.changed"));
     }
 }

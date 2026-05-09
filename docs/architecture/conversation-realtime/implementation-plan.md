@@ -97,6 +97,14 @@ Exit criteria:
 
 ## Phase 3: Read/Unread And Receipts
 
+Implementation status: implemented for the backend/protocol slice. The daemon
+now supports read/unread receipts, participant read-state rollups, unread count
+recalculation after create/delete/read/unread, idempotent reactions,
+policy-filtered presence snapshots, and `/chat/ws` commands for
+`message.mark_read`, `message.mark_unread`, `message.react`, and
+`presence.update`. Delivered/displayed viewport receipts, mention/action-needed
+classification, and premium UI rendering remain later slices.
+
 Deliverables:
 
 - Implement read state rollups.

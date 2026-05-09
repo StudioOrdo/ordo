@@ -110,7 +110,8 @@ All commands should include `clientId`. Mutating commands should be idempotent
 for a bounded retry window using `clientId`, actor id, and conversation id.
 The first gateway implementation accepts `identify`, `subscribe`,
 `unsubscribe`, `resume`/`replay`, `heartbeat`, `message.submit`,
-`message.edit`, `message.delete`, `message.undo`, `typing.start`, and
+`message.edit`, `message.delete`, `message.undo`, `message.mark_read`,
+`message.mark_unread`, `message.react`, `presence.update`, `typing.start`, and
 `typing.stop`. Unsupported commands return structured `command.rejected`
 errors instead of pretending success.
 
@@ -294,6 +295,9 @@ Receipt kinds:
 
 Only daemon-confirmed receipt state is canonical. The client may render local
 pending state immediately, then reconcile after `ack` and canonical dispatch.
+The current backend persists `persisted`, `read`, and `unread` receipts.
+`delivered` and `displayed` remain protocol concepts until UI viewport/session
+delivery evidence exists.
 
 ## Read And Unread Rules
 
@@ -312,6 +316,36 @@ Track:
 Unread counts should update when messages are created, deleted, read, marked
 unread, participant grants change, conversation visibility changes, or a message
 is classified as requiring action.
+The current backend stores participant read boundaries in
+`conversation_read_states`, recalculates unread counts from message sequence and
+manual unread boundaries, and exposes a conversation list read model with last
+message, read state, conversation counts, and policy-filtered presence.
+
+## Reaction Rules
+
+Reactions are durable conversation events and idempotent state transitions.
+
+- `message.react` with `action: "add"` creates one active reaction per
+  `(message, participant, reactionKey)` and repeats without duplicate events.
+- `action: "remove"` removes an active reaction when present and is otherwise a
+  no-op.
+- `action: "toggle"` adds when absent and removes when present.
+- Canonical events are `message.reaction.added` and
+  `message.reaction.removed`.
+
+## Presence Rules
+
+Presence is privacy-filtered projection state. The gateway broadcasts
+`presence.changed` as an ephemeral dispatch and updates
+`conversation_presence_snapshots` plus participant `last_seen_at`. It does not
+create message rows or durable conversation replay events.
+
+Presence visibility:
+
+- `public`: visible to public-capable participants where a future surface allows
+  it;
+- `participants`: visible to participants in the conversation;
+- `private`: visible only to the participant represented by the snapshot.
 
 ## Replay And Resume
 

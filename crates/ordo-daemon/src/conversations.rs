@@ -154,6 +154,27 @@ pub enum QueueScope {
     AllConversations,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReactionAction {
+    Add,
+    Remove,
+    Toggle,
+}
+
+impl TryFrom<&str> for ReactionAction {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        match value {
+            "add" => Ok(Self::Add),
+            "remove" => Ok(Self::Remove),
+            "toggle" => Ok(Self::Toggle),
+            other => bail!("Unsupported reaction action: {other}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanonicalConversationRequest {
@@ -384,6 +405,78 @@ pub struct ConversationMessageRevisionView {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationReadStateView {
+    pub conversation_id: String,
+    pub participant_id: String,
+    pub last_read_message_id: Option<String>,
+    pub last_read_event_cursor: Option<i64>,
+    pub last_read_at: Option<String>,
+    pub manual_unread_from_message_id: Option<String>,
+    pub unread_count: i64,
+    pub unread_mentions_count: i64,
+    pub unread_action_count: i64,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationReactionView {
+    pub id: String,
+    pub message_id: String,
+    pub participant_id: String,
+    pub reaction_key: String,
+    pub reaction_kind: String,
+    pub metadata: Value,
+    pub created_at: String,
+    pub removed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationPresenceSnapshotView {
+    pub participant_id: String,
+    pub conversation_id: String,
+    pub status: String,
+    pub visibility: String,
+    pub status_message: Option<String>,
+    pub device_class: Option<String>,
+    pub metadata: Value,
+    pub updated_at: String,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationPresenceUpdateRequest {
+    pub conversation_id: String,
+    pub participant_id: String,
+    pub status: String,
+    pub visibility: String,
+    pub status_message: Option<String>,
+    pub device_class: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationListReadModel {
+    pub conversation: ConversationSummary,
+    pub participant_id: String,
+    pub last_message: Option<ConversationMessageView>,
+    pub read_state: ConversationReadStateView,
+    pub presence: Vec<ConversationPresenceSnapshotView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMutationOutcome<T> {
+    pub value: T,
+    pub event_type: Option<String>,
+    pub changed: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConversationMutationActor {
     pub actor: ActorContext,
@@ -515,6 +608,123 @@ impl ConversationService {
             },
         )?;
         let value = undo_conversation_message(connection, message_id, participant_id)?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
+
+    pub fn mark_read(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        conversation_id: &str,
+        participant_id: &str,
+        message_id: &str,
+    ) -> Result<ConversationMutationReceipt<ConversationMutationOutcome<ConversationReadStateView>>>
+    {
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id,
+                participant_id,
+                action: PolicyAction::Update,
+                capability_id: "conversation.receipt.write",
+                resource_kind: ResourceKind::ConversationMessage,
+                resource_id: message_id,
+            },
+        )?;
+        let value =
+            mark_conversation_read(connection, conversation_id, participant_id, message_id)?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
+
+    pub fn mark_unread(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        conversation_id: &str,
+        participant_id: &str,
+        message_id: &str,
+    ) -> Result<ConversationMutationReceipt<ConversationMutationOutcome<ConversationReadStateView>>>
+    {
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id,
+                participant_id,
+                action: PolicyAction::Update,
+                capability_id: "conversation.receipt.write",
+                resource_kind: ResourceKind::ConversationMessage,
+                resource_id: message_id,
+            },
+        )?;
+        let value =
+            mark_conversation_unread(connection, conversation_id, participant_id, message_id)?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
+
+    pub fn react_to_message(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        message_id: &str,
+        participant_id: &str,
+        reaction_key: &str,
+        reaction_kind: &str,
+        action: ReactionAction,
+    ) -> Result<ConversationMutationReceipt<ConversationMutationOutcome<ConversationReactionView>>>
+    {
+        let current = load_message(connection, message_id)?;
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id: &current.conversation_id,
+                participant_id,
+                action: PolicyAction::Update,
+                capability_id: "conversation.reaction.write",
+                resource_kind: ResourceKind::ConversationMessage,
+                resource_id: message_id,
+            },
+        )?;
+        let value = react_to_conversation_message(
+            connection,
+            message_id,
+            participant_id,
+            reaction_key,
+            reaction_kind,
+            action,
+        )?;
+        Ok(ConversationMutationReceipt {
+            value,
+            policy_decision_id,
+        })
+    }
+
+    pub fn update_presence(
+        connection: &Connection,
+        actor: &ConversationMutationActor,
+        request: &ConversationPresenceUpdateRequest,
+    ) -> Result<ConversationMutationReceipt<ConversationPresenceSnapshotView>> {
+        let policy_decision_id = authorize_participant_mutation(
+            connection,
+            actor,
+            ConversationMutationPolicyTarget {
+                conversation_id: &request.conversation_id,
+                participant_id: &request.participant_id,
+                action: PolicyAction::Update,
+                capability_id: "conversation.presence.write",
+                resource_kind: ResourceKind::ConversationParticipant,
+                resource_id: &request.participant_id,
+            },
+        )?;
+        let value = update_conversation_presence(connection, request)?;
         Ok(ConversationMutationReceipt {
             value,
             policy_decision_id,
@@ -1101,6 +1311,14 @@ pub fn create_conversation_participant(
             now
         ],
     )?;
+    connection.execute(
+        "INSERT INTO conversation_read_states (
+            conversation_id, participant_id, unread_count, unread_mentions_count,
+            unread_action_count, updated_at
+         ) VALUES (?1, ?2, 0, 0, 0, ?3)
+         ON CONFLICT(conversation_id, participant_id) DO NOTHING",
+        params![request.conversation_id, participant_id, now],
+    )?;
     append_conversation_event(
         connection,
         &request.conversation_id,
@@ -1229,6 +1447,15 @@ pub fn create_conversation_message(
          WHERE id = ?2",
         params![now, request.conversation_id],
     )?;
+    transaction.execute(
+        "UPDATE conversation_read_states
+         SET unread_count = unread_count + 1,
+             updated_at = ?1
+         WHERE conversation_id = ?2
+           AND participant_id != ?3",
+        params![now, request.conversation_id, request.participant_id],
+    )?;
+    update_conversation_unread_count_tx(&transaction, &request.conversation_id)?;
     transaction.commit()?;
 
     load_message(connection, &message_id)
@@ -1287,6 +1514,7 @@ pub fn edit_conversation_message(
         }),
         None,
     )?;
+    update_read_counts_for_conversation_tx(&transaction, &current.conversation_id)?;
     transaction.commit()?;
 
     load_message(connection, message_id)
@@ -1343,6 +1571,7 @@ pub fn undo_conversation_message_at(
         }),
         None,
     )?;
+    update_read_counts_for_conversation_tx(&transaction, &current.conversation_id)?;
     transaction.commit()?;
 
     load_message(connection, message_id)
@@ -1406,9 +1635,383 @@ pub fn delete_conversation_message(
         }),
         None,
     )?;
+    update_read_counts_for_conversation_tx(&transaction, &current.conversation_id)?;
     transaction.commit()?;
 
     load_message(connection, message_id)
+}
+
+pub fn mark_conversation_read(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+    message_id: &str,
+) -> Result<ConversationMutationOutcome<ConversationReadStateView>> {
+    require_text("conversation_id", conversation_id)?;
+    require_text("participant_id", participant_id)?;
+    require_text("message_id", message_id)?;
+    let participant = load_participant(connection, participant_id)?;
+    ensure!(
+        participant.conversation_id == conversation_id,
+        "participant does not belong to conversation"
+    );
+    let message = load_message(connection, message_id)?;
+    ensure!(
+        message.conversation_id == conversation_id,
+        "message does not belong to conversation"
+    );
+    let previous = optional_read_state(connection, conversation_id, participant_id)?;
+    if previous.as_ref().is_some_and(|state| {
+        state.last_read_event_cursor.unwrap_or(0) >= message.event_cursor.unwrap_or(0)
+            && state.manual_unread_from_message_id.is_none()
+    }) {
+        return Ok(ConversationMutationOutcome {
+            value: previous.unwrap(),
+            event_type: None,
+            changed: false,
+        });
+    }
+
+    let unread_count = unread_count_after_sequence(
+        connection,
+        conversation_id,
+        participant_id,
+        message.sequence,
+    )?;
+    let now = Utc::now().to_rfc3339();
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
+        "INSERT INTO conversation_receipts (
+            id, conversation_id, message_id, participant_id, receipt_kind, event_cursor,
+            sequence, payload_json, created_at
+         ) VALUES (?1, ?2, ?3, ?4, 'read', ?5, ?6, ?7, ?8)",
+        params![
+            format!("receipt_{}", Uuid::new_v4()),
+            conversation_id,
+            message_id,
+            participant_id,
+            message.event_cursor,
+            message.sequence,
+            json!({ "unreadCount": unread_count }).to_string(),
+            now
+        ],
+    )?;
+    transaction.execute(
+        "INSERT INTO conversation_read_states (
+            conversation_id, participant_id, last_read_message_id, last_read_event_cursor,
+            last_read_at, manual_unread_from_message_id, unread_count, unread_mentions_count,
+            unread_action_count, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, 0, 0, ?5)
+         ON CONFLICT(conversation_id, participant_id) DO UPDATE SET
+            last_read_message_id = excluded.last_read_message_id,
+            last_read_event_cursor = excluded.last_read_event_cursor,
+            last_read_at = excluded.last_read_at,
+            manual_unread_from_message_id = NULL,
+            unread_count = excluded.unread_count,
+            unread_mentions_count = 0,
+            unread_action_count = 0,
+            updated_at = excluded.updated_at",
+        params![
+            conversation_id,
+            participant_id,
+            message_id,
+            message.event_cursor,
+            now,
+            unread_count
+        ],
+    )?;
+    append_conversation_event_tx(
+        &transaction,
+        conversation_id,
+        message.segment_id.as_deref(),
+        None,
+        "message.read",
+        json!({
+            "messageId": message_id,
+            "participantId": participant_id,
+            "unreadCount": unread_count,
+        }),
+        None,
+    )?;
+    update_conversation_unread_count_tx(&transaction, conversation_id)?;
+    transaction.commit()?;
+
+    Ok(ConversationMutationOutcome {
+        value: load_read_state(connection, conversation_id, participant_id)?,
+        event_type: Some("message.read".to_string()),
+        changed: true,
+    })
+}
+
+pub fn mark_conversation_unread(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+    message_id: &str,
+) -> Result<ConversationMutationOutcome<ConversationReadStateView>> {
+    require_text("conversation_id", conversation_id)?;
+    require_text("participant_id", participant_id)?;
+    require_text("message_id", message_id)?;
+    let participant = load_participant(connection, participant_id)?;
+    ensure!(
+        participant.conversation_id == conversation_id,
+        "participant does not belong to conversation"
+    );
+    let message = load_message(connection, message_id)?;
+    ensure!(
+        message.conversation_id == conversation_id,
+        "message does not belong to conversation"
+    );
+    let previous = optional_read_state(connection, conversation_id, participant_id)?;
+    if previous
+        .as_ref()
+        .is_some_and(|state| state.manual_unread_from_message_id.as_deref() == Some(message_id))
+    {
+        return Ok(ConversationMutationOutcome {
+            value: previous.unwrap(),
+            event_type: None,
+            changed: false,
+        });
+    }
+
+    let unread_count = unread_count_from_sequence(
+        connection,
+        conversation_id,
+        participant_id,
+        message.sequence,
+    )?;
+    let now = Utc::now().to_rfc3339();
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
+        "INSERT INTO conversation_receipts (
+            id, conversation_id, message_id, participant_id, receipt_kind, event_cursor,
+            sequence, payload_json, created_at
+         ) VALUES (?1, ?2, ?3, ?4, 'unread', ?5, ?6, ?7, ?8)",
+        params![
+            format!("receipt_{}", Uuid::new_v4()),
+            conversation_id,
+            message_id,
+            participant_id,
+            message.event_cursor,
+            message.sequence,
+            json!({ "unreadCount": unread_count }).to_string(),
+            now
+        ],
+    )?;
+    transaction.execute(
+        "INSERT INTO conversation_read_states (
+            conversation_id, participant_id, manual_unread_from_message_id, unread_count,
+            unread_mentions_count, unread_action_count, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, 0, 0, ?5)
+         ON CONFLICT(conversation_id, participant_id) DO UPDATE SET
+            manual_unread_from_message_id = excluded.manual_unread_from_message_id,
+            unread_count = excluded.unread_count,
+            unread_mentions_count = 0,
+            unread_action_count = 0,
+            updated_at = excluded.updated_at",
+        params![
+            conversation_id,
+            participant_id,
+            message_id,
+            unread_count,
+            now
+        ],
+    )?;
+    append_conversation_event_tx(
+        &transaction,
+        conversation_id,
+        message.segment_id.as_deref(),
+        None,
+        "message.marked_unread",
+        json!({
+            "messageId": message_id,
+            "participantId": participant_id,
+            "unreadCount": unread_count,
+        }),
+        None,
+    )?;
+    update_conversation_unread_count_tx(&transaction, conversation_id)?;
+    transaction.commit()?;
+
+    Ok(ConversationMutationOutcome {
+        value: load_read_state(connection, conversation_id, participant_id)?,
+        event_type: Some("message.marked_unread".to_string()),
+        changed: true,
+    })
+}
+
+pub fn react_to_conversation_message(
+    connection: &Connection,
+    message_id: &str,
+    participant_id: &str,
+    reaction_key: &str,
+    reaction_kind: &str,
+    action: ReactionAction,
+) -> Result<ConversationMutationOutcome<ConversationReactionView>> {
+    require_text("message_id", message_id)?;
+    require_text("participant_id", participant_id)?;
+    require_text("reaction_key", reaction_key)?;
+    require_text("reaction_kind", reaction_kind)?;
+    let message = load_message(connection, message_id)?;
+    let participant = load_participant(connection, participant_id)?;
+    ensure!(
+        participant.conversation_id == message.conversation_id,
+        "participant does not belong to message conversation"
+    );
+    let active = active_reaction(connection, message_id, participant_id, reaction_key)?;
+    match (action, active) {
+        (ReactionAction::Add, Some(reaction)) => Ok(ConversationMutationOutcome {
+            value: reaction,
+            event_type: None,
+            changed: false,
+        }),
+        (ReactionAction::Remove, None) => Ok(ConversationMutationOutcome {
+            value: removed_reaction_placeholder(
+                message_id,
+                participant_id,
+                reaction_key,
+                reaction_kind,
+            ),
+            event_type: None,
+            changed: false,
+        }),
+        (ReactionAction::Toggle, Some(reaction)) | (ReactionAction::Remove, Some(reaction)) => {
+            let now = Utc::now().to_rfc3339();
+            let transaction = connection.unchecked_transaction()?;
+            transaction.execute(
+                "UPDATE conversation_reactions SET removed_at = ?1 WHERE id = ?2",
+                params![now, reaction.id],
+            )?;
+            append_conversation_event_tx(
+                &transaction,
+                &message.conversation_id,
+                message.segment_id.as_deref(),
+                None,
+                "message.reaction.removed",
+                json!({
+                    "messageId": message_id,
+                    "participantId": participant_id,
+                    "reactionKey": reaction_key,
+                    "reactionKind": reaction.reaction_kind,
+                }),
+                None,
+            )?;
+            transaction.commit()?;
+            Ok(ConversationMutationOutcome {
+                value: load_reaction(connection, &reaction.id)?,
+                event_type: Some("message.reaction.removed".to_string()),
+                changed: true,
+            })
+        }
+        (ReactionAction::Add, None) | (ReactionAction::Toggle, None) => {
+            let now = Utc::now().to_rfc3339();
+            let reaction_id = format!("reaction_{}", Uuid::new_v4());
+            let transaction = connection.unchecked_transaction()?;
+            transaction.execute(
+                "INSERT INTO conversation_reactions (
+                    id, message_id, participant_id, reaction_key, reaction_kind, metadata_json, created_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, '{}', ?6)",
+                params![
+                    reaction_id,
+                    message_id,
+                    participant_id,
+                    reaction_key,
+                    reaction_kind,
+                    now
+                ],
+            )?;
+            append_conversation_event_tx(
+                &transaction,
+                &message.conversation_id,
+                message.segment_id.as_deref(),
+                None,
+                "message.reaction.added",
+                json!({
+                    "messageId": message_id,
+                    "participantId": participant_id,
+                    "reactionKey": reaction_key,
+                    "reactionKind": reaction_kind,
+                }),
+                None,
+            )?;
+            transaction.commit()?;
+            Ok(ConversationMutationOutcome {
+                value: load_reaction(connection, &reaction_id)?,
+                event_type: Some("message.reaction.added".to_string()),
+                changed: true,
+            })
+        }
+    }
+}
+
+pub fn update_conversation_presence(
+    connection: &Connection,
+    request: &ConversationPresenceUpdateRequest,
+) -> Result<ConversationPresenceSnapshotView> {
+    require_text("conversation_id", &request.conversation_id)?;
+    require_text("participant_id", &request.participant_id)?;
+    require_text("status", &request.status)?;
+    require_text("visibility", &request.visibility)?;
+    let participant = load_participant(connection, &request.participant_id)?;
+    ensure!(
+        participant.conversation_id == request.conversation_id,
+        "participant does not belong to conversation"
+    );
+    ensure!(
+        matches!(
+            request.visibility.as_str(),
+            "public" | "participants" | "private"
+        ),
+        "unsupported presence visibility"
+    );
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "INSERT INTO conversation_presence_snapshots (
+            participant_id, conversation_id, status, visibility, status_message, device_class,
+            metadata_json, updated_at, expires_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, '{}', ?7, ?8)
+         ON CONFLICT(participant_id) DO UPDATE SET
+            conversation_id = excluded.conversation_id,
+            status = excluded.status,
+            visibility = excluded.visibility,
+            status_message = excluded.status_message,
+            device_class = excluded.device_class,
+            updated_at = excluded.updated_at,
+            expires_at = excluded.expires_at",
+        params![
+            request.participant_id,
+            request.conversation_id,
+            request.status,
+            request.visibility,
+            request.status_message,
+            request.device_class,
+            now,
+            request.expires_at
+        ],
+    )?;
+    connection.execute(
+        "UPDATE conversation_participants SET last_seen_at = ?1 WHERE id = ?2",
+        params![now, request.participant_id],
+    )?;
+    load_presence_snapshot(connection, &request.participant_id)
+}
+
+pub fn conversation_list_read_model(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+) -> Result<ConversationListReadModel> {
+    let conversation = load_conversation_summary(connection, conversation_id)?;
+    let read_state = load_or_create_read_state(connection, conversation_id, participant_id)?;
+    let last_message = latest_visible_message(connection, conversation_id)?;
+    let presence = list_presence_snapshots(connection, conversation_id, participant_id)?;
+    Ok(ConversationListReadModel {
+        conversation,
+        participant_id: participant_id.to_string(),
+        last_message,
+        read_state,
+        presence,
+    })
 }
 
 fn load_conversation_summary(
@@ -1499,6 +2102,352 @@ fn load_message(connection: &Connection, message_id: &str) -> Result<Conversatio
             [message_id],
             message_from_row,
         )
+        .map_err(Into::into)
+}
+
+fn load_or_create_read_state(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+) -> Result<ConversationReadStateView> {
+    match optional_read_state(connection, conversation_id, participant_id)? {
+        Some(state) => Ok(state),
+        None => {
+            let now = Utc::now().to_rfc3339();
+            connection.execute(
+                "INSERT INTO conversation_read_states (
+                    conversation_id, participant_id, unread_count, unread_mentions_count,
+                    unread_action_count, updated_at
+                 ) VALUES (?1, ?2, 0, 0, 0, ?3)",
+                params![conversation_id, participant_id, now],
+            )?;
+            load_read_state(connection, conversation_id, participant_id)
+        }
+    }
+}
+
+fn load_read_state(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+) -> Result<ConversationReadStateView> {
+    connection
+        .query_row(
+            "SELECT conversation_id, participant_id, last_read_message_id,
+                    last_read_event_cursor, last_read_at, manual_unread_from_message_id,
+                    unread_count, unread_mentions_count, unread_action_count, updated_at
+             FROM conversation_read_states
+             WHERE conversation_id = ?1 AND participant_id = ?2",
+            params![conversation_id, participant_id],
+            read_state_from_row,
+        )
+        .map_err(Into::into)
+}
+
+fn optional_read_state(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+) -> Result<Option<ConversationReadStateView>> {
+    connection
+        .query_row(
+            "SELECT conversation_id, participant_id, last_read_message_id,
+                    last_read_event_cursor, last_read_at, manual_unread_from_message_id,
+                    unread_count, unread_mentions_count, unread_action_count, updated_at
+             FROM conversation_read_states
+             WHERE conversation_id = ?1 AND participant_id = ?2",
+            params![conversation_id, participant_id],
+            read_state_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn unread_count_after_sequence(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+    sequence: i64,
+) -> Result<i64> {
+    unread_count_with_predicate(
+        connection,
+        conversation_id,
+        participant_id,
+        "sequence > ?3",
+        sequence,
+    )
+}
+
+fn unread_count_from_sequence(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+    sequence: i64,
+) -> Result<i64> {
+    unread_count_with_predicate(
+        connection,
+        conversation_id,
+        participant_id,
+        "sequence >= ?3",
+        sequence,
+    )
+}
+
+fn unread_count_with_predicate(
+    connection: &Connection,
+    conversation_id: &str,
+    participant_id: &str,
+    predicate: &str,
+    sequence: i64,
+) -> Result<i64> {
+    let sql = format!(
+        "SELECT COUNT(*)
+         FROM conversation_messages
+         WHERE conversation_id = ?1
+           AND participant_id != ?2
+           AND status NOT IN ('cancelled', 'tombstoned')
+           AND {predicate}"
+    );
+    connection
+        .query_row(
+            &sql,
+            params![conversation_id, participant_id, sequence],
+            |row| row.get(0),
+        )
+        .map_err(Into::into)
+}
+
+fn update_conversation_unread_count_tx(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+) -> Result<()> {
+    let unread_count: i64 = transaction.query_row(
+        "SELECT COALESCE(MAX(unread_count), 0)
+         FROM conversation_read_states
+         WHERE conversation_id = ?1",
+        [conversation_id],
+        |row| row.get(0),
+    )?;
+    transaction.execute(
+        "UPDATE conversations
+         SET unread_count = ?1, updated_at = ?2
+         WHERE id = ?3",
+        params![unread_count, Utc::now().to_rfc3339(), conversation_id],
+    )?;
+    Ok(())
+}
+
+fn update_read_counts_for_conversation_tx(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+) -> Result<()> {
+    let states = {
+        let mut statement = transaction.prepare(
+            "SELECT participant_id, last_read_message_id, manual_unread_from_message_id
+             FROM conversation_read_states
+             WHERE conversation_id = ?1",
+        )?;
+        let rows = statement.query_map([conversation_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    for (participant_id, last_read_message_id, manual_unread_from_message_id) in states {
+        let unread_count = if let Some(message_id) = manual_unread_from_message_id {
+            let sequence = message_sequence_tx(transaction, &message_id)?;
+            unread_count_for_state_tx(
+                transaction,
+                conversation_id,
+                &participant_id,
+                "sequence >= ?3",
+                sequence,
+            )?
+        } else if let Some(message_id) = last_read_message_id {
+            let sequence = message_sequence_tx(transaction, &message_id)?;
+            unread_count_for_state_tx(
+                transaction,
+                conversation_id,
+                &participant_id,
+                "sequence > ?3",
+                sequence,
+            )?
+        } else {
+            unread_count_for_state_tx(
+                transaction,
+                conversation_id,
+                &participant_id,
+                "sequence >= ?3",
+                0,
+            )?
+        };
+        transaction.execute(
+            "UPDATE conversation_read_states
+             SET unread_count = ?1, unread_mentions_count = 0, unread_action_count = 0,
+                 updated_at = ?2
+             WHERE conversation_id = ?3 AND participant_id = ?4",
+            params![
+                unread_count,
+                Utc::now().to_rfc3339(),
+                conversation_id,
+                participant_id
+            ],
+        )?;
+    }
+    update_conversation_unread_count_tx(transaction, conversation_id)
+}
+
+fn message_sequence_tx(transaction: &Transaction<'_>, message_id: &str) -> Result<i64> {
+    transaction
+        .query_row(
+            "SELECT sequence FROM conversation_messages WHERE id = ?1",
+            [message_id],
+            |row| row.get(0),
+        )
+        .map_err(Into::into)
+}
+
+fn unread_count_for_state_tx(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    participant_id: &str,
+    predicate: &str,
+    sequence: i64,
+) -> Result<i64> {
+    let sql = format!(
+        "SELECT COUNT(*)
+         FROM conversation_messages
+         WHERE conversation_id = ?1
+           AND participant_id != ?2
+           AND status NOT IN ('cancelled', 'tombstoned')
+           AND {predicate}"
+    );
+    transaction
+        .query_row(
+            &sql,
+            params![conversation_id, participant_id, sequence],
+            |row| row.get(0),
+        )
+        .map_err(Into::into)
+}
+
+fn active_reaction(
+    connection: &Connection,
+    message_id: &str,
+    participant_id: &str,
+    reaction_key: &str,
+) -> Result<Option<ConversationReactionView>> {
+    connection
+        .query_row(
+            "SELECT id, message_id, participant_id, reaction_key, reaction_kind,
+                    metadata_json, created_at, removed_at
+             FROM conversation_reactions
+             WHERE message_id = ?1
+               AND participant_id = ?2
+               AND reaction_key = ?3
+               AND removed_at IS NULL",
+            params![message_id, participant_id, reaction_key],
+            reaction_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn load_reaction(connection: &Connection, reaction_id: &str) -> Result<ConversationReactionView> {
+    connection
+        .query_row(
+            "SELECT id, message_id, participant_id, reaction_key, reaction_kind,
+                    metadata_json, created_at, removed_at
+             FROM conversation_reactions
+             WHERE id = ?1",
+            [reaction_id],
+            reaction_from_row,
+        )
+        .map_err(Into::into)
+}
+
+fn removed_reaction_placeholder(
+    message_id: &str,
+    participant_id: &str,
+    reaction_key: &str,
+    reaction_kind: &str,
+) -> ConversationReactionView {
+    ConversationReactionView {
+        id: String::new(),
+        message_id: message_id.to_string(),
+        participant_id: participant_id.to_string(),
+        reaction_key: reaction_key.to_string(),
+        reaction_kind: reaction_kind.to_string(),
+        metadata: json!({}),
+        created_at: String::new(),
+        removed_at: Some(Utc::now().to_rfc3339()),
+    }
+}
+
+fn load_presence_snapshot(
+    connection: &Connection,
+    participant_id: &str,
+) -> Result<ConversationPresenceSnapshotView> {
+    connection
+        .query_row(
+            "SELECT participant_id, conversation_id, status, visibility, status_message,
+                    device_class, metadata_json, updated_at, expires_at
+             FROM conversation_presence_snapshots
+             WHERE participant_id = ?1",
+            [participant_id],
+            presence_from_row,
+        )
+        .map_err(Into::into)
+}
+
+fn list_presence_snapshots(
+    connection: &Connection,
+    conversation_id: &str,
+    requesting_participant_id: &str,
+) -> Result<Vec<ConversationPresenceSnapshotView>> {
+    let mut statement = connection.prepare(
+        "SELECT participant_id, conversation_id, status, visibility, status_message,
+                device_class, metadata_json, updated_at, expires_at
+         FROM conversation_presence_snapshots
+         WHERE conversation_id = ?1
+           AND status != 'offline'
+           AND (
+                visibility = 'public'
+                OR visibility = 'participants'
+                OR participant_id = ?2
+           )
+         ORDER BY updated_at DESC",
+    )?;
+    let rows = statement.query_map(
+        params![conversation_id, requesting_participant_id],
+        presence_from_row,
+    )?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
+}
+
+fn latest_visible_message(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<Option<ConversationMessageView>> {
+    connection
+        .query_row(
+            "SELECT id, conversation_id, segment_id, participant_id, message_kind, status,
+                    body_markdown, visibility, client_message_id, sequence, event_cursor,
+                    undo_expires_at, undo_cancelled_at, created_at, edited_at, deleted_at
+             FROM conversation_messages
+             WHERE conversation_id = ?1
+               AND status NOT IN ('cancelled', 'tombstoned')
+             ORDER BY sequence DESC
+             LIMIT 1",
+            [conversation_id],
+            message_from_row,
+        )
+        .optional()
         .map_err(Into::into)
 }
 
@@ -1804,6 +2753,50 @@ fn message_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationMessageView> 
     })
 }
 
+fn read_state_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationReadStateView> {
+    Ok(ConversationReadStateView {
+        conversation_id: row.get(0)?,
+        participant_id: row.get(1)?,
+        last_read_message_id: row.get(2)?,
+        last_read_event_cursor: row.get(3)?,
+        last_read_at: row.get(4)?,
+        manual_unread_from_message_id: row.get(5)?,
+        unread_count: row.get(6)?,
+        unread_mentions_count: row.get(7)?,
+        unread_action_count: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+fn reaction_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationReactionView> {
+    let metadata_json: String = row.get(5)?;
+    Ok(ConversationReactionView {
+        id: row.get(0)?,
+        message_id: row.get(1)?,
+        participant_id: row.get(2)?,
+        reaction_key: row.get(3)?,
+        reaction_kind: row.get(4)?,
+        metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|_| json!({})),
+        created_at: row.get(6)?,
+        removed_at: row.get(7)?,
+    })
+}
+
+fn presence_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationPresenceSnapshotView> {
+    let metadata_json: String = row.get(6)?;
+    Ok(ConversationPresenceSnapshotView {
+        participant_id: row.get(0)?,
+        conversation_id: row.get(1)?,
+        status: row.get(2)?,
+        visibility: row.get(3)?,
+        status_message: row.get(4)?,
+        device_class: row.get(5)?,
+        metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|_| json!({})),
+        updated_at: row.get(7)?,
+        expires_at: row.get(8)?,
+    })
+}
+
 fn validate_handoff_request(request: &ConversationHandoffCreateRequest) -> Result<()> {
     require_text("conversation_id", &request.conversation_id)?;
     require_text("reason", &request.reason)?;
@@ -1918,6 +2911,48 @@ mod tests {
         .unwrap()
     }
 
+    fn create_client_participant(
+        connection: &Connection,
+        conversation_id: &str,
+    ) -> ConversationParticipantView {
+        create_conversation_participant(
+            connection,
+            &ConversationParticipantCreateRequest {
+                conversation_id: conversation_id.to_string(),
+                participant_kind: "client".to_string(),
+                actor_id: Some("actor_client".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                visitor_session_id: None,
+                display_name: "Client".to_string(),
+                role: "client".to_string(),
+            },
+        )
+        .unwrap()
+    }
+
+    fn create_message_from(
+        connection: &Connection,
+        conversation_id: &str,
+        participant_id: &str,
+        client_message_id: &str,
+    ) -> ConversationMessageView {
+        create_conversation_message(
+            connection,
+            &ConversationMessageCreateRequest {
+                conversation_id: conversation_id.to_string(),
+                segment_id: None,
+                participant_id: participant_id.to_string(),
+                message_kind: "human".to_string(),
+                body_markdown: "hello".to_string(),
+                visibility: "participants".to_string(),
+                client_message_id: client_message_id.to_string(),
+                reply_to_message_id: None,
+                undo_expires_at: None,
+            },
+        )
+        .unwrap()
+    }
+
     fn staff_mutation_actor() -> ConversationMutationActor {
         ConversationMutationActor {
             actor: ActorContext::new(
@@ -1926,6 +2961,17 @@ mod tests {
                 Some("actor_staff".to_string()),
             ),
             request_id: Some("request_1".to_string()),
+        }
+    }
+
+    fn client_mutation_actor() -> ConversationMutationActor {
+        ConversationMutationActor {
+            actor: ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_client".to_string()),
+            ),
+            request_id: Some("request_client_1".to_string()),
         }
     }
 
@@ -2350,6 +3396,195 @@ mod tests {
             .unwrap();
         assert_eq!(message_count, 1);
         assert_eq!(event_count, 1);
+    }
+
+    #[test]
+    fn read_and_unread_state_updates_counts_and_events_idempotently() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let staff = create_participant(&connection, &conversation.id);
+        let client = create_client_participant(&connection, &conversation.id);
+        let message =
+            create_message_from(&connection, &conversation.id, &client.id, "client_msg_1");
+
+        let before =
+            conversation_list_read_model(&connection, &conversation.id, &staff.id).unwrap();
+        assert_eq!(before.read_state.unread_count, 1);
+        assert_eq!(before.conversation.unread_count, 1);
+        assert_eq!(before.last_message.as_ref().unwrap().id, message.id);
+
+        let read = ConversationService::mark_read(
+            &connection,
+            &staff_mutation_actor(),
+            &conversation.id,
+            &staff.id,
+            &message.id,
+        )
+        .unwrap();
+        assert!(read.value.changed);
+        assert_eq!(read.value.value.unread_count, 0);
+        assert_eq!(read.value.event_type.as_deref(), Some("message.read"));
+
+        let repeated = ConversationService::mark_read(
+            &connection,
+            &staff_mutation_actor(),
+            &conversation.id,
+            &staff.id,
+            &message.id,
+        )
+        .unwrap();
+        assert!(!repeated.value.changed);
+        let read_events: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_events WHERE event_type = 'message.read'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(read_events, 1);
+
+        let unread = ConversationService::mark_unread(
+            &connection,
+            &staff_mutation_actor(),
+            &conversation.id,
+            &staff.id,
+            &message.id,
+        )
+        .unwrap();
+        assert!(unread.value.changed);
+        assert_eq!(unread.value.value.unread_count, 1);
+        assert_eq!(
+            unread.value.value.manual_unread_from_message_id.as_deref(),
+            Some(message.id.as_str())
+        );
+        let after = conversation_list_read_model(&connection, &conversation.id, &staff.id).unwrap();
+        assert_eq!(after.read_state.unread_count, 1);
+        assert_eq!(after.conversation.unread_count, 1);
+
+        let deleted = ConversationService::delete_message(
+            &connection,
+            &staff_mutation_actor(),
+            &message.id,
+            &staff.id,
+            "remove stale unread fixture",
+        )
+        .unwrap();
+        assert_eq!(deleted.value.status, "tombstoned");
+        let after_delete =
+            conversation_list_read_model(&connection, &conversation.id, &staff.id).unwrap();
+        assert_eq!(after_delete.read_state.unread_count, 0);
+        assert_eq!(after_delete.conversation.unread_count, 0);
+    }
+
+    #[test]
+    fn reactions_are_idempotent_and_preserve_event_history() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let staff = create_participant(&connection, &conversation.id);
+        let client = create_client_participant(&connection, &conversation.id);
+        let message =
+            create_message_from(&connection, &conversation.id, &client.id, "client_msg_1");
+
+        let added = ConversationService::react_to_message(
+            &connection,
+            &staff_mutation_actor(),
+            &message.id,
+            &staff.id,
+            "heart",
+            "emoji",
+            ReactionAction::Add,
+        )
+        .unwrap();
+        assert!(added.value.changed);
+        assert_eq!(
+            added.value.event_type.as_deref(),
+            Some("message.reaction.added")
+        );
+
+        let repeated = ConversationService::react_to_message(
+            &connection,
+            &staff_mutation_actor(),
+            &message.id,
+            &staff.id,
+            "heart",
+            "emoji",
+            ReactionAction::Add,
+        )
+        .unwrap();
+        assert!(!repeated.value.changed);
+
+        let removed = ConversationService::react_to_message(
+            &connection,
+            &staff_mutation_actor(),
+            &message.id,
+            &staff.id,
+            "heart",
+            "emoji",
+            ReactionAction::Toggle,
+        )
+        .unwrap();
+        assert!(removed.value.changed);
+        assert!(removed.value.value.removed_at.is_some());
+        assert_eq!(
+            removed.value.event_type.as_deref(),
+            Some("message.reaction.removed")
+        );
+
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_events
+                 WHERE event_type IN ('message.reaction.added', 'message.reaction.removed')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 2);
+    }
+
+    #[test]
+    fn presence_snapshots_are_policy_filtered_and_do_not_create_messages() {
+        let connection = test_connection();
+        let conversation = create_conversation(&connection);
+        let staff = create_participant(&connection, &conversation.id);
+        let client = create_client_participant(&connection, &conversation.id);
+        create_message_from(&connection, &conversation.id, &client.id, "client_msg_1");
+        let before_messages: i64 = connection
+            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        let presence = ConversationService::update_presence(
+            &connection,
+            &client_mutation_actor(),
+            &ConversationPresenceUpdateRequest {
+                conversation_id: conversation.id.clone(),
+                participant_id: client.id.clone(),
+                status: "online".to_string(),
+                visibility: "private".to_string(),
+                status_message: Some("Working".to_string()),
+                device_class: Some("phone".to_string()),
+                expires_at: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(presence.value.status, "online");
+        assert_eq!(presence.value.visibility, "private");
+
+        let staff_view =
+            conversation_list_read_model(&connection, &conversation.id, &staff.id).unwrap();
+        assert!(staff_view.presence.is_empty());
+        let client_view =
+            conversation_list_read_model(&connection, &conversation.id, &client.id).unwrap();
+        assert_eq!(client_view.presence.len(), 1);
+        assert_eq!(client_view.presence[0].participant_id, client.id);
+
+        let after_messages: i64 = connection
+            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(before_messages, after_messages);
     }
 
     #[test]

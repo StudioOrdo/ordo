@@ -710,10 +710,19 @@ Phase 8 simulator contract coverage now includes:
   failure/blocker artifact-review findings, with no automatic filing;
 - report output with raw provider secrets, raw persona narrative, emails, phone
   numbers, staff-only internals, and configured private terms absent.
+- governed email path decision keeps review-request email simulated for 0.1.5;
+- simulated email artifacts remain durable, redacted, non-delivered, and
+  evidence-backed;
+- reports treat simulated email as local eval evidence, not real delivery;
+- real outbound email requires future tests for owner approval, recipient
+  consent or lawful basis, suppression/unsubscribe, deliverability controls,
+  provider secret handling, audit trail, rate/spend caps, redaction, no raw
+  fixture emails, and explicit opt-in live/email guards before any delivery
+  adapter can be accepted.
 
-0.1.5 live product journey eval coverage should still add:
-
-- governed email simulation or adapter path decision.
+0.1.5 live product journey eval coverage is complete. Future milestones may
+add real outbound email only after the governed delivery gates above are
+accepted and validated.
 
 Role lifecycle:
 

@@ -1127,10 +1127,18 @@ durable tables rather than adding broad new schema:
 - `customer_feedback`, `feedback_tags`, and `customer_reviews` for the review
   return path;
 - `artifacts` and eval packet/report files for analyzed journey evidence.
+  Review-request email remains represented by a
+  `simulated_review_request_email` artifact with `simulated_not_delivered`
+  status in 0.1.5. It should cite return-link, trial, conversation, and review
+  evidence refs, and it must not require or store a raw recipient address.
 
 Dedicated persona, email, journey-run, or aggregate-report tables should be
 added only if the first implementation slices prove that file artifacts and the
 existing durable rows cannot express the required evidence cleanly.
+Dedicated outbound email tables should not be added until a later accepted
+issue defines owner approval, consent/lawful-basis, suppression/unsubscribe,
+deliverability, provider-secret, audit, rate/spend, redaction, and opt-in email
+guard contracts.
 
 ## Migration Order
 

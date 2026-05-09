@@ -375,7 +375,11 @@ Delivery order:
     `reqwest` transport, mocked-transport default tests, privacy-transformed
     request input, safe provider failure normalization, and usage recording
     through the existing token ledger.
-11. Add opt-in live eval runner with network and spend guards.
+11. Add opt-in live eval runner with network and spend guards. Implemented with
+    `live_eval_runner`, `ordo-daemon run-live-llm-eval-json`, required
+    live/network env guards, OpenAI provider/model/key checks, conservative
+    max-case and budget caps, mocked no-network default tests, and a packet-
+    backed `live_openai_compatible_smoke` path through the existing LLM gateway.
 12. Add artifact review automation that classifies findings and drives
     follow-on issues.
 

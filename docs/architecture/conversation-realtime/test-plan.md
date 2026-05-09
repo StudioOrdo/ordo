@@ -565,6 +565,22 @@ Phase 4 replay-provider fixture coverage now includes:
 - continued network-free execution with token ledger entries populated from
   replayed provider usage metadata.
 
+Phase 6 opt-in live eval runner coverage now includes:
+
+- guard parsing tests that skip or block without `ORDO_LIVE_LLM_EVALS=1`,
+  `ORDO_LIVE_LLM_ALLOW_NETWORK=1`, provider model, or provider key evidence;
+- max-case and budget guard tests that prevent provider construction before a
+  configured overrun;
+- mocked OpenAI-compatible transport tests that run the allowed path without
+  provider keys or network;
+- `live_openai_compatible_smoke`, which writes packet, scorecard, and manifest
+  artifacts through `EvalArtifactWriter`;
+- assertions that the live smoke path records policy decisions, prompt slots,
+  privacy transforms, token ledger entries, conversation events, and final
+  assistant candidate evidence;
+- redaction assertions that raw provider secrets and private fixture values do
+  not appear in packet artifacts or run summaries.
+
 Role lifecycle:
 
 - anonymous visitor starts from Home/About, Offer, Ask, Latest, QR/link entry,

@@ -85,16 +85,26 @@ resolution unless normalized by shell tooling or renamed.
 Recommended live-eval guard variables:
 
 - `ORDO_LIVE_LLM_EVALS=1` enables live-provider evals.
-- `ORDO_LIVE_LLM_PROVIDER=anthropic|openai|deepseek` selects provider.
-- `ORDO_LIVE_LLM_MODEL=<model>` overrides provider default.
-- `ORDO_LIVE_LLM_MAX_CASES=<n>` caps spend per run.
-- `ORDO_LIVE_LLM_BUDGET_USD=<amount>` sets a hard budget guard.
-- `ORDO_LIVE_LLM_RECORD_REPLAY=1` stores redacted replay fixtures.
 - `ORDO_LIVE_LLM_ALLOW_NETWORK=1` is required by tests that would otherwise be
   deterministic-only.
+- `ORDO_LIVE_LLM_PROVIDER=openai` selects the implemented live provider path.
+- `ORDO_LIVE_LLM_MODEL=<model>` selects the OpenAI-compatible model.
+- `OPENAI_API_KEY` or `API__OPENAI_API_KEY` supplies the provider secret.
+- `ORDO_LIVE_LLM_MAX_CASES=<n>` caps spend per run.
+- `ORDO_LIVE_LLM_BUDGET_USD=<amount>` sets a hard budget guard.
+- `ORDO_LIVE_LLM_BASE_URL=<url>` optionally overrides the OpenAI-compatible
+  base URL.
+- `ORDO_LIVE_LLM_TIMEOUT_MS=<milliseconds>` optionally overrides the transport
+  timeout.
+- `ORDO_LIVE_LLM_ARTIFACT_DIR=<path>` optionally chooses the artifact output
+  directory for the CLI runner.
+- `ORDO_LIVE_LLM_RECORD_REPLAY=1` stores redacted replay fixtures.
 
 Live evals should refuse to run if either `ORDO_LIVE_LLM_EVALS` or
-`ORDO_LIVE_LLM_ALLOW_NETWORK` is missing.
+`ORDO_LIVE_LLM_ALLOW_NETWORK` is missing. The implemented Phase 6 runner also
+refuses to run without an OpenAI model and provider key. Missing max-case or
+budget env vars use conservative defaults of one case and `$0.01`; malformed
+values fail closed.
 
 ## Sibling Patterns To Borrow
 
@@ -819,6 +829,24 @@ strings, or configured private fixture terms.
 ### Layer 3: Live Provider Smoke
 
 Uses real keys and very small prompts. Runs only with live eval env guards.
+The implemented CLI entrypoint is:
+
+```bash
+ORDO_LIVE_LLM_EVALS=1 \
+ORDO_LIVE_LLM_ALLOW_NETWORK=1 \
+ORDO_LIVE_LLM_PROVIDER=openai \
+ORDO_LIVE_LLM_MODEL=<model> \
+OPENAI_API_KEY=<redacted> \
+ORDO_LIVE_LLM_MAX_CASES=1 \
+ORDO_LIVE_LLM_BUDGET_USD=0.01 \
+cargo run -p ordo-daemon -- run-live-llm-eval-json \
+  --db-path .data/live-eval.db \
+  --output-dir .data/evals/live \
+  --source-commit <commit>
+```
+
+Without the guards, the command returns a structured skipped or blocked JSON
+summary and does not construct the network provider.
 
 Validates:
 
@@ -1203,6 +1231,25 @@ Implemented Phase 5 OpenAI-compatible provider adapter slice:
    - Tests prove sensitive fixture text is transformed before the adapter sees
      it and does not appear in event payloads.
 
+Implemented Phase 6 opt-in live eval runner slice:
+
+1. `live_eval_runner`
+   - Defines `ordo.live_eval_runner.v1` config, guard decision, spend/case cap,
+     and redacted run summary contracts.
+   - Requires `ORDO_LIVE_LLM_EVALS=1` and
+     `ORDO_LIVE_LLM_ALLOW_NETWORK=1` before any network-capable provider can be
+     constructed.
+   - Supports the OpenAI-compatible provider path from Phase 5, one smoke case,
+     conservative default caps, and fail-closed parsing for malformed caps.
+   - Runs `live_openai_compatible_smoke` through `LlmGateway`, privacy egress,
+     prompt slot accounting, token ledger, durable conversation events, and the
+     existing `EvalArtifactWriter`.
+2. CLI evidence
+   - `ordo-daemon run-live-llm-eval-json` prints skipped/blocked/completed JSON
+     summaries.
+   - Default tests use a mocked OpenAI-compatible transport, require no keys,
+     and do not call the network.
+
 After those pass, add the first simulator and provider cases:
 
 1. `workflow_live_provider_smoke_customer_operator_sim`
@@ -1263,6 +1310,7 @@ compare quality across providers and prompt revisions.
 10. Add real provider adapter behind `LlmProviderAdapter` with
    OpenAI-compatible non-streaming support. Implemented for the adapter and
    mocked gateway integration path.
-11. Add opt-in live eval runner with env guards and spend caps.
+11. Add opt-in live eval runner with env guards and spend caps. Implemented for
+   one guarded OpenAI-compatible smoke case and mocked no-network default tests.
 12. Add Anthropic and DeepSeek provider coverage.
 13. Add SSE streaming normalization once non-streaming passes.

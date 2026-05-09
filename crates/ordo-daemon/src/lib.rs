@@ -23,6 +23,7 @@ pub mod health;
 pub mod install;
 pub mod kernel;
 pub mod knowledge_graph;
+pub mod live_eval_runner;
 pub mod llm_accounting;
 pub mod llm_gateway;
 pub mod mcp;

@@ -228,6 +228,12 @@ missing config, and unsupported response shapes normalize into durable
 `llm.run.failed` evidence with safe code/message metadata. Raw provider request
 or response bodies and provider secrets are not protocol payloads.
 
+The opt-in live eval runner does not introduce live-only event types. When
+enabled, `live_openai_compatible_smoke` uses the same LLM gateway event stream
+as replay and deterministic providers. Missing live/network guards, provider
+config, or spend budget block before provider construction and are reported as
+runner JSON summaries rather than conversation events.
+
 Implemented tool governance behavior: LLM tool requests are durable
 conversation events with `toolRequestId`, `runId`, requested capability, reason,
 evidence refs, redacted input summary, visibility ceiling, status, and policy

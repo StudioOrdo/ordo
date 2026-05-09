@@ -8,6 +8,7 @@ use ordo_daemon::backups::{
 use ordo_daemon::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
 use ordo_daemon::capabilities::list_capabilities;
 use ordo_daemon::health::{build_health_report, build_readiness_report};
+use ordo_daemon::live_eval_runner::run_live_openai_eval_from_env;
 use ordo_daemon::mcp::{handle_mcp_request, McpRequest};
 use ordo_daemon::schema::init_database;
 use ordo_daemon::server::{serve, NextSupervisorConfig};
@@ -75,6 +76,19 @@ enum Commands {
         backup_id: String,
         #[arg(long)]
         confirmation: String,
+    },
+    #[command(name = "run-live-llm-eval-json")]
+    RunLiveLlmEvalJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
+        #[arg(
+            long,
+            env = "ORDO_LIVE_LLM_ARTIFACT_DIR",
+            default_value = ".data/evals/live"
+        )]
+        output_dir: PathBuf,
+        #[arg(long, env = "ORDO_SOURCE_COMMIT", default_value = "local")]
+        source_commit: String,
     },
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
@@ -185,6 +199,23 @@ async fn main() -> Result<()> {
                     },
                     "cli",
                     None,
+                )?)?
+            );
+        }
+        Commands::RunLiveLlmEvalJson {
+            db_path,
+            output_dir,
+            source_commit,
+        } => {
+            init_database(&db_path)?;
+            let connection = rusqlite::Connection::open(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&run_live_openai_eval_from_env(
+                    &db_path,
+                    &connection,
+                    output_dir,
+                    source_commit,
                 )?)?
             );
         }

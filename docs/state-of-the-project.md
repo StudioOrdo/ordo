@@ -32,6 +32,9 @@ surfaces land.
   publication state. The daemon exposes protected local business fact endpoints
   so public surfaces and future retrieval can depend on explicit truth and
   publication boundaries.
+- The daemon exposes read-only public surface read models for About, Offers,
+  Asks, and Feed. These JSON contracts only derive from published public
+  business facts and include explicit readiness and provenance evidence.
 - Mutating daemon routes and MCP now have a first trust-boundary guard: requests
   must come from loopback-to-daemon access or provide the configured daemon
   access token.
@@ -89,15 +92,15 @@ surfaces land.
 
 ## What Is Not Built Yet
 
-- Full product-depth surfaces such as Studio, Connections, Offers, About,
-  Asks, Feed, Today, and Conversations are not built yet.
+- Full frontend product-depth surfaces such as Studio, Connections, Offers,
+  About, Asks, Feed, Today, and Conversations are not built yet.
 - Authentication UI, hosted identity, OAuth/email login, public portals, and
   multi-user product surfaces are not implemented yet.
 - Frontend install wizard UI and provider network validation are not implemented
   yet; current install/provider support is daemon-owned backend state and
   protected local routes only.
-- Public About, Offers, Asks, and Feed routes are not implemented yet; current
-  business truth support is a protected backend foundation only.
+- Public About, Offers, Asks, and Feed frontend UI routes are not implemented
+  yet; current support is daemon-owned JSON read models only.
 - Embeddings, vector search, RAG answer generation, chat retrieval, and external
   integrations are not implemented yet.
 - Report submission transports to external systems are not implemented yet;
@@ -127,6 +130,8 @@ slices.
 - [Business Truth, Visibility, And Publication](architecture/business-truth-visibility.md)
   describes the backend foundation for durable business facts and publication
   boundaries.
+- [Public Surface Read Models](architecture/public-surfaces.md) describes the
+  implemented daemon contracts for public About, Offers, Asks, and Feed data.
 - [Knowledge Corpus Skeleton](architecture/knowledge-corpus.md) describes the
   implemented retrieval safety foundation for future knowledge/RAG work.
 - [Product Shape](business/product-shape.md) describes the planned Chat, About,

@@ -676,6 +676,34 @@ Recommended milestone:
 - ack/reject reconciliation;
 - replay idempotency tests.
 
+The Phase 5 foundation is a transport seam plus pure reducers, not the final
+chat UI. Components consume read models, while gateway adapters own connect,
+disconnect, command send, dispatch receive, and replay behavior.
+
+Implemented contract:
+
+- `RealtimeGatewayPort` isolates connect/disconnect/send/replay/status.
+- `RealtimeState` keeps commands, optimistic messages, replay state, stream
+  state, and explicit UI errors.
+- `queueRealtimeCommand` records recoverable user intent and candidate message
+  state.
+- `reconcileGatewayAck` handles ack/reject without claiming durability.
+- `applyRealtimeEvent` applies durable event envelopes, ignores duplicates, and
+  rejects unsupported events.
+- `projectRealtimeReadModel` produces role-safe conversation, message,
+  composer, evidence rail, stream, and replay view models.
+- `InMemoryRealtimeGateway` gives deterministic no-network test coverage.
+
+Rules:
+
+- Acked commands remain non-durable until matching durable daemon evidence
+  arrives.
+- Duplicate event ids are idempotent.
+- Sequence gaps produce explicit `replay_gap` errors.
+- Client-safe read models are generated through projection policy and must not
+  expose raw prompt, provider payload, policy internals, privacy placeholder
+  maps, staff routing, or staff-only notes.
+
 ### Phase 6: Capability Substrate
 
 - browser capability port;

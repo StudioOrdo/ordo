@@ -711,6 +711,32 @@ Rules:
 - `file.hash` or another lightweight proof capability;
 - fallback and cancellation tests.
 
+The Phase 6 foundation treats browser work as candidate evidence. It does not
+create durable artifact identity, run heavy document/media processing, or add
+upload UI.
+
+Implemented contract:
+
+- `BrowserCapabilityRequest` carries request id, capability id, actor, input
+  metadata, budget, issued time, and optional cancellation token.
+- `BrowserCapabilityResult` returns candidate, failed, canceled, timed-out, or
+  fallback-required status with safe errors and budget summaries.
+- `BrowserCapabilityRuntime` registers capabilities, reports availability,
+  executes jobs, and records cancellations.
+- `file.hash` is the first proof capability and produces a deterministic
+  SHA-256 candidate hash.
+
+Rules:
+
+- Browser outputs are candidate-only until daemon validation returns durable
+  artifact identity.
+- Missing capability, oversized input, timeout, cancellation, and runtime
+  failure are explicit states.
+- Result summaries must not include raw file contents, private fixture values,
+  emails, phones, provider secrets, or policy internals.
+- Heavy capabilities such as OCR, PDF rasterization, DOCX extraction, media
+  processing, local embeddings, and GPU visual rendering remain future work.
+
 ### Phase 7: Hardening
 
 - Playwright shell tests;

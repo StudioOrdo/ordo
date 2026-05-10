@@ -399,18 +399,22 @@ type MotionMode = "off" | "restrained" | "expressive" | "cinematic";
 type PerformanceMode = "economy" | "standard" | "enhanced" | "cinematic";
 type EvidenceDetail = "brief" | "standard" | "full" | "owner_cockpit";
 type PrivacyDisplay = "client_safe" | "staff_evidence" | "owner_internals";
+type TypeScale = "sm" | "md" | "lg" | "xl";
+type ContrastMode = "standard" | "high";
+type ColorBlindMode = "none" | "deuteranopia" | "protanopia" | "tritanopia";
+type LocaleId = "en-US";
 
 interface ExperienceSettings {
   theme: ThemeId;
-  darkMode: "light" | "dark" | "system";
   density: Density;
   motion: MotionMode;
-  performance: PerformanceMode;
+  typeScale: TypeScale;
+  contrast: ContrastMode;
   evidenceDetail: EvidenceDetail;
   privacyDisplay: PrivacyDisplay;
-  fontScale: "sm" | "md" | "lg" | "xl";
-  lineHeight: "tight" | "normal" | "relaxed";
-  colorBlindMode: "none" | "deuteranopia" | "protanopia" | "tritanopia";
+  performanceMode: PerformanceMode;
+  locale: LocaleId;
+  colorBlindMode: ColorBlindMode;
   localComputeEnabled: boolean;
   gpuVisualsEnabled: boolean;
 }
@@ -432,6 +436,38 @@ interface EffectiveExperienceSettings {
 A client must never render owner-only internals by changing settings. If a
 setting is unavailable for a role or capability profile, the UI should show
 that it is unavailable.
+
+### Preference Persistence
+
+Persisted experience preferences are actor/account scoped requested settings,
+not effective settings. Readback always re-runs the role/capability/policy
+resolver before rendering.
+
+The durable preference contract stores:
+
+- actor id;
+- preference schema version;
+- requested settings JSON;
+- created/updated timestamps.
+
+The frontend preference port loads and saves records without coupling reusable
+components to storage. Anonymous visitors receive deterministic safe defaults
+without requiring a persisted account. Malformed, unknown, or unsupported stored
+values fall back to defaults and produce explicit UI errors.
+
+Accessibility settings are first-class persisted preferences:
+
+- type scale / font size;
+- contrast;
+- reduced motion;
+- color-blind mode;
+- density;
+- theme;
+- locale;
+- performance mode.
+
+Preferences must never store raw prompts, provider payloads, policy internals,
+messages, private terms, staff notes, raw emails, phone numbers, or secrets.
 
 ## CSS Token Governance
 
@@ -624,6 +660,14 @@ Recommended milestone:
 - CSS token runtime;
 - accessibility profile;
 - i18n catalog port.
+
+### Phase 4B: Experience Preference Persistence
+
+- actor/account preference storage contract;
+- requested-settings serialization;
+- role-constrained effective-settings readback;
+- accessibility preference round-trip tests;
+- malformed stored-value fallback tests.
 
 ### Phase 5: Realtime Foundation
 

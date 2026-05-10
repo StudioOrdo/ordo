@@ -21,6 +21,7 @@ pub mod eval_harness;
 pub mod eval_personas;
 pub mod eval_simulators;
 pub mod events;
+pub mod experience_preferences;
 pub mod feedback;
 pub mod health;
 pub mod install;

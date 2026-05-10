@@ -94,9 +94,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "scheduled_job_runs",
     "brief_artifacts",
     "preferences",
+    "actor_experience_preferences",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 27;
+pub const CURRENT_SCHEMA_VERSION: i64 = 28;
 
 type MigrationFn = fn(&Connection) -> Result<()>;
 
@@ -241,6 +242,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 27,
         name: "add_customer_feedback_review_schema",
         apply: add_customer_feedback_review_schema,
+    },
+    SchemaMigration {
+        version: 28,
+        name: "add_actor_experience_preferences_schema",
+        apply: add_actor_experience_preferences_schema,
     },
 ];
 
@@ -2376,6 +2382,25 @@ fn add_customer_feedback_review_schema(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn add_actor_experience_preferences_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS actor_experience_preferences (
+            actor_id TEXT PRIMARY KEY,
+            schema_version TEXT NOT NULL,
+            requested_settings_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_actor_experience_preferences_updated
+            ON actor_experience_preferences(updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
 fn validate_migration_order() -> Result<()> {
     for (index, migration) in MIGRATIONS.iter().enumerate() {
         let expected_version = (index as i64) + 1;
@@ -2481,10 +2506,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27,
+                24, 25, 26, 27, 28,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 27);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 28);
     }
 
     #[test]

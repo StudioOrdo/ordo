@@ -744,6 +744,31 @@ Rules:
 - long-string and RTL smoke tests;
 - performance-mode tests.
 
+The Phase 7 gate suite is contract-first. It hardens the foundation before
+product onboarding surfaces or visual redesign begin.
+
+Implemented gate coverage:
+
+- durability claims require durable daemon evidence;
+- rejected commands preserve recoverable intent;
+- replay is idempotent and replay gaps are explicit;
+- client-safe read models deny staff/provider/policy/private internals;
+- experience settings drive theme, density, motion, contrast, type scale,
+  color-blind mode, and locale through settings/tokens;
+- reduced motion preserves equivalent text/status semantics;
+- missing browser capabilities produce explicit fallback states;
+- browser-generated artifacts remain candidate-only;
+- projection, replay, and capability failures surface explicit errors;
+- composer and active-work slots coexist during non-blocking background work;
+- long-string and RTL content remain data in read models;
+- no reusable OrdoOS markdown/HTML renderer accepts raw HTML as trusted input.
+
+Deferred beyond 0.1.6:
+
+- broad user-facing string catalog migration for legacy/product components;
+- full markdown rendering and sanitizer implementation;
+- visual regression screenshot baselines for final product surfaces.
+
 Keep the reference UI visually plain. Correctness, determinism,
 accessibility, and testability come before elite visuals.
 

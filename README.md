@@ -253,6 +253,18 @@ Run the appliance:
 docker compose up
 ```
 
+Compose reads `.env.local` at container runtime when the file exists. Copy the
+safe template first, then fill only local secrets on your machine:
+
+```bash
+cp .env.example .env.local
+```
+
+`.env.local` is ignored by git and excluded from the Docker build context. It
+is not baked into the image; Compose passes it to the running container through
+`env_file`. The daemon and the supervised Next.js process both inherit those
+environment variables.
+
 Then open `http://localhost:3000` for the UI. The daemon is exposed at
 `http://localhost:17760` for health, readiness, API routes, and WebSocket
 projection.
@@ -268,6 +280,12 @@ curl http://localhost:17760/capabilities
 curl 'http://localhost:17760/events?after=0&limit=100'
 cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/list
 cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/call --params-json '{"name":"system.status.read","arguments":{}}'
+```
+
+For a one-off container run without Compose, pass the same file explicitly:
+
+```bash
+docker run --rm --env-file .env.local -p 127.0.0.1:3000:3000 -p 127.0.0.1:17760:17760 studio-ordo/ordo:0.1.0
 ```
 
 `tools/list` returns policy metadata such as `read_only`, `local_mutation`, and
@@ -313,7 +331,12 @@ jobs, operator controls, and the browser backup creation path.
 Start here:
 
 - [Docs Index](docs/README.md)
+- [System Overview](docs/system-overview.md)
+- [Developer Guide](docs/developer-guide.md)
+- [LLM Agent Guide](docs/llm-agent-guide.md)
 - [Project State](docs/state-of-the-project.md)
+- [Eval System](docs/evals/README.md)
+- [Issue History](docs/process/issue-history.md)
 - [Business Canon](docs/business/README.md)
 - [Architecture](docs/architecture/README.md)
 - [Process](docs/process/README.md)

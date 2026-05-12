@@ -1,0 +1,1437 @@
+    Checking ordo-daemon v0.1.0 (/Users/kwilliams/Projects/studioOrdo/crates/ordo-daemon)
+error[E0408]: variable `MCP_EXPORT_POLICY_LOCAL_MUTATION` is not bound in all patterns
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:986:13
+    |
+986 |             MCP_EXPORT_POLICY_READ_ONLY
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ pattern doesn't bind `MCP_EXPORT_POLICY_LOCAL_MUTATION`
+987 |                 | MCP_EXPORT_POLICY_LOCAL_MUTATION
+    |                   -------------------------------- variable not in all patterns
+988 |                 | MCP_EXPORT_POLICY_OPERATOR_CONFIRMED
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ pattern doesn't bind `MCP_EXPORT_POLICY_LOCAL_MUTATION`
+    |
+help: if you meant to match on constant `crate::capabilities::MCP_EXPORT_POLICY_LOCAL_MUTATION`, use the full path in the pattern
+    |
+987 |                 | crate::capabilities::MCP_EXPORT_POLICY_LOCAL_MUTATION
+    |                   +++++++++++++++++++++
+
+error[E0408]: variable `MCP_EXPORT_POLICY_OPERATOR_CONFIRMED` is not bound in all patterns
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:986:13
+    |
+986 |             MCP_EXPORT_POLICY_READ_ONLY
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ pattern doesn't bind `MCP_EXPORT_POLICY_OPERATOR_CONFIRMED`
+987 |                 | MCP_EXPORT_POLICY_LOCAL_MUTATION
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ pattern doesn't bind `MCP_EXPORT_POLICY_OPERATOR_CONFIRMED`
+988 |                 | MCP_EXPORT_POLICY_OPERATOR_CONFIRMED
+    |                   ------------------------------------ variable not in all patterns
+    |
+help: if you meant to match on constant `crate::capabilities::MCP_EXPORT_POLICY_OPERATOR_CONFIRMED`, use the full path in the pattern
+    |
+988 |                 | crate::capabilities::MCP_EXPORT_POLICY_OPERATOR_CONFIRMED
+    |                   +++++++++++++++++++++
+
+error[E0408]: variable `MCP_EXPORT_POLICY_READ_ONLY` is not bound in all patterns
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:987:19
+    |
+986 |             MCP_EXPORT_POLICY_READ_ONLY
+    |             --------------------------- variable not in all patterns
+987 |                 | MCP_EXPORT_POLICY_LOCAL_MUTATION
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ pattern doesn't bind `MCP_EXPORT_POLICY_READ_ONLY`
+988 |                 | MCP_EXPORT_POLICY_OPERATOR_CONFIRMED
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ pattern doesn't bind `MCP_EXPORT_POLICY_READ_ONLY`
+    |
+help: if you meant to match on constant `crate::capabilities::MCP_EXPORT_POLICY_READ_ONLY`, use the full path in the pattern
+    |
+986 |             crate::capabilities::MCP_EXPORT_POLICY_READ_ONLY
+    |             +++++++++++++++++++++
+
+error[E0425]: cannot find type `ConversationGatewayEnvelope` in this scope
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:93:21
+   |
+93 |     pub frames: Vec<ConversationGatewayEnvelope>,
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this struct
+   |
+ 1 + use crate::conversation_protocol::ConversationGatewayEnvelope;
+   |
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `fs`
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:331:19
+    |
+331 |         let raw = fs::read_to_string(path)?;
+    |                   ^^ use of unresolved module or unlinked crate `fs`
+    |
+    = help: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    = note: module `crate::schema::migrations::fs` exists but is inaccessible
+help: consider importing this module
+    |
+  1 + use std::fs;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Duration`
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:497:22
+    |
+497 |             .timeout(Duration::from_millis(timeout_ms))
+    |                      ^^^^^^^^ use of undeclared type `Duration`
+    |
+help: consider importing one of these items
+    |
+  1 + use std::time::Duration;
+    |
+  1 + use ::core::time::Duration;
+    |
+  1 + use chrono::Duration;
+    |
+  1 + use tokio::time::Duration;
+    |
+
+error[E0425]: cannot find type `PolicyOutcome` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:691:14
+    |
+691 |     outcome: PolicyOutcome,
+    |              ^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyOutcome;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyOutcome`
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:698:22
+    |
+698 |             outcome: PolicyOutcome::Allowed,
+    |                      ^^^^^^^^^^^^^ use of undeclared type `PolicyOutcome`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyOutcome;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyOutcome`
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:705:22
+    |
+705 |             outcome: PolicyOutcome::Denied,
+    |                      ^^^^^^^^^^^^^ use of undeclared type `PolicyOutcome`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyOutcome;
+    |
+
+error[E0425]: cannot find type `ConversationMessageView` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:717:31
+    |
+717 |     pub final_message: Option<ConversationMessageView>,
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct through its public re-export
+    |
+  1 + use crate::conversations::ConversationMessageView;
+    |
+
+error[E0425]: cannot find type `ConversationGatewayEnvelope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:718:21
+    |
+718 |     pub frames: Vec<ConversationGatewayEnvelope>,
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayEnvelope;
+    |
+
+error[E0425]: cannot find type `PrivacyEgressFirewall` in this scope
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:21:23
+   |
+21 |     privacy_firewall: PrivacyEgressFirewall,
+   |                       ^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this struct
+   |
+ 1 + use crate::privacy_egress::PrivacyEgressFirewall;
+   |
+
+error[E0425]: cannot find type `PolicyAction` in this scope
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:26:13
+   |
+26 |     action: PolicyAction,
+   |             ^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this enum
+   |
+ 1 + use crate::policy::PolicyAction;
+   |
+
+error[E0425]: cannot find type `PrivacyEgressTransform` in this scope
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:34:21
+   |
+34 |     transforms: Vec<PrivacyEgressTransform>,
+   |                     ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this struct
+   |
+ 1 + use crate::privacy_egress::PrivacyEgressTransform;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `PrivacyEgressFirewall`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:43:31
+   |
+43 |             privacy_firewall: PrivacyEgressFirewall::default(),
+   |                               ^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `PrivacyEgressFirewall`
+   |
+help: consider importing this struct
+   |
+ 1 + use crate::privacy_egress::PrivacyEgressFirewall;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `PrivacyEgressFirewall`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:52:31
+   |
+52 |             privacy_firewall: PrivacyEgressFirewall::default(),
+   |                               ^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `PrivacyEgressFirewall`
+   |
+help: consider importing this struct
+   |
+ 1 + use crate::privacy_egress::PrivacyEgressFirewall;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `PrivacyEgressFirewall`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:57:33
+   |
+57 |         self.privacy_firewall = PrivacyEgressFirewall::new(private_terms);
+   |                                 ^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `PrivacyEgressFirewall`
+   |
+help: consider importing this struct
+   |
+ 1 + use crate::privacy_egress::PrivacyEgressFirewall;
+   |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:65:17
+   |
+65 |         actor: &ActorContext,
+   |                 ^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this struct
+   |
+ 1 + use crate::policy::ActorContext;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyAction`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:81:13
+   |
+81 |             PolicyAction::Generate,
+   |             ^^^^^^^^^^^^ use of undeclared type `PolicyAction`
+   |
+help: consider importing this enum
+   |
+ 1 + use crate::policy::PolicyAction;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `ResourceKind`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:82:13
+   |
+82 |             ResourceKind::LlmRun,
+   |             ^^^^^^^^^^^^ use of undeclared type `ResourceKind`
+   |
+help: consider importing this enum
+   |
+ 1 + use crate::policy::ResourceKind;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyOutcome`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:88:50
+   |
+88 |         if !matches!(self.invoke_policy.outcome, PolicyOutcome::Allowed) {
+   |                                                  ^^^^^^^^^^^^^ use of undeclared type `PolicyOutcome`
+   |
+help: consider importing this enum
+   |
+ 1 + use crate::policy::PolicyOutcome;
+   |
+
+error[E0425]: cannot find function `policy_denied_error` in this scope
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:94:30
+   |
+94 |                 frames: vec![policy_denied_error(
+   |                              ^^^^^^^^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this function
+   |
+ 1 + use crate::conversation_protocol::policy_denied_error;
+   |
+
+error[E0425]: cannot find function `record_invocation_started` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:104:9
+    |
+104 |         record_invocation_started(connection, &request, &prompt, &policy_decision_id)?;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::llm_accounting::record_invocation_started;
+    |
+
+error[E0425]: cannot find function `record_prompt_slot_usage` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:150:13
+    |
+150 |             record_prompt_slot_usage(connection, &request, &prompt, &policy_decision_id)?
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::llm_accounting::record_prompt_slot_usage;
+    |
+
+error[E0425]: cannot find function `record_invocation_failed` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:163:17
+    |
+163 |                 record_invocation_failed(
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::llm_accounting::record_invocation_failed;
+    |
+
+error[E0425]: cannot find function `record_privacy_transform_runs` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:202:9
+    |
+202 |         record_privacy_transform_runs(
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::llm_accounting::record_privacy_transform_runs;
+    |
+
+error[E0425]: cannot find function `record_invocation_failed` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:264:21
+    |
+264 |                     record_invocation_failed(connection, &request.run_id, &code, &message)?;
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::llm_accounting::record_invocation_failed;
+    |
+
+error[E0425]: cannot find function `create_conversation_message` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:295:29
+    |
+295 |         let final_message = create_conversation_message(
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function through its public re-export
+    |
+  1 + use crate::conversations::create_conversation_message;
+    |
+
+error[E0422]: cannot find struct, variant or union type `ConversationMessageCreateRequest` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:297:14
+    |
+297 |             &ConversationMessageCreateRequest {
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct through its public re-export
+    |
+  1 + use crate::conversations::ConversationMessageCreateRequest;
+    |
+
+error[E0425]: cannot find function `record_invocation_completed` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:323:17
+    |
+323 |                 record_invocation_completed(
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::llm_accounting::record_invocation_completed;
+    |
+
+error[E0425]: cannot find function `record_invocation_completed` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:345:17
+    |
+345 |                 record_invocation_completed(connection, &request, None, &policy_decision_id)?
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::llm_accounting::record_invocation_completed;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:374:17
+    |
+374 |         actor: &ActorContext,
+    |                 ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyAction`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:385:13
+    |
+385 |             PolicyAction::Update,
+    |             ^^^^^^^^^^^^ use of undeclared type `PolicyAction`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyAction;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ResourceKind`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:386:13
+    |
+386 |             ResourceKind::LlmRun,
+    |             ^^^^^^^^^^^^ use of undeclared type `ResourceKind`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::ResourceKind;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyOutcome`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:392:50
+    |
+392 |         if !matches!(self.cancel_policy.outcome, PolicyOutcome::Allowed) {
+    |                                                  ^^^^^^^^^^^^^ use of undeclared type `PolicyOutcome`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyOutcome;
+    |
+
+error[E0425]: cannot find function `policy_denied_error` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:398:30
+    |
+398 |                 frames: vec![policy_denied_error(
+    |                              ^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::conversation_protocol::policy_denied_error;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:428:17
+    |
+428 |         actor: &ActorContext,
+    |                 ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyAction`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:437:13
+    |
+437 |             PolicyAction::Create,
+    |             ^^^^^^^^^^^^ use of undeclared type `PolicyAction`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyAction;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ResourceKind`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:438:13
+    |
+438 |             ResourceKind::LlmRun,
+    |             ^^^^^^^^^^^^ use of undeclared type `ResourceKind`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::ResourceKind;
+    |
+
+error[E0425]: cannot find function `command_rejected_error` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:450:38
+    |
+450 |                         frames: vec![command_rejected_error(
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::conversation_protocol::command_rejected_error;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:489:17
+    |
+489 |         actor: &ActorContext,
+    |                 ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyAction`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:502:25
+    |
+502 |                 action: PolicyAction::Approve,
+    |                         ^^^^^^^^^^^^ use of undeclared type `PolicyAction`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyAction;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:511:17
+    |
+511 |         actor: &ActorContext,
+    |                 ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyAction`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:524:25
+    |
+524 |                 action: PolicyAction::Approve,
+    |                         ^^^^^^^^^^^^ use of undeclared type `PolicyAction`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyAction;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:533:17
+    |
+533 |         actor: &ActorContext,
+    |                 ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0425]: cannot find function `command_rejected_error` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:546:30
+    |
+546 |                 frames: vec![command_rejected_error(
+    |                              ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::conversation_protocol::command_rejected_error;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyAction`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:560:13
+    |
+560 |             PolicyAction::Execute,
+    |             ^^^^^^^^^^^^ use of undeclared type `PolicyAction`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyAction;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ResourceKind`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:561:13
+    |
+561 |             ResourceKind::Capability,
+    |             ^^^^^^^^^^^^ use of undeclared type `ResourceKind`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::ResourceKind;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:590:17
+    |
+590 |         actor: &ActorContext,
+    |                 ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0425]: cannot find function `command_rejected_error` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:605:30
+    |
+605 |                 frames: vec![command_rejected_error(
+    |                              ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::conversation_protocol::command_rejected_error;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyAction`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:618:13
+    |
+618 |             PolicyAction::Execute,
+    |             ^^^^^^^^^^^^ use of undeclared type `PolicyAction`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyAction;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ResourceKind`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:619:13
+    |
+619 |             ResourceKind::Capability,
+    |             ^^^^^^^^^^^^ use of undeclared type `ResourceKind`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::ResourceKind;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:644:17
+    |
+644 |         actor: &ActorContext,
+    |                 ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ResourceKind`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:660:13
+    |
+660 |             ResourceKind::LlmRun,
+    |             ^^^^^^^^^^^^ use of undeclared type `ResourceKind`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::ResourceKind;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Sha256`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:691:22
+    |
+691 |     let mut hasher = Sha256::new();
+    |                      ^^^^^^ use of undeclared type `Sha256`
+    |
+help: consider importing this type alias
+    |
+  1 + use sha2::Sha256;
+    |
+
+error[E0425]: cannot find type `PrivacyEgressFirewall` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:706:16
+    |
+706 |     firewall: &PrivacyEgressFirewall,
+    |                ^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::privacy_egress::PrivacyEgressFirewall;
+    |
+
+error[E0422]: cannot find struct, variant or union type `PrivacyEgressScope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:712:17
+    |
+712 |     let scope = PrivacyEgressScope {
+    |                 ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::privacy_egress::PrivacyEgressScope;
+    |
+
+error[E0425]: cannot find type `PrivacyEgressTransform` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:739:19
+    |
+739 |     transforms: &[PrivacyEgressTransform],
+    |                   ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::privacy_egress::PrivacyEgressTransform;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PrivacyEgressFirewall`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:748:23
+    |
+748 |             payload = PrivacyEgressFirewall::reconstruct_payload(
+    |                       ^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `PrivacyEgressFirewall`
+    |
+help: consider importing this struct
+    |
+  1 + use crate::privacy_egress::PrivacyEgressFirewall;
+    |
+
+error[E0425]: cannot find type `PrivacyEgressTransform` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:760:73
+    |
+760 | pub(crate) fn privacy_transform_event_payload(run_id: &str, transform: &PrivacyEgressTransform) -> Value {
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::privacy_egress::PrivacyEgressTransform;
+    |
+
+error[E0425]: cannot find type `ConversationGatewayEnvelope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:782:13
+    |
+782 | ) -> Result<ConversationGatewayEnvelope> {
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayEnvelope;
+    |
+
+error[E0425]: cannot find function `append_conversation_event` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:783:17
+    |
+783 |     let event = append_conversation_event(
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function through its public re-export
+    |
+  1 + use crate::conversations::append_conversation_event;
+    |
+
+error[E0425]: cannot find type `ConversationGatewayEnvelope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:798:13
+    |
+798 | ) -> Result<ConversationGatewayEnvelope> {
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayEnvelope;
+    |
+
+error[E0425]: cannot find type `ConversationGatewayEnvelope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:902:6
+    |
+902 | ) -> ConversationGatewayEnvelope {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayEnvelope;
+    |
+
+error[E0425]: cannot find function `dispatch_envelope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:903:5
+    |
+903 |     dispatch_envelope(
+    |     ^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::conversation_protocol::dispatch_envelope;
+    |
+
+error[E0425]: cannot find type `ConversationGatewayEnvelope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:916:6
+    |
+916 | ) -> ConversationGatewayEnvelope {
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayEnvelope;
+    |
+
+error[E0422]: cannot find struct, variant or union type `ConversationGatewayEnvelope` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:917:5
+    |
+917 |     ConversationGatewayEnvelope {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayEnvelope;
+    |
+
+error[E0425]: cannot find value `CONVERSATION_GATEWAY_SCHEMA_VERSION` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:918:25
+    |
+918 |         schema_version: CONVERSATION_GATEWAY_SCHEMA_VERSION.to_string(),
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this constant
+    |
+  1 + use crate::conversation_protocol::CONVERSATION_GATEWAY_SCHEMA_VERSION;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ConversationGatewayOp`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:919:13
+    |
+919 |         op: ConversationGatewayOp::Dispatch,
+    |             ^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `ConversationGatewayOp`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayOp;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ConversationGatewayDurability`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:927:21
+    |
+927 |         durability: ConversationGatewayDurability::Ephemeral,
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `ConversationGatewayDurability`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayDurability;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ConversationGatewayScope`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:928:16
+    |
+928 |         scope: ConversationGatewayScope::Run,
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `ConversationGatewayScope`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::conversation_protocol::ConversationGatewayScope;
+    |
+
+error[E0425]: cannot find type `ActorContext` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:935:13
+    |
+935 |     actor: &ActorContext,
+    |             ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ActorContext;
+    |
+
+error[E0425]: cannot find type `PolicyAction` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:936:13
+    |
+936 |     action: PolicyAction,
+    |             ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::PolicyAction;
+    |
+
+error[E0425]: cannot find type `ResourceKind` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:937:20
+    |
+937 |     resource_kind: ResourceKind,
+    |                    ^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  1 + use crate::policy::ResourceKind;
+    |
+
+error[E0425]: cannot find function `record_policy_decision` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:942:8
+    |
+942 |     Ok(record_policy_decision(
+    |        ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::policy::record_policy_decision;
+    |
+
+error[E0422]: cannot find struct, variant or union type `PolicyDecision` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:944:10
+    |
+944 |         &PolicyDecision {
+    |          ^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::PolicyDecision;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ResourceRef`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:948:23
+    |
+948 |             resource: ResourceRef::new(resource_kind, resource_id),
+    |                       ^^^^^^^^^^^ use of undeclared type `ResourceRef`
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::ResourceRef;
+    |
+
+error[E0422]: cannot find struct, variant or union type `PolicyDecisionCorrelation` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:952:9
+    |
+952 |         PolicyDecisionCorrelation {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::PolicyDecisionCorrelation;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `PolicyDecisionCorrelation`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:954:15
+    |
+954 |             ..PolicyDecisionCorrelation::default()
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `PolicyDecisionCorrelation`
+    |
+help: consider importing this struct
+    |
+  1 + use crate::policy::PolicyDecisionCorrelation;
+    |
+
+error[E0425]: cannot find function `load_capability` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:977:22
+    |
+977 |     let capability = load_capability(connection, capability_id)?
+    |                      ^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this function
+    |
+  1 + use crate::capabilities::load_capability;
+    |
+
+error[E0425]: cannot find value `MCP_EXPORT_POLICY_DANGEROUS_NONE` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:980:41
+    |
+980 |         capability.mcp_export_policy != MCP_EXPORT_POLICY_DANGEROUS_NONE,
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this constant
+    |
+  1 + use crate::capabilities::MCP_EXPORT_POLICY_DANGEROUS_NONE;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Sha256`
+    --> crates/ordo-daemon/src/llm_gateway/core.rs:1121:22
+     |
+1121 |     let mut hasher = Sha256::new();
+     |                      ^^^^^^ use of undeclared type `Sha256`
+     |
+help: consider importing this type alias
+     |
+   1 + use sha2::Sha256;
+     |
+
+warning: `require_text` is ambiguous
+  --> crates/ordo-daemon/src/eval_harness/types.rs:95:9
+   |
+95 |         require_text("eval step id", &id)?;
+   |         ^^^^^^^^^^^^ ambiguous name
+   |
+   = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+   = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+   = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+   |
+ 2 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:4:5
+   |
+ 4 | use crate::llm_gateway::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+   = note: `#[warn(ambiguous_glob_imports)]` (part of `#[warn(future_incompatible)]`) on by default
+
+warning: `require_text` is ambiguous
+  --> crates/ordo-daemon/src/eval_harness/types.rs:96:9
+   |
+96 |         require_text("eval step action", &action)?;
+   |         ^^^^^^^^^^^^ ambiguous name
+   |
+   = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+   = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+   = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+   |
+ 2 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:4:5
+   |
+ 4 | use crate::llm_gateway::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/eval_harness/types.rs:129:9
+    |
+129 |         require_text("eval case id", &id)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+    |
+  2 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:4:5
+    |
+  4 | use crate::llm_gateway::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/eval_harness/types.rs:130:9
+    |
+130 |         require_text("eval case title", &title)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+    |
+  2 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:4:5
+    |
+  4 | use crate::llm_gateway::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/eval_harness/types.rs:165:9
+    |
+165 |         require_text("eval assertion id", &id)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+    |
+  2 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:4:5
+    |
+  4 | use crate::llm_gateway::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/review_return.rs:154:5
+    |
+154 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/affiliate_referral.rs:136:5
+    |
+136 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:134:5
+    |
+134 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: unused imports: `Context`, `Result`, `anyhow`, and `ensure`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:1:14
+  |
+1 | use anyhow::{anyhow, ensure, Context, Result};
+  |              ^^^^^^  ^^^^^^  ^^^^^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `anyhow::bail`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:2:5
+  |
+2 | use anyhow::bail;
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `Connection`, `OptionalExtension`, `Row`, `Transaction`, and `params`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:3:16
+  |
+3 | use rusqlite::{params, Connection, OptionalExtension, Transaction, Row};
+  |                ^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^
+
+warning: unused import: `uuid::Uuid`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:5:13
+  |
+5 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `Value` and `json`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:6:18
+  |
+6 | use serde_json::{json, Value};
+  |                  ^^^^  ^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:7:5
+  |
+7 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PathBuf` and `Path`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:8:17
+  |
+8 | use std::path::{Path, PathBuf};
+  |                 ^^^^  ^^^^^^^
+
+warning: unused imports: `Duration as StdDuration` and `Instant`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:9:17
+  |
+9 | use std::time::{Instant, Duration as StdDuration};
+  |                 ^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:10:14
+   |
+10 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused import: `std::fmt`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:11:5
+   |
+11 | use std::fmt;
+   |     ^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:12:5
+   |
+12 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:13:5
+   |
+13 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `Context` and `anyhow`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:2:14
+  |
+2 | use anyhow::{anyhow, ensure, Context, Result};
+  |              ^^^^^^          ^^^^^^^
+
+warning: unused import: `anyhow::bail`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:3:5
+  |
+3 | use anyhow::bail;
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `Connection`, `OptionalExtension`, `Row`, `Transaction`, and `params`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:4:16
+  |
+4 | use rusqlite::{params, Connection, OptionalExtension, Transaction, Row};
+  |                ^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^
+
+warning: unused import: `uuid::Uuid`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:5:5
+  |
+5 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:8:5
+  |
+8 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:9:23
+  |
+9 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused imports: `Duration as StdDuration` and `Instant`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:10:17
+   |
+10 | use std::time::{Instant, Duration as StdDuration};
+   |                 ^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:11:14
+   |
+11 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:13:5
+   |
+13 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:14:5
+   |
+14 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::events::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:15:5
+   |
+15 | use crate::events::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Context` and `anyhow`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:2:14
+  |
+2 | use anyhow::{anyhow, ensure, Context, Result};
+  |              ^^^^^^          ^^^^^^^
+
+warning: unused import: `anyhow::bail`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:3:5
+  |
+3 | use anyhow::bail;
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `Row` and `Transaction`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:4:55
+  |
+4 | use rusqlite::{params, Connection, OptionalExtension, Transaction, Row};
+  |                                                       ^^^^^^^^^^^  ^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:6:13
+  |
+6 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:8:5
+  |
+8 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:9:23
+  |
+9 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused imports: `Duration as StdDuration` and `Instant`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:10:17
+   |
+10 | use std::time::{Instant, Duration as StdDuration};
+   |                 ^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `DateTime`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:11:14
+   |
+11 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^
+
+warning: unused import: `std::fmt`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:12:5
+   |
+12 | use std::fmt;
+   |     ^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:13:5
+   |
+13 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:14:5
+   |
+14 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::events::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:15:5
+   |
+15 | use crate::events::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+error[E0616]: field `outcome` of struct `llm_gateway::types::LlmPolicy` is private
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:88:41
+   |
+88 |         if !matches!(self.invoke_policy.outcome, PolicyOutcome::Allowed) {
+   |                                         ^^^^^^^ private field
+
+error[E0616]: field `outcome` of struct `llm_gateway::types::LlmPolicy` is private
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:392:41
+    |
+392 |         if !matches!(self.cancel_policy.outcome, PolicyOutcome::Allowed) {
+    |                                         ^^^^^^^ private field
+
+error[E0425]: cannot find function `privacy_stable_hash` in this scope
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:767:35
+    |
+767 |         "transformedPayloadHash": privacy_stable_hash(&transform.transformed_payload),
+    |                                   ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0624]: method `event_type` is private
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:822:29
+    |
+822 |         tool_request.status.event_type(),
+    |                             ^^^^^^^^^^ private method
+    |
+   ::: crates/ordo-daemon/src/llm_gateway/types.rs:42:5
+    |
+ 42 |     fn event_type(self) -> &'static str {
+    |     ----------------------------------- private method defined here
+
+error[E0616]: field `outcome` of struct `llm_gateway::types::LlmPolicy` is private
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:945:29
+    |
+945 |             outcome: policy.outcome,
+    |                             ^^^^^^^ private field
+
+error[E0616]: field `reason` of struct `llm_gateway::types::LlmPolicy` is private
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:950:28
+    |
+950 |             reason: policy.reason.clone(),
+    |                            ^^^^^^ private field
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/conversations/core.rs:8:5
+  |
+8 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:5:5
+  |
+5 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/qr_to_trial.rs:8:5
+  |
+8 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/affiliate_referral.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/planning.rs:9:5
+  |
+9 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:6:5
+  |
+6 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0408, E0422, E0425, E0433, E0616, E0624.
+For more information about an error, try `rustc --explain E0408`.
+warning: `ordo-daemon` (lib) generated 54 warnings
+error: could not compile `ordo-daemon` (lib) due to 88 previous errors; 62 warnings emitted

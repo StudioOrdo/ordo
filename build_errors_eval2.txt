@@ -1,0 +1,778 @@
+    Checking ordo-daemon v0.1.0 (/Users/kwilliams/Projects/studioOrdo/crates/ordo-daemon)
+warning: unused imports: `Result`, `anyhow`, and `ensure`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:1:14
+  |
+1 | use anyhow::{anyhow, ensure, Result};
+  |              ^^^^^^  ^^^^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Connection` and `params`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:2:16
+  |
+2 | use rusqlite::{params, Connection};
+  |                ^^^^^^  ^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:3:13
+  |
+3 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:4:5
+  |
+4 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:5:5
+  |
+5 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused imports: `PathBuf` and `Path`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:6:17
+  |
+6 | use std::path::{Path, PathBuf};
+  |                 ^^^^  ^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:7:5
+  |
+7 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:8:5
+  |
+8 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> crates/ordo-daemon/src/eval_harness/mod.rs:9:5
+  |
+9 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:10:14
+   |
+10 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused imports: `Digest` and `Sha256`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:11:12
+   |
+11 | use sha2::{Digest, Sha256};
+   |            ^^^^^^  ^^^^^^
+
+warning: unused import: `crate::attribution::*`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:13:5
+   |
+13 | use crate::attribution::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::business::*`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:14:5
+   |
+14 | use crate::business::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::connections::*`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:15:5
+   |
+15 | use crate::connections::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::entry_points::*`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:17:5
+   |
+17 | use crate::entry_points::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::offers::*`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:20:5
+   |
+20 | use crate::offers::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:22:5
+   |
+22 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::public_surfaces::public_product_surface_contract_connection`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:23:5
+   |
+23 | use crate::public_surfaces::public_product_surface_contract_connection;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Value` and `json`
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:24:18
+   |
+24 | use serde_json::{json, Value};
+   |                  ^^^^  ^^^^^
+
+warning: unused import: `anyhow`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:2:14
+  |
+2 | use anyhow::{anyhow, ensure, Result};
+  |              ^^^^^^
+
+warning: unused import: `params`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:3:16
+  |
+3 | use rusqlite::{params, Connection};
+  |                ^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:5:5
+  |
+5 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Path`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:7:17
+  |
+7 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `std::time::Instant`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:8:5
+  |
+8 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:9:5
+  |
+9 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:11:14
+   |
+11 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:12:20
+   |
+12 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused import: `crate::artifacts::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:13:5
+   |
+13 | use crate::artifacts::*;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::attribution::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:14:5
+   |
+14 | use crate::attribution::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::business::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:15:5
+   |
+15 | use crate::business::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::connections::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:16:5
+   |
+16 | use crate::connections::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversations::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:17:5
+   |
+17 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::entry_points::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:18:5
+   |
+18 | use crate::entry_points::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::feedback::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:19:5
+   |
+19 | use crate::feedback::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_gateway::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:20:5
+   |
+20 | use crate::llm_gateway::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::offers::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:21:5
+   |
+21 | use crate::offers::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::policy::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:22:5
+   |
+22 | use crate::policy::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:23:5
+   |
+23 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::public_surfaces::public_product_surface_contract_connection`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:24:5
+   |
+24 | use crate::public_surfaces::public_product_surface_contract_connection;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:2:14
+  |
+2 | use anyhow::{anyhow, ensure, Result};
+  |              ^^^^^^
+
+warning: unused import: `params`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:3:16
+  |
+3 | use rusqlite::{params, Connection};
+  |                ^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:4:13
+  |
+4 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:5:5
+  |
+5 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:6:5
+  |
+6 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:8:5
+  |
+8 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:9:5
+  |
+9 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:11:14
+   |
+11 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:12:20
+   |
+12 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused import: `crate::artifacts::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:13:5
+   |
+13 | use crate::artifacts::*;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::attribution::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:14:5
+   |
+14 | use crate::attribution::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::business::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:15:5
+   |
+15 | use crate::business::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::connections::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:16:5
+   |
+16 | use crate::connections::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversations::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:17:5
+   |
+17 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::entry_points::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:18:5
+   |
+18 | use crate::entry_points::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::feedback::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:19:5
+   |
+19 | use crate::feedback::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_gateway::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:20:5
+   |
+20 | use crate::llm_gateway::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::offers::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:21:5
+   |
+21 | use crate::offers::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::policy::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:22:5
+   |
+22 | use crate::policy::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:23:5
+   |
+23 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow`
+ --> crates/ordo-daemon/src/eval_harness/core.rs:2:14
+  |
+2 | use anyhow::{anyhow, ensure, Result};
+  |              ^^^^^^
+
+warning: unused import: `params`
+ --> crates/ordo-daemon/src/eval_harness/core.rs:3:16
+  |
+3 | use rusqlite::{params, Connection};
+  |                ^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/eval_harness/core.rs:5:5
+  |
+5 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> crates/ordo-daemon/src/eval_harness/core.rs:7:23
+  |
+7 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> crates/ordo-daemon/src/eval_harness/core.rs:8:5
+  |
+8 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::artifacts::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:13:5
+   |
+13 | use crate::artifacts::*;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::attribution::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:14:5
+   |
+14 | use crate::attribution::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::business::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:15:5
+   |
+15 | use crate::business::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::connections::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:16:5
+   |
+16 | use crate::connections::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversations::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:17:5
+   |
+17 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::entry_points::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:18:5
+   |
+18 | use crate::entry_points::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::feedback::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:19:5
+   |
+19 | use crate::feedback::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_gateway::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:20:5
+   |
+20 | use crate::llm_gateway::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::offers::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:21:5
+   |
+21 | use crate::offers::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::policy::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:22:5
+   |
+22 | use crate::policy::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:23:5
+   |
+23 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::public_surfaces::public_product_surface_contract_connection`
+  --> crates/ordo-daemon/src/eval_harness/core.rs:24:5
+   |
+24 | use crate::public_surfaces::public_product_surface_contract_connection;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/review_return.rs:154:5
+    |
+154 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+    = note: `#[warn(ambiguous_glob_imports)]` (part of `#[warn(future_incompatible)]`) on by default
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/affiliate_referral.rs:136:5
+    |
+136 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:134:5
+    |
+134 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+error[E0599]: no method named `optional` found for enum `Result<T, E>` in the current scope
+    --> crates/ordo-daemon/src/eval_harness/cases.rs:1914:10
+     |
+1908 |       if let Some(id) = connection
+     |  _______________________-
+1909 | |         .query_row(
+1910 | |             "SELECT id FROM customer_feedback ORDER BY created_at DESC LIMIT 1",
+1911 | |             [],
+...    |
+1914 | |         .optional()?
+     | |         -^^^^^^^^ method not found in `Result<_, rusqlite::Error>`
+     | |_________|
+     |
+     |
+    ::: /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.32.1/src/lib.rs:280:8
+     |
+ 280 |       fn optional(self) -> Result<Option<T>>;
+     |          -------- the method is available for `Result<_, rusqlite::Error>` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `OptionalExtension` which provides `optional` is implemented but not in scope; perhaps you want to import it
+     |
+   1 + use rusqlite::OptionalExtension;
+     |
+
+error[E0599]: no method named `optional` found for enum `Result<T, E>` in the current scope
+    --> crates/ordo-daemon/src/eval_harness/cases.rs:1947:10
+     |
+1941 | /     connection
+1942 | |         .query_row(
+1943 | |             "SELECT id FROM customer_feedback ORDER BY created_at DESC LIMIT 1",
+1944 | |             [],
+...    |
+1947 | |         .optional()?
+     | |         -^^^^^^^^ method not found in `Result<_, rusqlite::Error>`
+     | |_________|
+     |
+     |
+    ::: /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.32.1/src/lib.rs:280:8
+     |
+ 280 |       fn optional(self) -> Result<Option<T>>;
+     |          -------- the method is available for `Result<_, rusqlite::Error>` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `OptionalExtension` which provides `optional` is implemented but not in scope; perhaps you want to import it
+     |
+   1 + use rusqlite::OptionalExtension;
+     |
+
+error[E0599]: no method named `optional` found for enum `Result<T, E>` in the current scope
+    --> crates/ordo-daemon/src/eval_harness/cases.rs:1958:10
+     |
+1952 | /     connection
+1953 | |         .query_row(
+1954 | |             "SELECT id FROM customer_reviews ORDER BY created_at DESC LIMIT 1",
+1955 | |             [],
+...    |
+1958 | |         .optional()?
+     | |         -^^^^^^^^ method not found in `Result<_, rusqlite::Error>`
+     | |_________|
+     |
+     |
+    ::: /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.32.1/src/lib.rs:280:8
+     |
+ 280 |       fn optional(self) -> Result<Option<T>>;
+     |          -------- the method is available for `Result<_, rusqlite::Error>` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `OptionalExtension` which provides `optional` is implemented but not in scope; perhaps you want to import it
+     |
+   1 + use rusqlite::OptionalExtension;
+     |
+
+error[E0599]: no function or associated item named `seconds` found for struct `Duration` in the current scope
+  --> crates/ordo-daemon/src/eval_harness/core.rs:46:23
+   |
+46 |             Duration::seconds(1),
+   |                       ^^^^^^^ function or associated item not found in `Duration`
+   |
+note: if you're trying to build a new `Duration` consider using one of the following associated functions:
+      Duration::new
+      Duration::from_secs
+      Duration::from_millis
+      Duration::from_micros
+      and 10 others
+  --> library/core/src/time.rs:194:4
+
+error[E0599]: no method named `optional` found for enum `Result<T, E>` in the current scope
+   --> crates/ordo-daemon/src/eval_harness/core.rs:250:10
+    |
+244 |       let raw: Option<String> = connection
+    |  _______________________________-
+245 | |         .query_row(
+246 | |             "SELECT json_group_array(privacy_transform_run_ids_json) FROM llm_invocations",
+247 | |             [],
+...   |
+250 | |         .optional()?;
+    | |         -^^^^^^^^ method not found in `Result<_, rusqlite::Error>`
+    | |_________|
+    |
+    |
+   ::: /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.32.1/src/lib.rs:280:8
+    |
+280 |       fn optional(self) -> Result<Option<T>>;
+    |          -------- the method is available for `Result<_, rusqlite::Error>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `OptionalExtension` which provides `optional` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use rusqlite::OptionalExtension;
+    |
+
+error[E0282]: type annotations needed
+   --> crates/ordo-daemon/src/eval_harness/core.rs:254:8
+    |
+254 |     if raw.trim().is_empty() {
+    |        ^^^ cannot infer type
+
+error[E0599]: no method named `optional` found for enum `Result<T, E>` in the current scope
+   --> crates/ordo-daemon/src/eval_harness/core.rs:285:10
+    |
+283 |       let value = connection
+    |  _________________-
+284 | |         .query_row(&sql, [], |row| row.get(0))
+285 | |         .optional()?;
+    | |         -^^^^^^^^ method not found in `Result<_, rusqlite::Error>`
+    | |_________|
+    |
+    |
+   ::: /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.32.1/src/lib.rs:280:8
+    |
+280 |       fn optional(self) -> Result<Option<T>>;
+    |          -------- the method is available for `Result<_, rusqlite::Error>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `OptionalExtension` which provides `optional` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use rusqlite::OptionalExtension;
+    |
+
+error[E0599]: no method named `with_context` found for enum `Result<T, E>` in the current scope
+   --> crates/ordo-daemon/src/eval_harness/core.rs:826:30
+    |
+826 |     fs::write(path, encoded).with_context(|| format!("write JSON artifact {}", path.display()))?;
+    |                              ^^^^^^^^^^^^
+    |
+   ::: /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyhow-1.0.102/src/lib.rs:624:8
+    |
+624 |     fn with_context<C, F>(self, f: F) -> Result<T, Error>
+    |        ------------ the method is available for `Result<(), std::io::Error>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Context` which provides `with_context` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use anyhow::Context;
+    |
+help: there is a method `context` with a similar name
+    |
+826 -     fs::write(path, encoded).with_context(|| format!("write JSON artifact {}", path.display()))?;
+826 +     fs::write(path, encoded).context(|| format!("write JSON artifact {}", path.display()))?;
+    |
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/eval_harness/types.rs:12:12
+   |
+12 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/eval_harness/cases.rs:12:12
+   |
+12 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/qr_to_trial.rs:8:5
+  |
+8 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/affiliate_referral.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/planning.rs:9:5
+  |
+9 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:6:5
+  |
+6 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0282, E0599.
+For more information about an error, try `rustc --explain E0282`.
+warning: `ordo-daemon` (lib) generated 91 warnings
+error: could not compile `ordo-daemon` (lib) due to 8 previous errors; 94 warnings emitted

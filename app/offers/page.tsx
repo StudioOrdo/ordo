@@ -4,7 +4,7 @@ import { type SearchParams } from "@/lib/page-role";
 export default async function OffersPage({ searchParams }: { searchParams?: SearchParams }) {
   return await ProductSurfacePage({
     searchParams,
-    topItemId: "offers",
+    itemId: "offers",
     eyebrow: "Offers",
     title: "Offers",
     surfaceBrief: {

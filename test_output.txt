@@ -1,0 +1,494 @@
+warning: unused import: `bail`
+ --> crates/ordo-daemon/src/backups/api.rs:1:14
+  |
+1 | use anyhow::{bail, Result};
+  |              ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `uuid::Uuid`
+ --> crates/ordo-daemon/src/backups/api.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `crate::schema::db::ConnectionExt`
+  --> crates/ordo-daemon/src/backups/core.rs:12:5
+   |
+12 | use crate::schema::db::ConnectionExt;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ensure`
+ --> crates/ordo-daemon/src/conversation_gateway/api.rs:1:14
+  |
+1 | use anyhow::{ensure, Result};
+  |              ^^^^^^
+
+warning: unused imports: `DateTime` and `Duration as ChronoDuration`
+ --> crates/ordo-daemon/src/conversation_gateway/api.rs:3:14
+  |
+3 | use chrono::{DateTime, Duration as ChronoDuration, Utc};
+  |              ^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Connection`, `OptionalExtension`, and `params`
+ --> crates/ordo-daemon/src/conversation_gateway/api.rs:4:16
+  |
+4 | use rusqlite::{params, Connection, OptionalExtension};
+  |                ^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde::Deserialize`
+ --> crates/ordo-daemon/src/conversation_gateway/api.rs:5:5
+  |
+5 | use serde::Deserialize;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Value`
+ --> crates/ordo-daemon/src/conversation_gateway/api.rs:6:24
+  |
+6 | use serde_json::{json, Value};
+  |                        ^^^^^
+
+warning: unused imports: `BTreeMap`, `BTreeSet`, and `VecDeque`
+ --> crates/ordo-daemon/src/conversation_gateway/api.rs:7:24
+  |
+7 | use std::collections::{BTreeMap, BTreeSet, VecDeque};
+  |                        ^^^^^^^^  ^^^^^^^^  ^^^^^^^^
+
+warning: unused imports: `ack_envelope` and `dispatch_envelope`
+  --> crates/ordo-daemon/src/conversation_gateway/api.rs:15:5
+   |
+15 |     ack_envelope, command_rejected_error, dispatch_envelope, Conversatio...
+   |     ^^^^^^^^^^^^                          ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ConversationHandoffCreateRequest`, `ConversationMessageCreateRequest`, `ConversationMode`, `ConversationMutationActor`, `ConversationPresenceUpdateRequest`, `ConversationService`, `HandoffStatus`, `ReactionAction`, `create_conversation_handoff`, `transition_conversation_handoff`, and `upsert_conversation_mode`
+  --> crates/ordo-daemon/src/conversation_gateway/api.rs:20:5
+   |
+20 |     create_conversation_handoff, transition_conversation_handoff, upsert_conversation_mode,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^
+21 |     ConversationHandoffCreateRequest, ConversationMessageCreateRequest, ConversationMode,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+22 |     ConversationMutationActor, ConversationPresenceUpdateRequest, ConversationService,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+23 |     HandoffStatus, ReactionAction,
+   |     ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+
+warning: unused imports: `ActorContext` and `ActorKind`
+  --> crates/ordo-daemon/src/conversation_gateway/api.rs:25:21
+   |
+25 | use crate::policy::{ActorContext, ActorKind};
+   |                     ^^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `Message` and `WebSocket`
+ --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:2:25
+  |
+2 | use axum::extract::ws::{Message, WebSocket};
+  |                         ^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `DateTime`
+ --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:3:14
+  |
+3 | use chrono::{DateTime, Duration as ChronoDuration, Utc};
+  |              ^^^^^^^^
+
+warning: unused imports: `BTreeMap`, `BTreeSet`, and `VecDeque`
+ --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:7:24
+  |
+7 | use std::collections::{BTreeMap, BTreeSet, VecDeque};
+  |                        ^^^^^^^^  ^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::path::PathBuf`
+ --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:9:5
+  |
+9 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::broadcast`
+  --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:11:5
+   |
+11 | use tokio::sync::broadcast;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+  --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:12:5
+   |
+12 | use uuid::Uuid;
+   |     ^^^^^^^^^^
+
+warning: unused import: `super::api::*`
+  --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:34:5
+   |
+34 | use super::api::*;
+   |     ^^^^^^^^^^^^^
+
+warning: unused import: `std::fs`
+ --> crates/ordo-daemon/src/live_eval_runner/qr_to_trial.rs:6:5
+  |
+6 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused import: `crate::schema::*`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:9:5
+  |
+9 | use crate::schema::*;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:10:5
+   |
+10 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::bail`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:11:5
+   |
+11 | use anyhow::bail;
+   |     ^^^^^^^^^^^^
+
+warning: unused imports: `Context` and `anyhow`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:12:14
+   |
+12 | use anyhow::{anyhow, ensure, Context, Result};
+   |              ^^^^^^          ^^^^^^^
+
+warning: unused import: `DateTime`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:13:14
+   |
+13 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^
+
+warning: unused imports: `Row` and `Transaction`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:14:55
+   |
+14 | use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
+   |                                                       ^^^  ^^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:15:13
+   |
+15 | use serde::{Deserialize, Serialize};
+   |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:18:5
+   |
+18 | use std::collections::BTreeMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fmt`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:19:5
+   |
+19 | use std::fmt;
+   |     ^^^^^^^^
+
+warning: unused import: `std::fs`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:20:5
+   |
+20 | use std::fs;
+   |     ^^^^^^^
+
+warning: unused import: `PathBuf`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:21:23
+   |
+21 | use std::path::{Path, PathBuf};
+   |                       ^^^^^^^
+
+warning: unused imports: `Duration` and `Instant`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:22:17
+   |
+22 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^  ^^^^^^^
+
+warning: unused import: `crate::capabilities::*`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:2:5
+  |
+2 | use crate::capabilities::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::events::*`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:5:5
+  |
+5 | use crate::events::*;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_accounting::*`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:6:5
+  |
+6 | use crate::llm_accounting::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::privacy_egress::*`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:8:5
+  |
+8 | use crate::privacy_egress::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:9:5
+  |
+9 | use crate::schema::*;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:10:5
+   |
+10 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::bail`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:11:5
+   |
+11 | use anyhow::bail;
+   |     ^^^^^^^^^^^^
+
+warning: unused imports: `Context` and `anyhow`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:12:14
+   |
+12 | use anyhow::{anyhow, ensure, Context, Result};
+   |              ^^^^^^          ^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:13:14
+   |
+13 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused imports: `Connection`, `OptionalExtension`, `Row`, `Transaction`, and `params`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:14:16
+   |
+14 | use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
+   |                ^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^  ^^^^^^^^^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:17:20
+   |
+17 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:18:5
+   |
+18 | use std::collections::BTreeMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:21:23
+   |
+21 | use std::path::{Path, PathBuf};
+   |                       ^^^^^^^
+
+warning: unused import: `Instant`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:22:27
+   |
+22 | use std::time::{Duration, Instant};
+   |                           ^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:23:5
+   |
+23 | use uuid::Uuid;
+   |     ^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> crates/ordo-daemon/src/reports/api.rs:4:23
+  |
+4 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused import: `chrono::Utc`
+ --> crates/ordo-daemon/src/reports/evidence.rs:5:5
+  |
+5 | use chrono::Utc;
+  |     ^^^^^^^^^^^
+
+warning: unused import: `crate::schema::db::ConnectionExt`
+ --> crates/ordo-daemon/src/reports/evidence.rs:8:5
+  |
+8 | use crate::schema::db::ConnectionExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Context`
+ --> crates/ordo-daemon/src/reports/jobs.rs:1:20
+  |
+1 | use anyhow::{bail, Context, Result};
+  |                    ^^^^^^^
+
+warning: unused import: `OptionalExtension`
+ --> crates/ordo-daemon/src/reports/jobs.rs:3:36
+  |
+3 | use rusqlite::{params, Connection, OptionalExtension};
+  |                                    ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> crates/ordo-daemon/src/reports/jobs.rs:4:23
+  |
+4 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> crates/ordo-daemon/src/reports/jobs.rs:5:5
+  |
+5 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/reports/jobs.rs:16:20
+   |
+16 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+ --> crates/ordo-daemon/src/reports/types.rs:3:14
+  |
+3 | use chrono::{DateTime, Utc};
+  |              ^^^^^^^^  ^^^
+
+warning: unused import: `Write`
+ --> crates/ordo-daemon/src/backups/core.rs:7:21
+  |
+7 | use std::io::{Read, Write};
+  |                     ^^^^^
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:17:12
+   |
+17 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/reports/jobs.rs:16:12
+   |
+16 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+warning: constant `DEFAULT_REPLAY_LIMIT` is never used
+  --> crates/ordo-daemon/src/conversation_gateway/api.rs:27:7
+   |
+27 | const DEFAULT_REPLAY_LIMIT: usize = 100;
+   |       ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `MAX_REPLAY_LIMIT` is never used
+  --> crates/ordo-daemon/src/conversation_gateway/api.rs:28:7
+   |
+28 | const MAX_REPLAY_LIMIT: usize = 500;
+   |       ^^^^^^^^^^^^^^^^
+
+warning: constant `COMMAND_RATE_LIMIT` is never used
+  --> crates/ordo-daemon/src/conversation_gateway/api.rs:30:7
+   |
+30 | const COMMAND_RATE_LIMIT: usize = 30;
+   |       ^^^^^^^^^^^^^^^^^^
+
+warning: constant `COMMAND_RATE_WINDOW_SECONDS` is never used
+  --> crates/ordo-daemon/src/conversation_gateway/api.rs:31:7
+   |
+31 | const COMMAND_RATE_WINDOW_SECONDS: i64 = 60;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TEXT_FRAME_BYTES` is never used
+  --> crates/ordo-daemon/src/conversation_gateway/handlers.rs:29:7
+   |
+29 | const MAX_TEXT_FRAME_BYTES: usize = 64 * 1024;
+   |       ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `NEXT_SUPERVISOR_MAX_RESTARTS` is never used
+  --> crates/ordo-daemon/src/server/mod.rs:15:7
+   |
+15 | const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `NEXT_SUPERVISOR_RESTART_DELAY` is never used
+  --> crates/ordo-daemon/src/server/mod.rs:16:7
+   |
+16 | const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_sec...
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `DAEMON_ACCESS_TOKEN_HEADER` is never used
+  --> crates/ordo-daemon/src/server/mod.rs:17:7
+   |
+17 | const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `NEXT_SUPERVISOR_MAX_RESTARTS` is never used
+   --> crates/ordo-daemon/src/server/handlers.rs:107:7
+    |
+107 | const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `NEXT_SUPERVISOR_RESTART_DELAY` is never used
+   --> crates/ordo-daemon/src/server/handlers.rs:108:7
+    |
+108 | const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_se...
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `NEXT_SUPERVISOR_MAX_RESTARTS` is never used
+ --> crates/ordo-daemon/src/server/state.rs:9:18
+  |
+9 | pub(crate) const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `NEXT_SUPERVISOR_RESTART_DELAY` is never used
+  --> crates/ordo-daemon/src/server/state.rs:10:18
+   |
+10 | pub(crate) const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuratio...
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `DAEMON_ACCESS_TOKEN_HEADER` is never used
+  --> crates/ordo-daemon/src/server/state.rs:11:18
+   |
+11 | pub(crate) const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `DAEMON_ACCESS_TOKEN_HEADER` is never used
+  --> crates/ordo-daemon/src/server/supervisor.rs:17:7
+   |
+17 | const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ordo-daemon` (lib) generated 74 warnings (run `cargo fix --lib -p ordo-daemon` to apply 57 suggestions)
+warning: unused import: `OptionalExtension`
+  --> crates/ordo-daemon/src/conversations/mod.rs:14:32
+   |
+14 |     use rusqlite::{Connection, OptionalExtension, Row};
+   |                                ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:29:18
+   |
+29 |     use chrono::{DateTime, Utc};
+   |                  ^^^^^^^^  ^^^
+
+warning: unused imports: `OptionalExtension` and `Row`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:30:32
+   |
+30 |     use rusqlite::{Connection, OptionalExtension, Row};
+   |                                ^^^^^^^^^^^^^^^^^  ^^^
+
+warning: `ordo-daemon` (lib test) generated 75 warnings (72 duplicates) (run `cargo fix --lib -p ordo-daemon --tests` to apply 3 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/ordo_daemon-c6058d3b504071e0)
+
+running 1 test
+
+thread 'server::handlers::tests::daemon_route_contracts_cover_every_registered_route_path' (225352) panicked at crates/ordo-daemon/src/server/handlers.rs:2195:9:
+assertion `left == right` failed
+  left: {"/answer-drafts", "/answer-drafts/:draft_id", "/availability", "/availability/presence", "/availability/schedule", "/backups", "/backups/create", "/briefs/system/generate", "/briefs/system/latest", "/business/facts", "/business/facts/:fact_id", "/capabilities", "/chat/bootstrap", "/chat/ws", "/connections", "/connections/:connection_id", "/connections/:connection_id/events", "/connections/:connection_id/grants", "/connections/:connection_id/grants/:grant_id/revoke", "/corpus/items", "/corpus/items/:item_id", "/corpus/retrieve", "/corpus/sources", "/corpus/sources/:source_id", "/entry-points", "/entry-points/:entry_point_id", "/events", "/handoff/eligibility", "/handoff/inbox", "/handoff/inbox/:item_id/receipts", "/handoff/inbox/:item_id/resolve", "/health", "/install/complete", "/install/state", "/local-sessions/login", "/local-sessions/register", "/logs", "/mcp", "/mcp/packs", "/mcp/packs/:pack_id", "/mcp/packs/:pack_id/disable", "/offer-acceptances", "/offers", "/offers/:offer_id", "/policy-decisions", "/providers", "/providers/:provider_id", "/public/about", "/public/asks", "/public/available-offers", "/public/e/:slug", "/public/feed", "/public/offers", "/public/offers/:offer_slug/accept", "/public/surfaces", "/public/visitor-sessions", "/ready", "/reports/issues", "/reports/issues/:report_id", "/reports/issues/:report_id/exports", "/reports/issues/:report_id/status", "/reports/issues/prepare", "/restore/validate", "/support-packets", "/support-packets/:packet_id/approve", "/support-packets/:packet_id/receipts", "/trials", "/trials/:trial_id/status", "/visitor-sessions", "/ws"}
+ right: {"/answer-drafts", "/answer-drafts/:draft_id", "/availability", "/availability/presence", "/availability/schedule", "/backups", "/backups/create", "/briefs/system/generate", "/briefs/system/latest", "/business/facts", "/business/facts/:fact_id", "/capabilities", "/chat/bootstrap", "/chat/ws", "/connections", "/connections/:connection_id", "/connections/:connection_id/events", "/connections/:connection_id/grants", "/connections/:connection_id/grants/:grant_id/revoke", "/corpus/items", "/corpus/items/:item_id", "/corpus/retrieve", "/corpus/sources", "/corpus/sources/:source_id", "/entry-points", "/entry-points/:entry_point_id", "/events", "/handoff/eligibility", "/handoff/inbox", "/handoff/inbox/:item_id/receipts", "/handoff/inbox/:item_id/resolve", "/health", "/install/complete", "/install/state", "/logs", "/mcp", "/mcp/packs", "/mcp/packs/:pack_id", "/mcp/packs/:pack_id/disable", "/offer-acceptances", "/offers", "/offers/:offer_id", "/policy-decisions", "/providers", "/providers/:provider_id", "/public/about", "/public/asks", "/public/available-offers", "/public/e/:slug", "/public/feed", "/public/offers", "/public/offers/:offer_slug/accept", "/public/surfaces", "/public/visitor-sessions", "/ready", "/reports/issues", "/reports/issues/:report_id", "/reports/issues/:report_id/exports", "/reports/issues/:report_id/status", "/reports/issues/prepare", "/restore/validate", "/support-packets", "/support-packets/:packet_id/approve", "/support-packets/:packet_id/receipts", "/trials", "/trials/:trial_id/status", "/visitor-sessions", "/ws"}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test server::handlers::tests::daemon_route_contracts_cover_every_registered_route_path ... FAILED
+
+failures:
+
+failures:
+    server::handlers::tests::daemon_route_contracts_cover_every_registered_route_path
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 312 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p ordo-daemon --lib`

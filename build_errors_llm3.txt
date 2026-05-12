@@ -1,0 +1,779 @@
+    Checking ordo-daemon v0.1.0 (/Users/kwilliams/Projects/studioOrdo/crates/ordo-daemon)
+error[E0425]: cannot find function `privacy_stable_hash` in module `crate::privacy_egress`
+   --> crates/ordo-daemon/src/llm_gateway/core.rs:775:58
+    |
+775 |         "transformedPayloadHash": crate::privacy_egress::privacy_stable_hash(&transform.transformed_payload),
+    |                                                          ^^^^^^^^^^^^^^^^^^^ not found in `crate::privacy_egress`
+
+warning: `require_text` is ambiguous
+  --> crates/ordo-daemon/src/eval_harness/types.rs:95:9
+   |
+95 |         require_text("eval step id", &id)?;
+   |         ^^^^^^^^^^^^ ambiguous name
+   |
+   = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+   = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+   = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+   |
+ 2 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:13:9
+   |
+13 | pub use core::*;
+   |         ^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+   = note: `#[warn(ambiguous_glob_imports)]` (part of `#[warn(future_incompatible)]`) on by default
+
+warning: `require_text` is ambiguous
+  --> crates/ordo-daemon/src/eval_harness/types.rs:96:9
+   |
+96 |         require_text("eval step action", &action)?;
+   |         ^^^^^^^^^^^^ ambiguous name
+   |
+   = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+   = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+   = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+   |
+ 2 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+  --> crates/ordo-daemon/src/eval_harness/mod.rs:13:9
+   |
+13 | pub use core::*;
+   |         ^^^^^^^
+   = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/eval_harness/types.rs:129:9
+    |
+129 |         require_text("eval case id", &id)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+    |
+  2 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:13:9
+    |
+ 13 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/eval_harness/types.rs:130:9
+    |
+130 |         require_text("eval case title", &title)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+    |
+  2 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:13:9
+    |
+ 13 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/eval_harness/types.rs:165:9
+    |
+165 |         require_text("eval assertion id", &id)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:2:5
+    |
+  2 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/eval_harness/mod.rs:13:9
+    |
+ 13 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/review_return.rs:154:5
+    |
+154 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/affiliate_referral.rs:136:5
+    |
+136 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: `write_json` is ambiguous
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:134:5
+    |
+134 |     write_json(&journey_manifest_path, &manifest)?;
+    |     ^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `write_json` could refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:5
+    |
+ 13 | use crate::eval_harness::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+note: `write_json` could also refer to the function imported here
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:27:9
+    |
+ 27 | pub use qr_to_trial::*;
+    |         ^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `write_json` to disambiguate
+
+warning: unused imports: `Context`, `Result`, `anyhow`, and `ensure`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:1:14
+  |
+1 | use anyhow::{anyhow, ensure, Context, Result};
+  |              ^^^^^^  ^^^^^^  ^^^^^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `anyhow::bail`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:2:5
+  |
+2 | use anyhow::bail;
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `Connection`, `OptionalExtension`, `Row`, `Transaction`, and `params`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:3:16
+  |
+3 | use rusqlite::{params, Connection, OptionalExtension, Transaction, Row};
+  |                ^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^
+
+warning: unused import: `uuid::Uuid`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:5:13
+  |
+5 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `Value` and `json`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:6:18
+  |
+6 | use serde_json::{json, Value};
+  |                  ^^^^  ^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:7:5
+  |
+7 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PathBuf` and `Path`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:8:17
+  |
+8 | use std::path::{Path, PathBuf};
+  |                 ^^^^  ^^^^^^^
+
+warning: unused imports: `Duration` and `Instant`
+ --> crates/ordo-daemon/src/llm_gateway/mod.rs:9:17
+  |
+9 | use std::time::{Instant, Duration};
+  |                 ^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::fs`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:10:5
+   |
+10 | use std::fs;
+   |     ^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:11:14
+   |
+11 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused import: `std::fmt`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:12:5
+   |
+12 | use std::fmt;
+   |     ^^^^^^^^
+
+warning: unused imports: `Digest` and `Sha256`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:13:12
+   |
+13 | use sha2::{Digest, Sha256};
+   |            ^^^^^^  ^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:14:5
+   |
+14 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/mod.rs:15:5
+   |
+15 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:130:9
+    |
+130 |         require_text("prompt slot id", &id)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:131:9
+    |
+131 |         require_text("prompt slot label", &label)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:132:9
+    |
+132 |         require_text("prompt slot content", &content)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:133:9
+    |
+133 |         require_text("prompt slot inclusion reason", &inclusion_reason)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:134:9
+    |
+134 |         require_text("prompt slot visibility ceiling", &visibility_ceiling)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:455:9
+    |
+455 |         require_text("provider_id", &self.provider_id)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:456:9
+    |
+456 |         require_text("model_id", &self.model_id)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:457:9
+    |
+457 |         require_text("base_url", &self.base_url)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: `require_text` is ambiguous
+   --> crates/ordo-daemon/src/llm_gateway/types.rs:458:9
+    |
+458 |         require_text("api_key", &self.api_key)?;
+    |         ^^^^^^^^^^^^ ambiguous name
+    |
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #114095 <https://github.com/rust-lang/rust/issues/114095>
+    = note: ambiguous because of multiple glob imports of a name in the same module
+note: `require_text` could refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:22:5
+    |
+ 22 | use crate::conversations::*;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+note: `require_text` could also refer to the function imported here
+   --> crates/ordo-daemon/src/llm_gateway/mod.rs:28:9
+    |
+ 28 | pub use core::*;
+    |         ^^^^^^^
+    = help: consider adding an explicit import of `require_text` to disambiguate
+
+warning: unused imports: `Context` and `anyhow`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:2:14
+  |
+2 | use anyhow::{anyhow, ensure, Context, Result};
+  |              ^^^^^^          ^^^^^^^
+
+warning: unused import: `anyhow::bail`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:3:5
+  |
+3 | use anyhow::bail;
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `Connection`, `OptionalExtension`, `Row`, `Transaction`, and `params`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:4:16
+  |
+4 | use rusqlite::{params, Connection, OptionalExtension, Transaction, Row};
+  |                ^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^
+
+warning: unused import: `uuid::Uuid`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:5:5
+  |
+5 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:8:5
+  |
+8 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> crates/ordo-daemon/src/llm_gateway/types.rs:9:23
+  |
+9 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused import: `Instant`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:10:17
+   |
+10 | use std::time::{Instant, Duration};
+   |                 ^^^^^^^
+
+warning: unused imports: `DateTime` and `Utc`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:12:14
+   |
+12 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^  ^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:14:20
+   |
+14 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:15:5
+   |
+15 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:16:5
+   |
+16 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::events::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:17:5
+   |
+17 | use crate::events::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversation_protocol::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:18:5
+   |
+18 | use crate::conversation_protocol::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::capabilities::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:19:5
+   |
+19 | use crate::capabilities::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::privacy_egress::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:20:5
+   |
+20 | use crate::privacy_egress::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::policy::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:21:5
+   |
+21 | use crate::policy::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_accounting::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:22:5
+   |
+22 | use crate::llm_accounting::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversations::*`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:23:5
+   |
+23 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Context` and `anyhow`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:2:14
+  |
+2 | use anyhow::{anyhow, ensure, Context, Result};
+  |              ^^^^^^          ^^^^^^^
+
+warning: unused import: `anyhow::bail`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:3:5
+  |
+3 | use anyhow::bail;
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `Row` and `Transaction`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:4:55
+  |
+4 | use rusqlite::{params, Connection, OptionalExtension, Transaction, Row};
+  |                                                       ^^^^^^^^^^^  ^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:6:13
+  |
+6 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:8:5
+  |
+8 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> crates/ordo-daemon/src/llm_gateway/core.rs:9:23
+  |
+9 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused imports: `Duration` and `Instant`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:10:17
+   |
+10 | use std::time::{Instant, Duration};
+   |                 ^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::fs`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:11:5
+   |
+11 | use std::fs;
+   |     ^^^^^^^
+
+warning: unused import: `DateTime`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:12:14
+   |
+12 | use chrono::{DateTime, Utc};
+   |              ^^^^^^^^
+
+warning: unused import: `std::fmt`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:13:5
+   |
+13 | use std::fmt;
+   |     ^^^^^^^^
+
+warning: unused import: `crate::schema::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:15:5
+   |
+15 | use crate::schema::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::vault::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:16:5
+   |
+16 | use crate::vault::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::events::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:17:5
+   |
+17 | use crate::events::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversation_protocol::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:18:5
+   |
+18 | use crate::conversation_protocol::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::capabilities::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:19:5
+   |
+19 | use crate::capabilities::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::privacy_egress::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:20:5
+   |
+20 | use crate::privacy_egress::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::policy::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:21:5
+   |
+21 | use crate::policy::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_accounting::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:22:5
+   |
+22 | use crate::llm_accounting::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversations::*`
+  --> crates/ordo-daemon/src/llm_gateway/core.rs:23:5
+   |
+23 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/conversations/core.rs:8:5
+  |
+8 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/eval_harness/types.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/eval_harness/cases.rs:5:5
+  |
+5 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/qr_to_trial.rs:8:5
+  |
+8 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/affiliate_referral.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:7:5
+  |
+7 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/planning.rs:9:5
+  |
+9 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `sha2::Digest`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:6:5
+  |
+6 | use sha2::Digest;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/llm_gateway/types.rs:14:12
+   |
+14 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+For more information about this error, try `rustc --explain E0425`.
+warning: `ordo-daemon` (lib) generated 80 warnings
+error: could not compile `ordo-daemon` (lib) due to 1 previous error; 97 warnings emitted

@@ -4,6 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     image: studio-ordo/ordo:0.1.0
+    env_file:
+      - path: .env.local
+        required: false
     ports:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:17760:17760"

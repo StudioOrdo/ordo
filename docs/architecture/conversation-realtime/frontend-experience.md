@@ -1,11 +1,11 @@
 # Conversation Frontend Experience
 
-Status: Product and interaction contract with the first premium UI core and
-recovery/accessibility hardening implemented for the local conversation gateway
-slice. The next accepted frontend/product arc is 0.1.6 Product Onboarding
-Surfaces, which turns the completed journey eval evidence into usable QR,
-offer/trial, client conversation, review-return, referral, and staff review
-surfaces.
+Status: Product and interaction contract with the first premium UI core,
+recovery/accessibility hardening, live journey evals, and OrdoOS frontend
+foundation implemented. The active follow-on arc is 0.1.8 Interactive Account
+And LLM Chat, which connects local account entry, chat bootstrap, browser
+`/chat/ws`, deterministic LLM chat, guarded live-provider testing, UI run
+states, and smoke evidence before broader onboarding surfaces resume.
 
 The conversation UI should feel fast, polished, and emotionally legible while
 remaining operational. It should be the primary working surface, not a landing
@@ -71,28 +71,30 @@ as primary navigation.
 
 ## Primary Surfaces
 
-### Product Onboarding Surfaces
+### Interactive Account And LLM Chat
 
-0.1.6 should make the public/client onboarding loop usable before broadening the
-dashboard surface area. The route sequence is:
+0.1.8 should make the relationship conversation usable as a real local
+interactive loop before broadening the public/client dashboard surface area. The
+active route sequence is:
 
 ```text
-QR/event landing -> public Home/About or Offer context -> trial acceptance ->
-relationship conversation -> review-return link -> feedback/review consent ->
-affiliate/referral attribution -> staff/admin review cockpit
+login/register -> local session -> chat bootstrap -> browser /chat/ws ->
+durable user message -> daemon LLM request -> assistant message -> replay-safe
+UI
 ```
 
 The canonical implementation plan lives in
-`product-onboarding-surfaces.md`. Each surface should consume real backend
+`interactive-account-llm-chat.md`. Each slice should consume real backend
 contracts where available and remain client-safe:
 
-- QR/event landing resolves a tracked entry point and creates a visitor session.
-- Offers render evidence-backed public copy and accept the OrdoStudio 30-day
-  trial without fake urgency, scarcity, metrics, reviews, or social proof.
-- Chat starts or resumes one relationship conversation for the visitor/client.
-- Review-return links are simulated/governed unless a later email issue adds
-  real delivery.
-- Affiliate/referral landing preserves scoped attribution without exposing
+- Login and Register create or restore only a local appliance session.
+- Chat bootstrap resolves canonical conversation and participant identity before
+  the browser sends websocket commands.
+- The member chat surface uses `/chat/ws` for identify, subscribe, submit,
+  replay, and recoverable error states.
+- LLM chat defaults to deterministic provider behavior and runs live provider
+  calls only behind explicit guards.
+- Member surfaces preserve scoped evidence without exposing
   unrelated customer data.
 - Staff/admin review surfaces inspect handoffs, review moderation, affiliate
   state, and journey reports without making ordinary staff operate the

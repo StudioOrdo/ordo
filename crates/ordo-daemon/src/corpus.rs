@@ -1,3 +1,4 @@
+use crate::schema::db::ConnectionExt;
 use anyhow::{bail, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -610,30 +611,20 @@ fn retrieve_candidates(
     limit: usize,
 ) -> Result<Vec<(String, f64, String)>> {
     let fts_query = sanitize_fts_query(query)?;
-    let mut statement = connection.prepare(
-        "SELECT item_id, bm25(corpus_items_fts) AS rank,
+    connection.query_many("SELECT item_id, bm25(corpus_items_fts) AS rank,
                 snippet(corpus_items_fts, 2, '[', ']', ' ... ', 16) AS snippet
          FROM corpus_items_fts
          WHERE corpus_items_fts MATCH ?1
          ORDER BY rank
-         LIMIT ?2",
-    )?;
-    let rows = statement.query_map(params![fts_query, limit as i64], |row| {
+         LIMIT ?2", params![fts_query, limit as i64], |row| {
         Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+    })
 }
 
 fn load_corpus_sources(connection: &Connection) -> Result<Vec<CorpusSourceRecord>> {
-    let mut statement = connection.prepare(
-        "SELECT id, source_kind, label, uri, resource_kind, resource_id, status,
+    connection.query_many("SELECT id, source_kind, label, uri, resource_kind, resource_id, status,
                 classification_json, provenance_json, metadata_json, created_at, updated_at
-         FROM corpus_sources ORDER BY updated_at DESC, id DESC",
-    )?;
-    let rows = statement.query_map([], corpus_source_from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+         FROM corpus_sources ORDER BY updated_at DESC, id DESC", [], corpus_source_from_row)
 }
 
 fn require_corpus_source(connection: &Connection, source_id: &str) -> Result<CorpusSourceRecord> {
@@ -670,10 +661,7 @@ fn load_corpus_items(
             Vec::new(),
         )
     };
-    let mut statement = connection.prepare(sql)?;
-    let rows = statement.query_map(rusqlite::params_from_iter(params), corpus_item_from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+    connection.query_many(sql, rusqlite::params_from_iter(params), corpus_item_from_row)
 }
 
 fn require_corpus_item(connection: &Connection, item_id: &str) -> Result<CorpusItemRecord> {

@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::events::{append_realtime_event, system_event, RealtimeEvent};
+use crate::schema::db::ConnectionExt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -344,32 +345,22 @@ pub fn list_deliverables_for_artifact(
     connection: &Connection,
     artifact_id: &str,
 ) -> Result<Vec<DeliverableView>> {
-    let mut statement = connection.prepare(
-        "SELECT id, artifact_id, client_label, status, visibility, summary, created_at,
+    connection.query_many("SELECT id, artifact_id, client_label, status, visibility, summary, created_at,
                 updated_at, published_at
          FROM artifact_deliverables
          WHERE artifact_id = ?1
-         ORDER BY updated_at DESC",
-    )?;
-    let rows = statement.query_map([artifact_id], deliverable_from_row)?;
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(Into::into)
+         ORDER BY updated_at DESC", [artifact_id], deliverable_from_row)
 }
 
 pub fn list_artifact_links(
     connection: &Connection,
     artifact_id: &str,
 ) -> Result<Vec<ArtifactLinkView>> {
-    let mut statement = connection.prepare(
-        "SELECT id, artifact_id, link_kind, source_kind, source_id, relation,
+    connection.query_many("SELECT id, artifact_id, link_kind, source_kind, source_id, relation,
                 evidence_refs_json, provenance_json, created_at
          FROM artifact_links
          WHERE artifact_id = ?1
-         ORDER BY created_at DESC",
-    )?;
-    let rows = statement.query_map([artifact_id], artifact_link_from_row)?;
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(Into::into)
+         ORDER BY created_at DESC", [artifact_id], artifact_link_from_row)
 }
 
 fn validate_artifact_input(input: &ArtifactInput) -> Result<()> {

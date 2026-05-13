@@ -34,9 +34,16 @@ interface ChatBootstrapResponse {
 interface PreviewMessage {
   id: string;
   speaker: "You" | "Ordo";
-  tone: "member" | "safe_status";
+  tone: "member" | "ordo" | "safe_status";
   body: string;
-  status?: "local" | "acknowledged" | "persisted";
+  status?:
+    | "local"
+    | "acknowledged"
+    | "persisted"
+    | "llm_requested"
+    | "llm_streaming"
+    | "llm_completed"
+    | "llm_failed";
   messageId?: string;
 }
 
@@ -45,6 +52,8 @@ type RunState = "checking" | "degraded" | "connecting" | "connected" | "failed";
 interface GatewayAckPayload {
   conversationId?: string;
   messageId?: string;
+  runId?: string;
+  finalMessageId?: string;
 }
 
 interface MessageCreatedPayload {
@@ -53,10 +62,21 @@ interface MessageCreatedPayload {
   clientMessageId?: string;
 }
 
+interface LlmRunPayload {
+  runId?: string;
+  delta?: string;
+  message?: string;
+  messageId?: string;
+}
+
 const OFFLINE_REASON = "Daemon chat bootstrap route unavailable; using local preview chat.";
 
 export function MemberChatGatewayComposer() {
   const socketRef = useRef<WebSocket | null>(null);
+  const bootstrapRef = useRef<ChatBootstrapReadModel | null>(null);
+  const submittedMessagesRef = useRef(new Map<string, string>());
+  const requestedRunsRef = useRef(new Set<string>());
+  const llmClientRunsRef = useRef(new Map<string, string>());
   const [runState, setRunState] = useState<RunState>("checking");
   const [bootstrap, setBootstrap] = useState<ChatBootstrapReadModel | null>(null);
   const [degradedReason, setDegradedReason] = useState<string | null>(null);
@@ -79,6 +99,7 @@ export function MemberChatGatewayComposer() {
         }
 
         setBootstrap(payload.bootstrap);
+  bootstrapRef.current = payload.bootstrap;
         setRunState("connecting");
         const socket = new WebSocket(payload.bootstrap.transport.url);
         socketRef.current = socket;
@@ -116,8 +137,7 @@ export function MemberChatGatewayComposer() {
             return;
           }
           if (frame?.op === "error") {
-            setRunState("failed");
-            setDegradedReason(safeErrorMessage(frame.payload));
+            handleErrorFrame(frame);
           }
         });
 
@@ -145,6 +165,7 @@ export function MemberChatGatewayComposer() {
       cancelled = true;
       socketRef.current?.close();
       socketRef.current = null;
+      bootstrapRef.current = null;
     };
   }, []);
 
@@ -154,6 +175,7 @@ export function MemberChatGatewayComposer() {
     if (!body) return;
 
     const clientMessageId = `browser_message_${Date.now()}`;
+    submittedMessagesRef.current.set(clientMessageId, body);
     setDraft("");
     setMessages((current) => [
       ...current,
@@ -194,8 +216,25 @@ export function MemberChatGatewayComposer() {
       return;
     }
 
-    if (frame.type !== "message.submit.ack" || !frame.clientId) return;
     const payload = frame.payload as GatewayAckPayload;
+    if (frame.type === "llm.run.request.ack" && frame.clientId) {
+      const runId = payload.runId ?? llmClientRunsRef.current.get(frame.clientId);
+      if (!runId) return;
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === runId
+            ? {
+                ...message,
+                status: "llm_requested",
+                messageId: payload.finalMessageId ?? message.messageId,
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
+    if (frame.type !== "message.submit.ack" || !frame.clientId) return;
     setMessages((current) =>
       current.map((message) =>
         message.id === frame.clientId
@@ -210,9 +249,30 @@ export function MemberChatGatewayComposer() {
   }
 
   function handleDispatchFrame(frame: ConversationGatewayEnvelope) {
+    if (frame.type.startsWith("llm.")) {
+      handleLlmDispatchFrame(frame);
+      return;
+    }
+
     if (frame.type !== "message.created") return;
     const payload = frame.payload as MessageCreatedPayload;
     if (!payload.clientMessageId) return;
+    const assistantRunId = assistantRunIdFromClientMessageId(payload.clientMessageId);
+    if (assistantRunId) {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantRunId
+            ? {
+                ...message,
+                status: "llm_completed",
+                messageId: payload.messageId ?? message.messageId,
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+    maybeRequestDeterministicReply(payload);
 
     setMessages((current) =>
       current.map((message) =>
@@ -225,6 +285,116 @@ export function MemberChatGatewayComposer() {
           : message,
       ),
     );
+  }
+
+  function handleLlmDispatchFrame(frame: ConversationGatewayEnvelope) {
+    const payload = frame.payload as LlmRunPayload;
+    const runId = payload.runId;
+    if (!runId) return;
+
+    if (frame.type === "llm.text.delta") {
+      const delta = typeof payload.delta === "string" ? payload.delta : "";
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === runId
+            ? {
+                ...message,
+                tone: "ordo",
+                status: "llm_streaming",
+                body: message.status === "llm_requested" ? delta : `${message.body}${delta}`,
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
+    if (frame.type === "llm.run.failed") {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === runId
+            ? {
+                ...message,
+                tone: "safe_status",
+                status: "llm_failed",
+                body: "Deterministic local reply failed safely. Try again after reconnecting the daemon.",
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
+    if (frame.type === "llm.text.completed" || frame.type === "llm.run.completed") {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === runId
+            ? {
+                ...message,
+                status: "llm_completed",
+                messageId: payload.messageId ?? message.messageId,
+              }
+            : message,
+        ),
+      );
+    }
+  }
+
+  function handleErrorFrame(frame: ConversationGatewayEnvelope) {
+    const runId = frame.clientId ? llmClientRunsRef.current.get(frame.clientId) : null;
+    if (runId) {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === runId
+            ? {
+                ...message,
+                tone: "safe_status",
+                status: "llm_failed",
+                body: "Deterministic local reply failed safely. Try again after reconnecting the daemon.",
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
+    setRunState("failed");
+    setDegradedReason(safeErrorMessage(frame.payload));
+  }
+
+  function maybeRequestDeterministicReply(payload: MessageCreatedPayload) {
+    const bootstrap = bootstrapRef.current;
+    const socket = socketRef.current;
+    if (!bootstrap || socket?.readyState !== WebSocket.OPEN) return;
+    if (payload.participantId !== bootstrap.participantId || !payload.clientMessageId) return;
+    if (requestedRunsRef.current.has(payload.clientMessageId)) return;
+
+    const userMessage = submittedMessagesRef.current.get(payload.clientMessageId);
+    if (!userMessage) return;
+
+    requestedRunsRef.current.add(payload.clientMessageId);
+    const runId = `llm_run_${payload.clientMessageId}`;
+    const envelope = gatewayEnvelope("command", "llm.run.request", bootstrap.conversationId, {
+      runId,
+      assistantParticipantId: bootstrap.assistantParticipantId,
+      providerId: "local_fake",
+      modelId: "fake-chat",
+      userMessage,
+    });
+    if (envelope.clientId) {
+      llmClientRunsRef.current.set(envelope.clientId, runId);
+    }
+    setMessages((current) => [
+      ...current,
+      {
+        id: runId,
+        speaker: "Ordo",
+        tone: "safe_status",
+        body: "Preparing a deterministic local reply.",
+        status: "llm_requested",
+      },
+    ]);
+    socket.send(JSON.stringify(envelope));
   }
 
   return (
@@ -305,6 +475,11 @@ function safeErrorMessage(payload: unknown): string {
   return "Conversation gateway rejected the command; using local preview chat.";
 }
 
+function assistantRunIdFromClientMessageId(clientMessageId: string): string | null {
+  const match = /^llm:(.+):assistant$/.exec(clientMessageId);
+  return match?.[1] ?? null;
+}
+
 function messageStatusLabel(status: NonNullable<PreviewMessage["status"]>): string {
   switch (status) {
     case "local":
@@ -313,6 +488,14 @@ function messageStatusLabel(status: NonNullable<PreviewMessage["status"]>): stri
       return "acknowledged by /chat/ws";
     case "persisted":
       return "saved by /chat/ws";
+    case "llm_requested":
+      return "deterministic reply requested";
+    case "llm_streaming":
+      return "drafting deterministic reply";
+    case "llm_completed":
+      return "deterministic reply saved";
+    case "llm_failed":
+      return "deterministic reply failed";
   }
 }
 

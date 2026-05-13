@@ -423,6 +423,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "rewards.list",
     ),
     protected(
+        HttpMethod::Get,
+        "/growth/pilot-report",
+        "/growth/pilot-report",
+        PolicyAction::Inspect,
+        "growth.pilot_report.read",
+    ),
+    protected(
         HttpMethod::Post,
         "/rewards/referrals/:referral_id/qualify",
         "/rewards/referrals/referral_1/qualify",

@@ -72,6 +72,7 @@ use crate::feedback::{
     FeedbackRequestQuery, FeedbackRequestRespondRequest, FeedbackRequestReviewRequest,
     FeedbackRequestView,
 };
+use crate::growth_report::{growth_pilot_report, GrowthPilotReportResponse};
 use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
 use crate::install::{
     complete_local_install, list_provider_configs, read_install_state, update_provider_config,
@@ -1280,6 +1281,25 @@ pub(crate) async fn rewards_handler(
     list_rewards(&state.db_path, query)
         .map(Json)
         .map_err(invalid_request_error)
+}
+
+pub(crate) async fn growth_pilot_report_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<GrowthPilotReportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/growth/pilot-report"),
+        Some("growth.pilot_report.read"),
+    )?;
+    growth_pilot_report(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
 }
 
 pub(crate) async fn reward_referral_qualify_handler(
@@ -3561,6 +3581,62 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn growth_pilot_report_route_uses_protected_access_boundary() {
+        let contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/growth/pilot-report")
+            .expect("growth pilot report route contract");
+        assert_eq!(contract.sample_route, "/growth/pilot-report");
+        assert!(matches!(
+            contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Inspect,
+                capability_id: "growth.pilot_report.read",
+            }
+        ));
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/growth/pilot-report"),
+            Some("growth.pilot_report.read"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/growth/pilot-report"),
+            Some("growth.pilot_report.read"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'growth.pilot_report.read'
+                   AND resource_id = '/growth/pilot-report'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
     }
 
     #[test]

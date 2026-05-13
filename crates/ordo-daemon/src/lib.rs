@@ -24,6 +24,7 @@ pub mod eval_simulators;
 pub mod events;
 pub mod experience_preferences;
 pub mod feedback;
+pub mod growth_report;
 pub mod health;
 pub mod install;
 pub mod json_contracts;

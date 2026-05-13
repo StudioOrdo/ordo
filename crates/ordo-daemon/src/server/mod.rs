@@ -163,6 +163,7 @@ pub async fn serve(
             post(feedback_request_review_handler),
         )
         .route("/rewards", get(rewards_handler))
+        .route("/growth/pilot-report", get(growth_pilot_report_handler))
         .route(
             "/rewards/referrals/:referral_id/qualify",
             post(reward_referral_qualify_handler),

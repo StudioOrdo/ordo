@@ -555,6 +555,42 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["reward_event", "reward_ledger_entry", "benefit_grant", "benefit_balance"],
         ),
         capability(
+            "growth.pilot_report.read",
+            "Read Growth Pilot Report",
+            "Read the owner/admin NYC pilot report snapshot from durable Growth, Access, Support, Studio, and reward evidence.",
+            "growth",
+            json!({ "type": "object", "additionalProperties": false }),
+            json!({
+                "type": "object",
+                "properties": {
+                    "schemaVersion": { "type": "string" },
+                    "generatedAt": { "type": "string" },
+                    "sections": { "type": "array" },
+                    "limitations": { "type": "array" }
+                },
+                "required": ["schemaVersion", "generatedAt", "sections", "limitations"],
+                "additionalProperties": false
+            }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[
+                "tracked_entry_point",
+                "visitor_session",
+                "offer",
+                "offer_acceptance",
+                "trial",
+                "handoff_inbox_item",
+                "feedback_request",
+                "reward_event",
+                "reward_ledger_entry",
+                "benefit_grant",
+                "benefit_balance",
+                "artifact",
+            ],
+        ),
+        capability(
             "rewards.qualify",
             "Qualify Reward",
             "Approve evidence-backed referral or feedback rewards and grant hosted-time benefits through Access.",

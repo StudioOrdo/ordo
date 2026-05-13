@@ -1165,6 +1165,7 @@ fn feedback_request_view(
         load_feedback_request_responses(connection, &record.id)?
             .into_iter()
             .filter(|response| response_matches_member_query(response, query))
+            .map(member_safe_feedback_response)
             .collect()
     } else if growth_view {
         Vec::new()
@@ -1176,8 +1177,11 @@ fn feedback_request_view(
     } else {
         load_feedback_request_reviews(connection, &record.id)?
     };
-    let reward_eligibility =
+    let mut reward_eligibility =
         load_feedback_reward_eligibility(connection, &record.id, safe_member_view || growth_view)?;
+    if safe_member_view {
+        reward_eligibility = reward_eligibility.map(member_safe_reward_eligibility);
+    }
     let evidence_refs = if safe_member_view {
         vec![format!("feedback_request:{}", record.id)]
     } else {
@@ -1197,12 +1201,36 @@ fn feedback_request_view(
     Ok(FeedbackRequestView {
         id: record.id,
         target_kind: record.target_kind,
-        target_id: record.target_id,
-        member_actor_id: record.member_actor_id,
-        connection_id: record.connection_id,
-        conversation_id: record.conversation_id,
-        source_kind: record.source_kind,
-        source_id: record.source_id,
+        target_id: if safe_member_view {
+            String::new()
+        } else {
+            record.target_id
+        },
+        member_actor_id: if safe_member_view {
+            None
+        } else {
+            record.member_actor_id
+        },
+        connection_id: if safe_member_view {
+            None
+        } else {
+            record.connection_id
+        },
+        conversation_id: if safe_member_view {
+            None
+        } else {
+            record.conversation_id
+        },
+        source_kind: if safe_member_view {
+            "feedback_request".to_string()
+        } else {
+            record.source_kind
+        },
+        source_id: if safe_member_view {
+            None
+        } else {
+            record.source_id
+        },
         prompt,
         member_context_summary,
         status: record.status,
@@ -1215,6 +1243,26 @@ fn feedback_request_view(
         created_at: record.created_at,
         updated_at: record.updated_at,
     })
+}
+
+fn member_safe_feedback_response(
+    mut response: FeedbackRequestResponseView,
+) -> FeedbackRequestResponseView {
+    response.actor_id = None;
+    response.customer_feedback_id = None;
+    response.evidence_refs.clear();
+    response
+}
+
+fn member_safe_reward_eligibility(
+    mut eligibility: FeedbackRewardEligibilityView,
+) -> FeedbackRewardEligibilityView {
+    eligibility.response_id = None;
+    eligibility.review_id = None;
+    eligibility.actor_id = None;
+    eligibility.reason = None;
+    eligibility.evidence_refs.clear();
+    eligibility
 }
 
 fn load_feedback_request_responses(
@@ -1960,17 +2008,52 @@ mod tests {
         )
         .unwrap();
         assert_eq!(member_scoped.requests.len(), 1);
-        assert!(member_scoped.requests[0].reviews.is_empty());
-        assert!(member_scoped.requests[0]
+        let member_request = &member_scoped.requests[0];
+        assert_eq!(member_request.target_kind, "trial");
+        assert!(member_request.target_id.is_empty());
+        assert!(member_request.member_actor_id.is_none());
+        assert!(member_request.connection_id.is_none());
+        assert!(member_request.conversation_id.is_none());
+        assert_eq!(member_request.source_kind, "feedback_request");
+        assert!(member_request.source_id.is_none());
+        assert!(member_request.reviews.is_empty());
+        assert_eq!(member_request.responses.len(), 1);
+        assert!(member_request.responses[0].actor_id.is_none());
+        assert!(member_request.responses[0].customer_feedback_id.is_none());
+        assert!(member_request.responses[0].evidence_refs.is_empty());
+        assert!(member_request
+            .reward_eligibility
+            .as_ref()
+            .unwrap()
+            .actor_id
+            .is_none());
+        assert!(member_request
+            .reward_eligibility
+            .as_ref()
+            .unwrap()
+            .response_id
+            .is_none());
+        assert!(member_request
+            .reward_eligibility
+            .as_ref()
+            .unwrap()
+            .review_id
+            .is_none());
+        assert!(member_request
             .reward_eligibility
             .as_ref()
             .unwrap()
             .reason
             .is_none());
-        let serialized = serde_json::to_string(&member_scoped.requests[0]).unwrap();
+        let serialized = serde_json::to_string(member_request).unwrap();
         assert!(!serialized.contains("internal only"));
         assert!(!serialized.contains("Support accepted"));
         assert!(!serialized.contains("support_review"));
+        assert!(!serialized.contains("handoff_1"));
+        assert!(!serialized.contains("trial_1"));
+        assert!(!serialized.contains("connection_1"));
+        assert!(!serialized.contains("actor_member_1"));
+        assert!(!serialized.contains("customer_feedback_"));
     }
 
     #[test]

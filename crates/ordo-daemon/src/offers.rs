@@ -10,6 +10,7 @@ use crate::attribution::{record_offer_acceptance_outcome_tx, OfferAcceptanceOutc
 use crate::business::{BusinessFactVisibility, PublicationState};
 use crate::events::{append_realtime_event, append_realtime_event_tx, system_event, RealtimeEvent};
 use crate::public_surfaces::{public_surfaces, PublicSurfaceItem};
+use crate::rewards::reward_program_is_active;
 
 const DEFAULT_TRIAL_DAYS: i64 = 30;
 const OFFER_RECEIPT_SCHEMA_VERSION: &str = "ordo.offer_acceptance.receipt.v1";
@@ -1750,23 +1751,29 @@ fn validate_offer_builder_fields(
         warnings.push("Support handoff CTA is not attached to this offer.".to_string());
     }
 
-    if references.reward_program_id.as_deref().is_some()
-        || has_active_reward_reference(terms)
-        || has_active_reward_reference(metadata)
-    {
+    if let Some(reward_program_id) = references.reward_program_id.as_deref() {
+        if reward_program_is_active(connection, reward_program_id)? {
+            supported_references.push(reference(
+                "reward_ledger",
+                "Feedback/referral rewards",
+                "available",
+                "Reward program, ledger, hosted-time benefit grants, balances, and qualification review are available for evidence-backed referral and feedback rewards.",
+                vec![format!("reward_program:{reward_program_id}")],
+                None,
+            ));
+        } else {
+            blockers.push(format!(
+                "Reward program is not active or does not exist: {reward_program_id}"
+            ));
+        }
+    } else if has_active_reward_reference(terms) || has_active_reward_reference(metadata) {
         blockers.push(
-            "Reward ledger/benefit grants are not available until #248; keep reward references deferred."
+            "Active reward references must name an active reward program; unsupported reward ids cannot be published."
                 .to_string(),
         );
+    } else {
+        warnings.push("No reward program is attached to this offer.".to_string());
     }
-    deferred_references.push(reference(
-        "reward_ledger",
-        "Feedback/referral rewards",
-        "not_available_yet",
-        "Reward ledger, hosted-time benefit grants, balances, and qualification review are deferred.",
-        vec![],
-        Some("#248".to_string()),
-    ));
 
     if references
         .pack_ids
@@ -1899,8 +1906,8 @@ fn normalize_offer_builder_request(
                 "waitlist": true
             },
             "rewards": {
-                "status": "not_available_yet",
-                "blockedBy": "#248"
+                "status": if references.reward_program_id.is_some() { "available" } else { "not_configured" },
+                "rewardProgramId": references.reward_program_id.as_deref()
             },
             "packs": {
                 "status": "not_available_yet",
@@ -1934,8 +1941,7 @@ fn normalize_offer_terms(terms: Option<Value>, trial_days: i64) -> Value {
     }
     if terms.get("rewards").is_none() {
         terms["rewards"] = json!({
-            "status": "not_available_yet",
-            "blockedBy": "#248"
+            "status": "not_configured"
         });
     }
     if terms.get("packs").is_none() {
@@ -1985,6 +1991,12 @@ fn offer_builder_references_from_metadata(
         reward_program_id: builder
             .get("rewardProgramId")
             .and_then(Value::as_str)
+            .or_else(|| {
+                builder
+                    .get("rewards")
+                    .and_then(|rewards| rewards.get("rewardProgramId"))
+                    .and_then(Value::as_str)
+            })
             .map(str::to_string),
         pack_ids: builder.get("packIds").and_then(|value| {
             value.as_array().map(|items| {
@@ -2369,7 +2381,7 @@ fn ensure_hosted_trial_capacity_policy_tx(
             json!({
                 "source": "public_offer_acceptance",
                 "experimentalHosting": true,
-                "rewardExtensionsDeferredTo": "#248"
+                "rewardExtensionsSource": "reward_ledger_benefit_grants"
             })
             .to_string(),
             now,
@@ -2718,8 +2730,7 @@ fn public_offer_terms(terms: Value, trial_days: i64) -> Value {
             .and_then(Value::as_bool)
             .unwrap_or(true),
         "rewards": {
-            "status": "not_available_yet",
-            "blockedBy": "#248"
+            "status": "not_configured"
         },
         "packs": {
             "status": "not_available_yet",
@@ -3458,7 +3469,7 @@ mod tests {
                 references: Some(OfferBuilderReferencesRequest {
                     tracked_entry_point_slug: Some("nyc-meetup".to_string()),
                     support_handoff_cta: Some(true),
-                    reward_program_id: None,
+                    reward_program_id: Some("reward_program_ordostudio_nyc_pilot".to_string()),
                     pack_ids: None,
                     external_publishing: None,
                     payment: None,
@@ -3486,10 +3497,9 @@ mod tests {
             .any(|reference| reference.key == "tracked_entry_point"));
         assert!(saved
             .validation
-            .deferred_references
+            .supported_references
             .iter()
-            .any(|reference| reference.key == "reward_ledger"
-                && reference.blocked_by.as_deref() == Some("#248")));
+            .any(|reference| reference.key == "reward_ledger" && reference.status == "available"));
 
         let public_offers = list_public_available_offers(&db_path).unwrap();
         let public_offer = public_offers
@@ -3548,7 +3558,7 @@ mod tests {
         .unwrap_err()
         .to_string();
 
-        assert!(blocked.contains("Reward ledger/benefit grants are not available until #248"));
+        assert!(blocked.contains("Reward program is not active or does not exist"));
         assert!(blocked.contains("Product/workforce pack offer bindings are not available yet"));
         assert!(blocked.contains("Public offers cannot include internal or secret-bearing keys"));
         let offers = list_offers(&db_path).unwrap();

@@ -1606,7 +1606,10 @@ mod tests {
         PublicDestinationSurface, VisitorSessionCreateRequest,
     };
     use crate::local_sessions::{create_or_restore_local_session, LocalSessionCreateRequest};
-    use crate::policy::LOCAL_OWNER_ACTOR_ID;
+    use crate::policy::{
+        authorize_resource_access, ActorContext, ActorKind, PolicyAction, PolicyOutcome,
+        ResourceKind, ResourceRef, LOCAL_OWNER_ACTOR_ID,
+    };
     use crate::schema::init_database;
     use crate::surface_work_items::{
         list_surface_work_items, SurfaceWorkItemQuery, SurfaceWorkItemViewer,
@@ -1687,6 +1690,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(grant_count, 1);
+        let access_decision = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some(local_session.session.actor_id.clone()),
+            ),
+            PolicyAction::Use,
+            ResourceRef::new(ResourceKind::HostedTrial, trial.id.clone()),
+            None,
+        );
+        assert_eq!(access_decision.outcome, PolicyOutcome::Allowed);
+        let other_actor_decision = authorize_resource_access(
+            &connection,
+            ActorContext::new(
+                ActorKind::BrowserOperator,
+                "test",
+                Some("actor_other_member".to_string()),
+            ),
+            PolicyAction::Use,
+            ResourceRef::new(ResourceKind::HostedTrial, trial.id.clone()),
+            None,
+        );
+        assert_eq!(other_actor_decision.outcome, PolicyOutcome::Denied);
         let trial_events: i64 = connection
             .query_row("SELECT COUNT(*) FROM trial_events", [], |row| row.get(0))
             .unwrap();

@@ -196,6 +196,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_artifact_patch_proposal_spine",
         apply: add_artifact_patch_proposal_spine,
     },
+    SchemaMigration {
+        version: 38,
+        name: "add_cron_schedule_expression",
+        apply: add_cron_schedule_expression,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -340,6 +345,7 @@ fn create_initial_appliance_schema(connection: &Connection) -> Result<()> {
             template_version INTEGER NOT NULL,
             name TEXT NOT NULL,
             schedule_kind TEXT NOT NULL,
+            cron_expression TEXT,
             interval_seconds INTEGER,
             run_at TEXT,
             timezone TEXT NOT NULL DEFAULT 'UTC',
@@ -2458,6 +2464,10 @@ fn add_artifact_patch_proposal_spine(connection: &Connection) -> Result<()> {
     )?;
 
     Ok(())
+}
+
+fn add_cron_schedule_expression(connection: &Connection) -> Result<()> {
+    ensure_column(connection, "schedules", "cron_expression", "TEXT")
 }
 
 fn add_surface_brief_schema(connection: &Connection) -> Result<()> {

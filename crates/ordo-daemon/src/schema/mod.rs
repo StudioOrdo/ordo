@@ -123,7 +123,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 37;
+pub const CURRENT_SCHEMA_VERSION: i64 = 38;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -222,10 +222,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 37);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 38);
     }
 
     #[test]
@@ -1177,6 +1177,7 @@ mod tests {
             "metadata_json"
         ));
         assert!(table_exists(&connection, "artifact_patch_proposals"));
+        assert!(column_exists(&connection, "schedules", "cron_expression"));
         assert!(column_exists(
             &connection,
             "artifact_patch_proposals",

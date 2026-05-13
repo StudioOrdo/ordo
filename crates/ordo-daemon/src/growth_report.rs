@@ -101,25 +101,26 @@ pub fn growth_pilot_report(db_path: &Path) -> Result<GrowthPilotReportResponse> 
 }
 
 fn tracked_entry_section(connection: &Connection) -> Result<GrowthPilotReportSection> {
-    let mut recent_items = load_recent_items(
-        connection,
-        "SELECT id, status, created_at
-         FROM visitor_sessions
-         ORDER BY created_at DESC, id DESC
-         LIMIT 5",
-        "visitor_session",
-        "Visitor session",
-    )?;
-    recent_items.extend(load_recent_items(
-        connection,
-        "SELECT id, status, updated_at
-         FROM tracked_entry_points
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 5",
-        "tracked_entry_point",
-        "Tracked entry point",
-    )?);
-    recent_items.truncate(RECENT_ITEM_LIMIT);
+    let recent_items = merge_recent_items(vec![
+        load_recent_items(
+            connection,
+            "SELECT id, status, created_at
+             FROM visitor_sessions
+             ORDER BY created_at DESC, id DESC
+             LIMIT 5",
+            "visitor_session",
+            "Visitor session",
+        )?,
+        load_recent_items(
+            connection,
+            "SELECT id, status, updated_at
+             FROM tracked_entry_points
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 5",
+            "tracked_entry_point",
+            "Tracked entry point",
+        )?,
+    ]);
 
     Ok(section(
         "tracked_entry",
@@ -173,25 +174,26 @@ fn tracked_entry_section(connection: &Connection) -> Result<GrowthPilotReportSec
 }
 
 fn offer_section(connection: &Connection) -> Result<GrowthPilotReportSection> {
-    let mut recent_items = load_recent_items(
-        connection,
-        "SELECT id, status, updated_at
-         FROM offers
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 5",
-        "offer",
-        "Offer",
-    )?;
-    recent_items.extend(load_recent_items(
-        connection,
-        "SELECT id, status, accepted_at
-         FROM offer_acceptances
-         ORDER BY accepted_at DESC, id DESC
-         LIMIT 5",
-        "offer_acceptance",
-        "Offer acceptance",
-    )?);
-    recent_items.truncate(RECENT_ITEM_LIMIT);
+    let recent_items = merge_recent_items(vec![
+        load_recent_items(
+            connection,
+            "SELECT id, status, updated_at
+             FROM offers
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 5",
+            "offer",
+            "Offer",
+        )?,
+        load_recent_items(
+            connection,
+            "SELECT id, status, accepted_at
+             FROM offer_acceptances
+             ORDER BY accepted_at DESC, id DESC
+             LIMIT 5",
+            "offer_acceptance",
+            "Offer acceptance",
+        )?,
+    ]);
 
     Ok(section(
         "offers",
@@ -280,25 +282,26 @@ fn offer_section(connection: &Connection) -> Result<GrowthPilotReportSection> {
 }
 
 fn hosted_trial_section(connection: &Connection) -> Result<GrowthPilotReportSection> {
-    let mut recent_items = load_recent_items(
-        connection,
-        "SELECT id, status, updated_at
-         FROM trials
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 5",
-        "trial",
-        "Hosted trial",
-    )?;
-    recent_items.extend(load_recent_items(
-        connection,
-        "SELECT id, status, updated_at
-         FROM hosted_trial_waitlist_entries
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 5",
-        "hosted_trial_waitlist_entry",
-        "Hosted trial waitlist entry",
-    )?);
-    recent_items.truncate(RECENT_ITEM_LIMIT);
+    let recent_items = merge_recent_items(vec![
+        load_recent_items(
+            connection,
+            "SELECT id, status, updated_at
+             FROM trials
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 5",
+            "trial",
+            "Hosted trial",
+        )?,
+        load_recent_items(
+            connection,
+            "SELECT id, status, updated_at
+             FROM hosted_trial_waitlist_entries
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 5",
+            "hosted_trial_waitlist_entry",
+            "Hosted trial waitlist entry",
+        )?,
+    ]);
 
     Ok(section(
         "hosted_trials",
@@ -861,6 +864,19 @@ fn load_recent_items(
     Ok(items)
 }
 
+fn merge_recent_items(groups: Vec<Vec<GrowthPilotReportItem>>) -> Vec<GrowthPilotReportItem> {
+    let mut items = groups.into_iter().flatten().collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        right
+            .occurred_at
+            .cmp(&left.occurred_at)
+            .then_with(|| right.source_kind.cmp(&left.source_kind))
+            .then_with(|| right.source_id.cmp(&left.source_id))
+    });
+    items.truncate(RECENT_ITEM_LIMIT);
+    items
+}
+
 fn item_from_row(
     row: &Row<'_>,
     source_kind: &str,
@@ -1019,6 +1035,28 @@ mod tests {
             metric_value(&first, "studio_promos", "promo_video_packages"),
             metric_value(&second, "studio_promos", "promo_video_packages")
         );
+    }
+
+    #[test]
+    fn recent_items_are_ordered_across_source_types_before_truncation() {
+        let (_temp_dir, db_path) = setup_db();
+        seed_pilot_evidence(&db_path);
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        connection
+            .execute("UPDATE offers SET updated_at = '2026-01-01T00:00:00Z'", [])
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE offer_acceptances SET accepted_at = '2026-01-02T00:00:00Z'",
+                [],
+            )
+            .unwrap();
+
+        let report = growth_pilot_report(&db_path).unwrap();
+        let recent_offer_items = &section(&report, "offers").recent_items;
+
+        assert_eq!(recent_offer_items[0].source_kind, "offer_acceptance");
+        assert_eq!(recent_offer_items[1].source_kind, "offer");
     }
 
     fn setup_db() -> (tempfile::TempDir, std::path::PathBuf) {

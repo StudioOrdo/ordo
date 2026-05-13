@@ -374,6 +374,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "handoff.receipts.list",
     ),
     protected(
+        HttpMethod::Post,
+        "/strategy-sessions/request",
+        "/strategy-sessions/request",
+        PolicyAction::Create,
+        "strategy_sessions.request",
+    ),
+    protected(
+        HttpMethod::Get,
+        "/strategy-sessions/:item_id/status",
+        "/strategy-sessions/handoff_item_1/status",
+        PolicyAction::Inspect,
+        "strategy_sessions.status.read",
+    ),
+    protected(
         HttpMethod::Get,
         "/feedback/requests",
         "/feedback/requests",

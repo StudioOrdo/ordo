@@ -18,12 +18,14 @@ use crate::answer_drafts::{
 use crate::availability::{
     create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox_with_query,
     list_handoff_receipts, read_availability_state, read_handoff_inbox_item,
-    resolve_handoff_inbox_item, update_availability_schedule, update_handoff_inbox_item,
-    update_operator_presence, AvailabilityScheduleView, AvailabilityScheduleWriteRequest,
-    AvailabilityStateResponse, HandoffEligibilityRequest, HandoffEligibilityView,
-    HandoffInboxCreateRequest, HandoffInboxItemView, HandoffInboxListQuery,
-    HandoffInboxListResponse, HandoffInboxResolveRequest, HandoffInboxUpdateRequest,
-    HandoffReceiptListResponse, OperatorPresenceView, OperatorPresenceWriteRequest,
+    read_strategy_session_status, request_strategy_session_handoff, resolve_handoff_inbox_item,
+    update_availability_schedule, update_handoff_inbox_item, update_operator_presence,
+    AvailabilityScheduleView, AvailabilityScheduleWriteRequest, AvailabilityStateResponse,
+    HandoffEligibilityRequest, HandoffEligibilityView, HandoffInboxCreateRequest,
+    HandoffInboxItemView, HandoffInboxListQuery, HandoffInboxListResponse,
+    HandoffInboxResolveRequest, HandoffInboxUpdateRequest, HandoffReceiptListResponse,
+    OperatorPresenceView, OperatorPresenceWriteRequest, StrategySessionHandoffRequest,
+    StrategySessionHandoffResponse, StrategySessionStatusView,
 };
 use crate::backups::{
     create_backup, list_backup_restore_jobs, run_restore_preflight, BackupRestoreResponse,
@@ -1114,6 +1116,51 @@ pub(crate) async fn handoff_receipts_handler(
         Some("handoff.receipts.list"),
     )?;
     list_handoff_receipts(&state.db_path, &item_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+pub(crate) async fn strategy_session_request_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<StrategySessionHandoffRequest>,
+) -> Result<Json<StrategySessionHandoffResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/strategy-sessions/request"),
+        Some("strategy_sessions.request"),
+    )?;
+    let (response, event) =
+        request_strategy_session_handoff(&state.db_path, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
+}
+
+pub(crate) async fn strategy_session_status_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+) -> Result<Json<StrategySessionStatusView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/strategy-sessions/{item_id}/status"),
+        ),
+        Some("strategy_sessions.status.read"),
+    )?;
+    read_strategy_session_status(&state.db_path, &item_id)
         .map(Json)
         .map_err(invalid_request_error)
 }
@@ -3244,6 +3291,10 @@ mod tests {
                 "/handoff/inbox/handoff_item_1/receipts",
                 "handoff.receipts.list",
             ),
+            (
+                "/strategy-sessions/handoff_item_1/status",
+                "strategy_sessions.status.read",
+            ),
         ] {
             let allowed = authorize_protected_daemon_route(
                 &policy,
@@ -3262,6 +3313,7 @@ mod tests {
             "/availability/presence",
             "/handoff/inbox/handoff_item_1",
             "/handoff/inbox/handoff_item_1/resolve",
+            "/strategy-sessions/request",
         ] {
             let allowed = authorize_protected_daemon_route(
                 &policy,
@@ -3276,6 +3328,8 @@ mod tests {
                 ResourceRef::new(ResourceKind::DaemonRoute, route),
                 Some(if route.starts_with("/availability") {
                     "availability.write"
+                } else if route.starts_with("/strategy-sessions") {
+                    "strategy_sessions.request"
                 } else {
                     "handoff.inbox.write"
                 }),
@@ -3289,13 +3343,14 @@ mod tests {
                 "SELECT COUNT(*) FROM policy_decisions
                  WHERE capability_id IN (
                     'handoff.inbox.write', 'availability.read', 'availability.write',
-                    'handoff.eligibility.evaluate', 'handoff.inbox.list', 'handoff.receipts.list'
+                    'handoff.eligibility.evaluate', 'handoff.inbox.list', 'handoff.receipts.list',
+                    'strategy_sessions.request', 'strategy_sessions.status.read'
                  )",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(audit_count, 10);
+        assert_eq!(audit_count, 12);
     }
 
     #[test]

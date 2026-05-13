@@ -143,6 +143,14 @@ pub async fn serve(
             get(handoff_receipts_handler),
         )
         .route(
+            "/strategy-sessions/request",
+            post(strategy_session_request_handler),
+        )
+        .route(
+            "/strategy-sessions/:item_id/status",
+            get(strategy_session_status_handler),
+        )
+        .route(
             "/feedback/requests",
             get(feedback_requests_handler).post(feedback_request_create_handler),
         )

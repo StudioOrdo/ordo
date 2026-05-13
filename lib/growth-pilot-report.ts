@@ -73,7 +73,7 @@ export interface GrowthPilotReportView {
 
 export type GrowthPilotEvidenceAvailability = "available" | "unavailable";
 
-export type GrowthPilotEvidenceReason = "local_owner_admin_ref" | "unsupported_scheme" | "source_mismatch" | "empty_ref";
+export type GrowthPilotEvidenceReason = "local_owner_admin_ref" | "unsupported_scheme" | "unsupported_source" | "source_mismatch" | "empty_ref";
 
 export interface GrowthPilotEvidenceDrilldown {
   key: string;
@@ -125,6 +125,25 @@ const growthPilotLoopRequirements = [
   { key: "rewards", label: "Reward ledger, benefit, and balance evidence" },
   { key: "studio_promos", label: "Studio promo package and publication evidence" },
 ] as const;
+
+const allowedGrowthPilotEvidenceSourceKinds = new Set([
+  "artifact",
+  "artifact_deliverable",
+  "benefit_balance",
+  "benefit_grant",
+  "feedback_request",
+  "feedback_response",
+  "feedback_reward_eligibility",
+  "handoff_inbox_item",
+  "hosted_trial_slot",
+  "hosted_trial_waitlist_entry",
+  "offer",
+  "offer_acceptance",
+  "reward_event",
+  "tracked_entry_point",
+  "trial",
+  "visitor_session",
+]);
 
 export function buildGrowthPilotReportView(report: GrowthPilotReportResponse): GrowthPilotReportView {
   const statusCounts = emptyGrowthStatusCounts();
@@ -236,6 +255,16 @@ export function buildGrowthPilotEvidenceDrilldown(ref: GrowthPilotEvidenceRef): 
   const uriSourceId = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
   if (uriSourceKind !== ref.sourceKind || uriSourceId !== ref.sourceId) {
     return unavailableEvidenceDrilldown(key, label, sourceKind, sourceId, "source_mismatch", "mismatched local evidence ref withheld");
+  }
+  if (!allowedGrowthPilotEvidenceSourceKinds.has(uriSourceKind)) {
+    return unavailableEvidenceDrilldown(
+      "unsupported_source",
+      "Unsupported evidence ref",
+      "withheld",
+      "withheld",
+      "unsupported_source",
+      "unsupported local evidence ref withheld",
+    );
   }
 
   const displayRef = `ordo://${safeRefSegment(uriSourceKind)}/${safeRefSegment(uriSourceId)}`;

@@ -139,6 +139,24 @@ test.describe("Growth pilot report view model", () => {
       displayRef: "mismatched local evidence ref withheld",
       reason: "source_mismatch",
     });
+
+    const internal = buildGrowthPilotEvidenceDrilldown({
+      sourceKind: "staff_routing_details",
+      sourceId: "route_secret_1",
+      label: "Staff route sk_live_hidden",
+      uri: "ordo://staff_routing_details/route_secret_1",
+    });
+    expect(internal).toMatchObject({
+      availability: "unavailable",
+      displayRef: "unsupported local evidence ref withheld",
+      reason: "unsupported_source",
+      label: "Unsupported evidence ref",
+      sourceKind: "withheld",
+      sourceId: "withheld",
+    });
+    expect(JSON.stringify(internal)).not.toContain("staff_routing_details");
+    expect(JSON.stringify(internal)).not.toContain("route_secret_1");
+    expect(JSON.stringify(internal)).not.toContain("sk_live_hidden");
   });
 });
 

@@ -84,6 +84,7 @@ test.describe("local appliance session scaffold", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     await expect(page).toHaveURL(/\/my\/chat\?role=client$/);
+    await page.goto("/my/chat?role=client&mobile=content");
     await expect(page.getByRole("article", { name: "Studio Ordo conversation" })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Message Ordo" })).toBeVisible();
   });
@@ -133,5 +134,152 @@ test.describe("local appliance session scaffold", () => {
     await expect(page.getByText("local-only-pass")).toHaveCount(0);
     await expect(page.getByText("OPENAI_API_KEY")).toHaveCount(0);
     await expect(page.getByText("sk-")).toHaveCount(0);
+  });
+
+  test("member chat sends one message through the browser websocket adapter", async ({ page }) => {
+    await page.addInitScript(() => {
+      class MockChatWebSocket extends EventTarget {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        readyState = MockChatWebSocket.CONNECTING;
+        url: string;
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onclose: ((event: CloseEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+
+        constructor(url: string) {
+          super();
+          this.url = url;
+          setTimeout(() => {
+            this.readyState = MockChatWebSocket.OPEN;
+            const event = new Event("open");
+            this.onopen?.(event);
+            this.dispatchEvent(event);
+          }, 0);
+        }
+
+        send(value: string) {
+          const frame = JSON.parse(value);
+          if (frame.type === "gateway.identify") {
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "ack",
+              type: "identify.ack",
+              clientId: frame.clientId,
+              durability: "ephemeral",
+              scope: "user",
+              payload: { actorId: frame.payload.actorId, participantId: frame.payload.participantId },
+              occurredAt: "2026-05-12T12:00:01.000Z",
+            });
+          }
+          if (frame.type === "conversation.subscribe") {
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "ack",
+              type: "conversation.subscribe.ack",
+              clientId: frame.clientId,
+              conversationId: frame.conversationId,
+              durability: "ephemeral",
+              scope: "conversation",
+              payload: { conversationId: frame.conversationId },
+              occurredAt: "2026-05-12T12:00:02.000Z",
+            });
+          }
+          if (frame.type === "message.submit") {
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "ack",
+              type: "message.submit.ack",
+              clientId: frame.clientId,
+              conversationId: frame.conversationId,
+              durability: "ephemeral",
+              scope: "conversation",
+              payload: { messageId: "message_browser_ws_1" },
+              occurredAt: "2026-05-12T12:00:03.000Z",
+            });
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "dispatch",
+              type: "message.created",
+              serverId: "conversation_member_1:1",
+              conversationId: frame.conversationId,
+              sequence: 1,
+              cursor: 10,
+              durability: "durable",
+              scope: "conversation",
+              payload: {
+                messageId: "message_browser_ws_1",
+                participantId: frame.payload.participantId,
+                clientMessageId: frame.payload.clientMessageId,
+              },
+              occurredAt: "2026-05-12T12:00:04.000Z",
+            });
+          }
+        }
+
+        close() {
+          this.readyState = MockChatWebSocket.CLOSED;
+          const event = new CloseEvent("close");
+          this.onclose?.(event);
+          this.dispatchEvent(event);
+        }
+
+        private emitFrame(frame: unknown) {
+          setTimeout(() => {
+            const event = new MessageEvent("message", { data: JSON.stringify(frame) });
+            this.onmessage?.(event);
+            this.dispatchEvent(event);
+          }, 0);
+        }
+      }
+
+      window.WebSocket = MockChatWebSocket as unknown as typeof WebSocket;
+    });
+
+    await page.route("/api/chat/bootstrap", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          status: "ready",
+          degradedReason: null,
+          bootstrap: {
+            schemaVersion: "ordo.chat-bootstrap.v1",
+            actorId: "actor_local_member_mocked",
+            conversationId: "conversation_member_1",
+            participantId: "participant_member_1",
+            assistantParticipantId: "participant_assistant_1",
+            transport: {
+              route: "/chat/ws",
+              protocol: "conversation.gateway.v1",
+              url: "ws://127.0.0.1:19080/chat/ws",
+            },
+          },
+        }),
+      });
+    });
+
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("ava@example.com");
+    await page.getByLabel("Password").fill("local-only-pass");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page).toHaveURL(/\/my\/chat/);
+    await page.goto("/my/chat?role=client&mobile=content");
+
+    await expect(page.getByText("Ordo - connected to /chat/ws")).toBeVisible();
+    await page.getByRole("textbox", { name: "Message Ordo" }).fill("Please save this test message.");
+    await page.getByRole("button", { name: "Send message" }).click();
+
+    const runState = page.getByLabel("Local chat run state");
+    await expect(runState.getByText("Please save this test message.")).toBeVisible();
+    await expect(runState.getByText("saved by /chat/ws")).toBeVisible();
+    await expect(page.getByText("ava@example.com")).toHaveCount(0);
+    await expect(page.getByText("local-only-pass")).toHaveCount(0);
+    await expect(page.getByText("OPENAI_API_KEY")).toHaveCount(0);
+    await expect(page.getByText("prompt")).toHaveCount(0);
   });
 });

@@ -36,9 +36,22 @@ interface PreviewMessage {
   speaker: "You" | "Ordo";
   tone: "member" | "safe_status";
   body: string;
+  status?: "local" | "acknowledged" | "persisted";
+  messageId?: string;
 }
 
 type RunState = "checking" | "degraded" | "connecting" | "connected" | "failed";
+
+interface GatewayAckPayload {
+  conversationId?: string;
+  messageId?: string;
+}
+
+interface MessageCreatedPayload {
+  messageId?: string;
+  participantId?: string;
+  clientMessageId?: string;
+}
 
 const OFFLINE_REASON = "Daemon chat bootstrap route unavailable; using local preview chat.";
 
@@ -94,6 +107,14 @@ export function MemberChatGatewayComposer() {
 
         socket.addEventListener("message", (event) => {
           const frame = parseGatewayFrame(event.data);
+          if (frame?.op === "ack") {
+            handleAckFrame(frame);
+            return;
+          }
+          if (frame?.op === "dispatch") {
+            handleDispatchFrame(frame);
+            return;
+          }
           if (frame?.op === "error") {
             setRunState("failed");
             setDegradedReason(safeErrorMessage(frame.payload));
@@ -136,7 +157,7 @@ export function MemberChatGatewayComposer() {
     setDraft("");
     setMessages((current) => [
       ...current,
-      { id: clientMessageId, speaker: "You", tone: "member", body },
+      { id: clientMessageId, speaker: "You", tone: "member", body, status: "local" },
     ]);
 
     const socket = socketRef.current;
@@ -166,6 +187,46 @@ export function MemberChatGatewayComposer() {
     ]);
   }
 
+  function handleAckFrame(frame: ConversationGatewayEnvelope) {
+    if (frame.type === "identify.ack" || frame.type === "conversation.subscribe.ack") {
+      setRunState("connected");
+      setDegradedReason(null);
+      return;
+    }
+
+    if (frame.type !== "message.submit.ack" || !frame.clientId) return;
+    const payload = frame.payload as GatewayAckPayload;
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === frame.clientId
+          ? {
+              ...message,
+              status: "acknowledged",
+              messageId: payload.messageId,
+            }
+          : message,
+      ),
+    );
+  }
+
+  function handleDispatchFrame(frame: ConversationGatewayEnvelope) {
+    if (frame.type !== "message.created") return;
+    const payload = frame.payload as MessageCreatedPayload;
+    if (!payload.clientMessageId) return;
+
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === payload.clientMessageId
+          ? {
+              ...message,
+              status: "persisted",
+              messageId: payload.messageId ?? message.messageId,
+            }
+          : message,
+      ),
+    );
+  }
+
   return (
     <section className="member-stage-composer-wrap" aria-label="Message Ordo">
       <p>{statusLabel(runState, degradedReason)}</p>
@@ -175,6 +236,7 @@ export function MemberChatGatewayComposer() {
             <div key={message.id} className={`member-conversation-message member-conversation-message-${message.tone}`}>
               <div className="member-conversation-message-header">
                 <strong>{message.speaker}</strong>
+                {message.status ? <span>{messageStatusLabel(message.status)}</span> : null}
               </div>
               <p>{message.body}</p>
             </div>
@@ -221,7 +283,7 @@ function gatewayEnvelope(
     schemaVersion: CONVERSATION_GATEWAY_SCHEMA_VERSION,
     op,
     type,
-    clientId: `browser_${type.replace(/[^a-z0-9]+/gi, "_")}_${Date.now()}`,
+    clientId: payload.clientMessageId && typeof payload.clientMessageId === "string" ? payload.clientMessageId : `browser_${type.replace(/[^a-z0-9]+/gi, "_")}_${Date.now()}`,
     conversationId: conversationId ?? undefined,
     durability: op === "identify" ? "ephemeral" : ("durable" as ConversationGatewayDurability),
     scope: op === "identify" ? ("user" as ConversationGatewayScope) : ("conversation" as ConversationGatewayScope),
@@ -240,10 +302,18 @@ function parseGatewayFrame(value: unknown): ConversationGatewayEnvelope | null {
 }
 
 function safeErrorMessage(payload: unknown): string {
-  if (payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string") {
-    return payload.message;
-  }
   return "Conversation gateway rejected the command; using local preview chat.";
+}
+
+function messageStatusLabel(status: NonNullable<PreviewMessage["status"]>): string {
+  switch (status) {
+    case "local":
+      return "local";
+    case "acknowledged":
+      return "acknowledged by /chat/ws";
+    case "persisted":
+      return "saved by /chat/ws";
+  }
 }
 
 function statusLabel(runState: RunState, degradedReason: string | null): string {

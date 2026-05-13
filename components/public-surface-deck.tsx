@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { OrdoFrame } from "@/components/ordo-frame";
 import { OrdoChatPrototype } from "@/components/ordo-chat-prototype";
+import { type PublicEntryContext } from "@/lib/public-entry-context";
 import {
   appSpaceLabel,
   defaultProductBrandSettings,
@@ -21,11 +22,6 @@ interface PublicSurfaceDeckProps {
 }
 
 export type PublicHomeMode = "story" | "chat";
-
-export interface PublicEntryContext {
-  entryPointSlug?: string;
-  visitorSessionId?: string;
-}
 
 export function PublicSurfaceDeck({
   role,

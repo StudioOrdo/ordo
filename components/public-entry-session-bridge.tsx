@@ -34,7 +34,7 @@ export function PublicEntrySessionBridge({
 
   useEffect(() => {
     let cancelled = false;
-    const existingSessionId = window.localStorage.getItem(storageKey) ?? undefined;
+    const existingSessionId = readLocalStorage(storageKey);
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const attribution: Record<string, unknown> = {
       source: "public_entry_landing",
@@ -73,8 +73,8 @@ export function PublicEntrySessionBridge({
           return;
         }
         if (session.id) {
-          window.localStorage.setItem(storageKey, session.id);
-          window.localStorage.setItem(
+          writeLocalStorage(storageKey, session.id);
+          writeLocalStorage(
             "ordo.lastVisitorEntry",
             JSON.stringify({
               entryPointSlug,
@@ -125,4 +125,20 @@ function hrefWithEntryContext(href: string, entryPointSlug: string, visitorSessi
     url.searchParams.set("visitorSessionId", visitorSessionId);
   }
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function readLocalStorage(key: string): string | undefined {
+  try {
+    return window.localStorage.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLocalStorage(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // The durable visitor-session write has already happened on the daemon.
+  }
 }

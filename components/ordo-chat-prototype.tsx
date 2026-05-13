@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { type PublicEntryContext } from "@/components/public-surface-deck";
+import { type PublicEntryContext } from "@/lib/public-entry-context";
 
 interface OrdoChatPrototypeProps {
   mode: "guest" | "member";
@@ -55,7 +55,7 @@ export function OrdoChatPrototype({ mode, entryContext }: OrdoChatPrototypeProps
   const contextItems = entryContext?.entryPointSlug
     ? [
         { label: "Tracked entry", value: entryContext.entryPointSlug },
-        { label: "Visitor session", value: entryContext.visitorSessionId ? "recorded" : "pending" },
+        { label: "Visitor session", value: entryContext.visitorSessionId ? "handoff hint" : "pending" },
         ...chatContext,
       ]
     : chatContext;

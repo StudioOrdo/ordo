@@ -1,5 +1,6 @@
 import { ProductShell } from "@/components/product-shell";
 import { mobileStepFromSearchParams, railModeFromSearchParams, roleFromSearchParams, type SearchParams } from "@/lib/page-role";
+import { hasPublicEntryContext, publicEntryContextFromSearchParams } from "@/lib/public-entry-context";
 import { type ProductAppSpace, type ProductRole } from "@/lib/product-navigation";
 
 interface Props {
@@ -27,33 +28,32 @@ export async function ProductSurfacePage({ searchParams, appSpaceId = "site", it
   const railMode = await railModeFromSearchParams(searchParams);
   const mobileStep = await mobileStepFromSearchParams(searchParams);
   const params = searchParams ? await searchParams : {};
-  const entryPointSlug = firstQueryValue(params.entryPointSlug);
-  const visitorSessionId = firstQueryValue(params.visitorSessionId);
+  const entryContext = publicEntryContextFromSearchParams(params);
   const tools = accountTools?.(role) ?? [];
 
   return (
     <ProductShell role={role} appSpaceId={appSpaceId} currentItemId={itemId} railMode={railMode} mobileStep={mobileStep}>
-      {itemId === "offers" && (entryPointSlug || visitorSessionId) ? (
+      {itemId === "offers" && hasPublicEntryContext(entryContext) ? (
         <section className="surface-brief-panel" aria-label="Tracked entry context">
           <div className="brief-heading-row">
             <div>
               <span className="eyebrow">Tracked entry context</span>
-              <h2 className="panel-title">This offer view has visitor-session evidence.</h2>
+              <h2 className="panel-title">This offer view has tracked entry context.</h2>
             </div>
             <span className="status-pill">Public-safe</span>
           </div>
           <p>
-            Ordo can use the recorded entry and session as attribution evidence for fit checks and later outcomes. It does not
-            grant rewards or access from a scan alone.
+            When this path comes from the QR landing page, Ordo can use the recorded visitor session after backend verification.
+            This page treats URL context as a handoff hint and does not grant rewards or access from a scan alone.
           </p>
           <div className="brief-grid">
             <div className="brief-block">
               <span>Entry</span>
-              <p>{entryPointSlug ?? "Unknown public entry"}</p>
+              <p>{entryContext.entryPointSlug ?? "Unknown public entry"}</p>
             </div>
             <div className="brief-block">
               <span>Visitor session</span>
-              <p>{visitorSessionId ? "Recorded" : "Pending"}</p>
+              <p>{entryContext.visitorSessionId ? "Handoff hint present" : "Pending"}</p>
             </div>
           </div>
         </section>
@@ -112,7 +112,3 @@ function SurfaceBriefPanel({ brief }: { brief: SurfaceBriefFixture }) {
 }
 
 const briefLabels = ["What is happening", "What changed", "What to do next", "Why it matters", "Evidence", "Limitations"];
-
-function firstQueryValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}

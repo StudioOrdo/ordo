@@ -2,6 +2,7 @@ import { ClientConversationBrief, StaffConversationQueues } from "@/components/c
 import { ProductShell } from "@/components/product-shell";
 import { PublicSurfaceDeck, type PublicHomeMode } from "@/components/public-surface-deck";
 import { mobileStepFromSearchParams, railModeFromSearchParams, roleFromSearchParams, type SearchParams } from "@/lib/page-role";
+import { publicEntryContextFromSearchParams } from "@/lib/public-entry-context";
 import { isStaffRole } from "@/lib/product-navigation";
 
 export default async function ChatPage({ searchParams }: { searchParams?: SearchParams }) {
@@ -10,10 +11,7 @@ export default async function ChatPage({ searchParams }: { searchParams?: Search
   const mobileStep = await mobileStepFromSearchParams(searchParams);
   const params = searchParams ? await searchParams : {};
   const configuredHomeMode = resolveHomeMode(params.home);
-  const entryContext = {
-    entryPointSlug: firstQueryValue(params.entryPointSlug),
-    visitorSessionId: firstQueryValue(params.visitorSessionId),
-  };
+  const entryContext = publicEntryContextFromSearchParams(params);
 
   if (role === "anonymous") {
     return <PublicSurfaceDeck role={role} configuredHomeMode={configuredHomeMode} surfaceMode="chat" entryContext={entryContext} />;
@@ -36,8 +34,4 @@ export default async function ChatPage({ searchParams }: { searchParams?: Search
 function resolveHomeMode(rawMode: string | string[] | undefined): PublicHomeMode {
   const mode = Array.isArray(rawMode) ? rawMode[0] : rawMode;
   return mode === "chat" ? "chat" : "story";
-}
-
-function firstQueryValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
 }

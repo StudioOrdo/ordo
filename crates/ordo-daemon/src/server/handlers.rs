@@ -1033,10 +1033,15 @@ pub(crate) async fn public_offer_accept_handler(
     AxumPath(offer_slug): AxumPath<String>,
     Json(request): Json<OfferAcceptanceCreateRequest>,
 ) -> Result<Json<OfferAcceptanceResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let (acceptance, trial, event) =
+    let (acceptance, trial, access_grant, receipt, event) =
         accept_public_offer(&state.db_path, &offer_slug, request).map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
-    Ok(Json(OfferAcceptanceResponse { acceptance, trial }))
+    Ok(Json(OfferAcceptanceResponse {
+        acceptance,
+        trial,
+        access_grant,
+        receipt,
+    }))
 }
 
 #[derive(Debug, Deserialize)]

@@ -166,6 +166,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_support_handoff_queue_fields",
         apply: add_support_handoff_queue_fields,
     },
+    SchemaMigration {
+        version: 32,
+        name: "add_offer_acceptance_access_receipts",
+        apply: add_offer_acceptance_access_receipts,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -503,6 +508,27 @@ fn add_support_handoff_queue_fields(connection: &Connection) -> Result<()> {
             ON handoff_inbox_items(assignee_actor_id, delivery_state, urgency, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_handoff_inbox_items_visibility
             ON handoff_inbox_items(visibility, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_offer_acceptance_access_receipts(connection: &Connection) -> Result<()> {
+    ensure_column(connection, "offer_acceptances", "idempotency_key", "TEXT")?;
+    ensure_column(connection, "offer_acceptances", "access_grant_id", "TEXT")?;
+    ensure_column(
+        connection,
+        "offer_acceptances",
+        "receipt_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    connection.execute_batch(
+        r#"
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_offer_acceptances_idempotency
+            ON offer_acceptances(offer_id, idempotency_key)
+            WHERE idempotency_key IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_offer_acceptances_access_grant
+            ON offer_acceptances(access_grant_id);
         "#,
     )?;
     Ok(())

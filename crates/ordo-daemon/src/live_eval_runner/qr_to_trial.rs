@@ -524,11 +524,13 @@ pub(crate) fn run_qr_to_trial_journey_step(
                 .ok_or_else(|| anyhow!("deterministic QR-to-trial LLM path produced no message"))?;
             state.assistant_message_id = Some(assistant_message.id.clone());
 
-            let (acceptance, trial, _) = accept_public_offer(
+            let (acceptance, trial, _, _, _) = accept_public_offer(
                 db_path,
                 &offer.slug,
                 OfferAcceptanceCreateRequest {
                     visitor_session_id: Some(visitor_session.id.clone()),
+                    local_session_id: None,
+                    idempotency_key: None,
                     attribution: Some(json!({
                         "personaId": state.persona.persona_id,
                         "conversationId": conversation.id,

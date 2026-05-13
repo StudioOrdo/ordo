@@ -105,7 +105,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 31;
+pub const CURRENT_SCHEMA_VERSION: i64 = 32;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -204,10 +204,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31,
+                24, 25, 26, 27, 28, 29, 30, 31, 32,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 31);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 32);
     }
 
     #[test]
@@ -636,6 +636,21 @@ mod tests {
             &connection,
             "offer_acceptances",
             "attribution_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "offer_acceptances",
+            "idempotency_key"
+        ));
+        assert!(column_exists(
+            &connection,
+            "offer_acceptances",
+            "access_grant_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "offer_acceptances",
+            "receipt_json"
         ));
         assert!(table_exists(&connection, "trials"));
         assert!(column_exists(&connection, "trials", "trial_ends_at"));

@@ -29,7 +29,9 @@ test.describe("Growth pilot report view model", () => {
       "4 metric(s) and 2 recent evidence item(s) are available for owner review.",
       "5 missing or deferred signal(s) remain explicit instead of being treated as success metrics.",
     ]);
-    expect(view.sections[0]?.metricSummary).toBe("2 metric(s), 1 recent item(s), 1 limitation(s)");
+    expect(view.sections[0]?.metricSummary).toBe(
+      "2 metric(s), 1 recent item(s), 1 limitation(s)",
+    );
     expect(JSON.stringify(view)).not.toContain("rawPrompt");
     expect(JSON.stringify(view)).not.toContain("sk_live");
   });
@@ -67,7 +69,9 @@ test.describe("Growth pilot report view model", () => {
       deferred: 0,
       unknown: 0,
     });
-    expect(view.summaryLines).toEqual(["No Growth report sections are available yet."]);
+    expect(view.summaryLines).toEqual([
+      "No Growth report sections are available yet.",
+    ]);
   });
 
   test("builds a deterministic owner-review brief with explicit pilot-loop gaps and export deferral", () => {
@@ -80,7 +84,9 @@ test.describe("Growth pilot report view model", () => {
       "2 safe local evidence reference(s) are available for owner/admin drilldown.",
       "5 missing or deferred signal(s) remain explicit instead of being inferred as success.",
     ]);
-    expect(brief.pilotLoop.map((item) => `${item.key}:${item.coverage}`)).toEqual([
+    expect(
+      brief.pilotLoop.map((item) => `${item.key}:${item.coverage}`),
+    ).toEqual([
       "tracked_entry:covered",
       "offers:missing",
       "hosted_trials:missing",
@@ -89,7 +95,9 @@ test.describe("Growth pilot report view model", () => {
       "rewards:missing",
       "studio_promos:covered",
     ]);
-    expect(brief.limitationLines).toContain("External publishing is deferred: No platform publishing API is called by this report.");
+    expect(brief.limitationLines).toContain(
+      "External publishing is deferred: No platform publishing API is called by this report.",
+    );
     expect(brief.exportState).toEqual({
       available: false,
       label: "Local report package export unavailable",
@@ -157,6 +165,26 @@ test.describe("Growth pilot report view model", () => {
     expect(JSON.stringify(internal)).not.toContain("staff_routing_details");
     expect(JSON.stringify(internal)).not.toContain("route_secret_1");
     expect(JSON.stringify(internal)).not.toContain("sk_live_hidden");
+
+    const internalExternal = buildGrowthPilotEvidenceDrilldown({
+      sourceKind: "staff_routing_details",
+      sourceId: "route_secret_2",
+      label: "Staff route sk_live_external",
+      uri: "https://analytics.example/internal?token=sk_live_external",
+    });
+    expect(internalExternal).toMatchObject({
+      availability: "unavailable",
+      displayRef: "unsupported local evidence ref withheld",
+      reason: "unsupported_source",
+      label: "Unsupported evidence ref",
+      sourceKind: "withheld",
+      sourceId: "withheld",
+    });
+    expect(JSON.stringify(internalExternal)).not.toContain(
+      "staff_routing_details",
+    );
+    expect(JSON.stringify(internalExternal)).not.toContain("route_secret_2");
+    expect(JSON.stringify(internalExternal)).not.toContain("sk_live_external");
   });
 });
 
@@ -296,7 +324,8 @@ function growthReportFixture(): GrowthPilotReportResponse {
           {
             key: "platform_analytics_missing",
             label: "Platform analytics are missing",
-            detail: "Views, watch time, and conversions need a future governed integration.",
+            detail:
+              "Views, watch time, and conversions need a future governed integration.",
             sourceStatus: "missing",
           },
         ],

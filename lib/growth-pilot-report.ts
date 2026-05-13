@@ -1,6 +1,13 @@
-export const growthReportSourceStatuses = ["measured", "manual", "missing", "deferred", "unknown"] as const;
+export const growthReportSourceStatuses = [
+  "measured",
+  "manual",
+  "missing",
+  "deferred",
+  "unknown",
+] as const;
 
-export type GrowthReportSourceStatus = (typeof growthReportSourceStatuses)[number];
+export type GrowthReportSourceStatus =
+  (typeof growthReportSourceStatuses)[number];
 
 export interface GrowthPilotEvidenceRef {
   sourceKind: string;
@@ -73,7 +80,12 @@ export interface GrowthPilotReportView {
 
 export type GrowthPilotEvidenceAvailability = "available" | "unavailable";
 
-export type GrowthPilotEvidenceReason = "local_owner_admin_ref" | "unsupported_scheme" | "unsupported_source" | "source_mismatch" | "empty_ref";
+export type GrowthPilotEvidenceReason =
+  | "local_owner_admin_ref"
+  | "unsupported_scheme"
+  | "unsupported_source"
+  | "source_mismatch"
+  | "empty_ref";
 
 export interface GrowthPilotEvidenceDrilldown {
   key: string;
@@ -119,11 +131,20 @@ export interface GrowthPilotReportBrief {
 const growthPilotLoopRequirements = [
   { key: "tracked_entry", label: "Tracked entry and session evidence" },
   { key: "offers", label: "Offer and acceptance evidence" },
-  { key: "hosted_trials", label: "Hosted trial capacity, waitlist, backup, and reset evidence" },
-  { key: "support_handoffs", label: "Support handoff and strategy session evidence" },
+  {
+    key: "hosted_trials",
+    label: "Hosted trial capacity, waitlist, backup, and reset evidence",
+  },
+  {
+    key: "support_handoffs",
+    label: "Support handoff and strategy session evidence",
+  },
   { key: "feedback", label: "Feedback request and review evidence" },
   { key: "rewards", label: "Reward ledger, benefit, and balance evidence" },
-  { key: "studio_promos", label: "Studio promo package and publication evidence" },
+  {
+    key: "studio_promos",
+    label: "Studio promo package and publication evidence",
+  },
 ] as const;
 
 const allowedGrowthPilotEvidenceSourceKinds = new Set([
@@ -145,7 +166,9 @@ const allowedGrowthPilotEvidenceSourceKinds = new Set([
   "visitor_session",
 ]);
 
-export function buildGrowthPilotReportView(report: GrowthPilotReportResponse): GrowthPilotReportView {
+export function buildGrowthPilotReportView(
+  report: GrowthPilotReportResponse,
+): GrowthPilotReportView {
   const statusCounts = emptyGrowthStatusCounts();
   const refsByUri = new Map<string, GrowthPilotEvidenceRef>();
   let metricCount = 0;
@@ -194,16 +217,28 @@ export function buildGrowthPilotReportView(report: GrowthPilotReportResponse): G
     evidenceRefCount: refsByUri.size,
     statusCounts,
     missingOrDeferredCount,
-    summaryLines: growthReportSummaryLines(report.sections.length, metricCount, recentItemCount, missingOrDeferredCount),
+    summaryLines: growthReportSummaryLines(
+      report.sections.length,
+      metricCount,
+      recentItemCount,
+      missingOrDeferredCount,
+    ),
     sections,
   };
 }
 
-export function buildGrowthPilotReportBrief(report: GrowthPilotReportResponse, view = buildGrowthPilotReportView(report)): GrowthPilotReportBrief {
+export function buildGrowthPilotReportBrief(
+  report: GrowthPilotReportResponse,
+  view = buildGrowthPilotReportView(report),
+): GrowthPilotReportBrief {
   const evidenceDrilldowns = collectGrowthPilotEvidenceDrilldowns(report);
-  const safeEvidenceRefCount = evidenceDrilldowns.filter((drilldown) => drilldown.availability === "available").length;
+  const safeEvidenceRefCount = evidenceDrilldowns.filter(
+    (drilldown) => drilldown.availability === "available",
+  ).length;
   const pilotLoop = buildGrowthPilotLoopBrief(report);
-  const coveredLoopCount = pilotLoop.filter((item) => item.coverage === "covered").length;
+  const coveredLoopCount = pilotLoop.filter(
+    (item) => item.coverage === "covered",
+  ).length;
 
   return {
     title: "Owner Review Brief",
@@ -221,7 +256,9 @@ export function buildGrowthPilotReportBrief(report: GrowthPilotReportResponse, v
   };
 }
 
-export function buildGrowthPilotEvidenceDrilldown(ref: GrowthPilotEvidenceRef): GrowthPilotEvidenceDrilldown {
+export function buildGrowthPilotEvidenceDrilldown(
+  ref: GrowthPilotEvidenceRef,
+): GrowthPilotEvidenceDrilldown {
   const label = safeEvidenceLabel(ref.label, ref.sourceKind, ref.sourceId);
   const sourceKind = safeRefSegment(ref.sourceKind);
   const sourceId = safeRefSegment(ref.sourceId);
@@ -236,27 +273,12 @@ export function buildGrowthPilotEvidenceDrilldown(ref: GrowthPilotEvidenceRef): 
       displayRef: "empty evidence ref withheld",
       availability: "unavailable",
       reason: "empty_ref",
-      detail: "Evidence reference is incomplete, so the owner report keeps it unavailable instead of linking to uncertain data.",
+      detail:
+        "Evidence reference is incomplete, so the owner report keeps it unavailable instead of linking to uncertain data.",
     };
   }
 
-  let parsed: URL;
-  try {
-    parsed = new URL(ref.uri);
-  } catch {
-    return unavailableEvidenceDrilldown(key, label, sourceKind, sourceId, "unsupported_scheme", "external evidence ref withheld");
-  }
-
-  if (parsed.protocol !== "ordo:") {
-    return unavailableEvidenceDrilldown(key, label, sourceKind, sourceId, "unsupported_scheme", "external evidence ref withheld");
-  }
-
-  const uriSourceKind = decodeURIComponent(parsed.hostname);
-  const uriSourceId = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
-  if (uriSourceKind !== ref.sourceKind || uriSourceId !== ref.sourceId) {
-    return unavailableEvidenceDrilldown(key, label, sourceKind, sourceId, "source_mismatch", "mismatched local evidence ref withheld");
-  }
-  if (!allowedGrowthPilotEvidenceSourceKinds.has(uriSourceKind)) {
+  if (!allowedGrowthPilotEvidenceSourceKinds.has(ref.sourceKind)) {
     return unavailableEvidenceDrilldown(
       "unsupported_source",
       "Unsupported evidence ref",
@@ -264,6 +286,44 @@ export function buildGrowthPilotEvidenceDrilldown(ref: GrowthPilotEvidenceRef): 
       "withheld",
       "unsupported_source",
       "unsupported local evidence ref withheld",
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(ref.uri);
+  } catch {
+    return unavailableEvidenceDrilldown(
+      key,
+      label,
+      sourceKind,
+      sourceId,
+      "unsupported_scheme",
+      "external evidence ref withheld",
+    );
+  }
+
+  if (parsed.protocol !== "ordo:") {
+    return unavailableEvidenceDrilldown(
+      key,
+      label,
+      sourceKind,
+      sourceId,
+      "unsupported_scheme",
+      "external evidence ref withheld",
+    );
+  }
+
+  const uriSourceKind = decodeURIComponent(parsed.hostname);
+  const uriSourceId = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+  if (uriSourceKind !== ref.sourceKind || uriSourceId !== ref.sourceId) {
+    return unavailableEvidenceDrilldown(
+      key,
+      label,
+      sourceKind,
+      sourceId,
+      "source_mismatch",
+      "mismatched local evidence ref withheld",
     );
   }
 
@@ -280,11 +340,15 @@ export function buildGrowthPilotEvidenceDrilldown(ref: GrowthPilotEvidenceRef): 
   };
 }
 
-export function growthSourceStatusLabel(status: GrowthReportSourceStatus): string {
+export function growthSourceStatusLabel(
+  status: GrowthReportSourceStatus,
+): string {
   return status.replaceAll("_", " ");
 }
 
-export function growthSourceStatusTone(status: GrowthReportSourceStatus): "ok" | "warn" | "error" {
+export function growthSourceStatusTone(
+  status: GrowthReportSourceStatus,
+): "ok" | "warn" | "error" {
   if (status === "measured") {
     return "ok";
   }
@@ -294,11 +358,18 @@ export function growthSourceStatusTone(status: GrowthReportSourceStatus): "ok" |
   return "error";
 }
 
-export function growthReportStatusClassToken(status: GrowthReportSourceStatus): string {
+export function growthReportStatusClassToken(
+  status: GrowthReportSourceStatus,
+): string {
   return growthSourceStatusTone(status);
 }
 
-function growthReportSummaryLines(sectionCount: number, metricCount: number, recentItemCount: number, missingOrDeferredCount: number): string[] {
+function growthReportSummaryLines(
+  sectionCount: number,
+  metricCount: number,
+  recentItemCount: number,
+  missingOrDeferredCount: number,
+): string[] {
   if (sectionCount === 0) {
     return ["No Growth report sections are available yet."];
   }
@@ -310,8 +381,12 @@ function growthReportSummaryLines(sectionCount: number, metricCount: number, rec
   ];
 }
 
-function buildGrowthPilotLoopBrief(report: GrowthPilotReportResponse): GrowthPilotLoopBriefItem[] {
-  const sectionsByKey = new Map(report.sections.map((section) => [section.key, section]));
+function buildGrowthPilotLoopBrief(
+  report: GrowthPilotReportResponse,
+): GrowthPilotLoopBriefItem[] {
+  const sectionsByKey = new Map(
+    report.sections.map((section) => [section.key, section]),
+  );
 
   return growthPilotLoopRequirements.map((requirement) => {
     const section = sectionsByKey.get(requirement.key);
@@ -324,11 +399,14 @@ function buildGrowthPilotLoopBrief(report: GrowthPilotReportResponse): GrowthPil
         metricSummary: "0 metric(s), 0 recent item(s), 0 limitation(s)",
         evidenceRefCount: 0,
         limitationCount: 0,
-        detail: "No local report section exists yet; do not infer completion for this pilot checkpoint.",
+        detail:
+          "No local report section exists yet; do not infer completion for this pilot checkpoint.",
       };
     }
 
-    const safeEvidenceRefCount = collectSectionEvidenceDrilldowns(section).filter((drilldown) => drilldown.availability === "available").length;
+    const safeEvidenceRefCount = collectSectionEvidenceDrilldowns(
+      section,
+    ).filter((drilldown) => drilldown.availability === "available").length;
     return {
       key: requirement.key,
       label: requirement.label,
@@ -342,17 +420,23 @@ function buildGrowthPilotLoopBrief(report: GrowthPilotReportResponse): GrowthPil
   });
 }
 
-function collectGrowthPilotEvidenceDrilldowns(report: GrowthPilotReportResponse): GrowthPilotEvidenceDrilldown[] {
+function collectGrowthPilotEvidenceDrilldowns(
+  report: GrowthPilotReportResponse,
+): GrowthPilotEvidenceDrilldown[] {
   const drilldownsByKey = new Map<string, GrowthPilotEvidenceDrilldown>();
   for (const section of report.sections) {
     for (const drilldown of collectSectionEvidenceDrilldowns(section)) {
       setBestEvidenceDrilldown(drilldownsByKey, drilldown);
     }
   }
-  return Array.from(drilldownsByKey.values()).sort((left, right) => left.key.localeCompare(right.key));
+  return Array.from(drilldownsByKey.values()).sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
 }
 
-function collectSectionEvidenceDrilldowns(section: GrowthPilotReportSection): GrowthPilotEvidenceDrilldown[] {
+function collectSectionEvidenceDrilldowns(
+  section: GrowthPilotReportSection,
+): GrowthPilotEvidenceDrilldown[] {
   const refs = [
     ...section.evidenceRefs,
     ...section.metrics.flatMap((metric) => metric.evidenceRefs),
@@ -366,14 +450,23 @@ function collectSectionEvidenceDrilldowns(section: GrowthPilotReportSection): Gr
   return Array.from(drilldownsByKey.values());
 }
 
-function setBestEvidenceDrilldown(drilldownsByKey: Map<string, GrowthPilotEvidenceDrilldown>, drilldown: GrowthPilotEvidenceDrilldown) {
+function setBestEvidenceDrilldown(
+  drilldownsByKey: Map<string, GrowthPilotEvidenceDrilldown>,
+  drilldown: GrowthPilotEvidenceDrilldown,
+) {
   const existing = drilldownsByKey.get(drilldown.key);
-  if (!existing || (existing.availability === "unavailable" && drilldown.availability === "available")) {
+  if (
+    !existing ||
+    (existing.availability === "unavailable" &&
+      drilldown.availability === "available")
+  ) {
     drilldownsByKey.set(drilldown.key, drilldown);
   }
 }
 
-function coverageForStatus(status: GrowthReportSourceStatus): GrowthPilotLoopCoverage {
+function coverageForStatus(
+  status: GrowthReportSourceStatus,
+): GrowthPilotLoopCoverage {
   if (status === "measured" || status === "manual") {
     return "covered";
   }
@@ -383,16 +476,22 @@ function coverageForStatus(status: GrowthReportSourceStatus): GrowthPilotLoopCov
   return "missing";
 }
 
-function growthPilotLimitationLines(report: GrowthPilotReportResponse): string[] {
+function growthPilotLimitationLines(
+  report: GrowthPilotReportResponse,
+): string[] {
   const limitationLines = [
     "No live platform analytics, external publishing, payments, OAuth, provider behavior, uptime, or AI-authored claims are inferred.",
   ];
   for (const limitation of report.limitations) {
-    limitationLines.push(`${redactSensitiveText(limitation.label)}: ${redactSensitiveText(limitation.detail)}`);
+    limitationLines.push(
+      `${redactSensitiveText(limitation.label)}: ${redactSensitiveText(limitation.detail)}`,
+    );
   }
   for (const section of report.sections) {
     for (const limitation of section.limitations) {
-      limitationLines.push(`${redactSensitiveText(limitation.label)}: ${redactSensitiveText(limitation.detail)}`);
+      limitationLines.push(
+        `${redactSensitiveText(limitation.label)}: ${redactSensitiveText(limitation.detail)}`,
+      );
     }
   }
   return Array.from(new Set(limitationLines));
@@ -424,7 +523,8 @@ function unavailableEvidenceDrilldown(
     displayRef,
     availability: "unavailable",
     reason,
-    detail: "Evidence reference is not a safe matching local Ordo ref, so it is withheld from owner drilldown.",
+    detail:
+      "Evidence reference is not a safe matching local Ordo ref, so it is withheld from owner drilldown.",
   };
 }
 
@@ -438,11 +538,17 @@ function emptyGrowthStatusCounts(): GrowthReportStatusCounts {
   };
 }
 
-function addStatus(counts: GrowthReportStatusCounts, status: GrowthReportSourceStatus) {
+function addStatus(
+  counts: GrowthReportStatusCounts,
+  status: GrowthReportSourceStatus,
+) {
   counts[status] += 1;
 }
 
-function collectEvidenceRefs(refsByUri: Map<string, GrowthPilotEvidenceRef>, refs: readonly GrowthPilotEvidenceRef[]) {
+function collectEvidenceRefs(
+  refsByUri: Map<string, GrowthPilotEvidenceRef>,
+  refs: readonly GrowthPilotEvidenceRef[],
+) {
   for (const ref of refs) {
     if (!refsByUri.has(ref.uri)) {
       refsByUri.set(ref.uri, ref);
@@ -451,12 +557,21 @@ function collectEvidenceRefs(refsByUri: Map<string, GrowthPilotEvidenceRef>, ref
 }
 
 function countMissingOrDeferred(statuses: GrowthReportSourceStatus[]): number {
-  return statuses.filter((status) => status === "missing" || status === "deferred").length;
+  return statuses.filter(
+    (status) => status === "missing" || status === "deferred",
+  ).length;
 }
 
-function safeEvidenceLabel(label: string, sourceKind: string, sourceId: string): string {
-  const fallback = `${safeRefSegment(sourceKind)} ${safeRefSegment(sourceId)}`.trim();
-  const safeLabel = redactSensitiveText(label.trim() || fallback || "Local evidence ref");
+function safeEvidenceLabel(
+  label: string,
+  sourceKind: string,
+  sourceId: string,
+): string {
+  const fallback =
+    `${safeRefSegment(sourceKind)} ${safeRefSegment(sourceId)}`.trim();
+  const safeLabel = redactSensitiveText(
+    label.trim() || fallback || "Local evidence ref",
+  );
   return safeLabel.slice(0, 160);
 }
 
@@ -466,5 +581,7 @@ function safeRefSegment(value: string): string {
 }
 
 function redactSensitiveText(value: string): string {
-  return value.replace(/sk[-_][A-Za-z0-9_-]+/g, "[redacted]").replace(/rawPrompt/gi, "[redacted]");
+  return value
+    .replace(/sk[-_][A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/rawPrompt/gi, "[redacted]");
 }

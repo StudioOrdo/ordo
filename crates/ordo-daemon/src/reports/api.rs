@@ -10,6 +10,7 @@ use super::types::*;
 use super::jobs::*;
 use crate::policy::*;
 use crate::schema::db::ConnectionExt;
+use crate::security::{markdown::sanitize_markdown_links, redaction};
 
 pub fn list_issue_reports(db_path: &Path) -> Result<IssueReportsResponse> {
     let connection = Connection::open(db_path)?;
@@ -74,7 +75,8 @@ pub fn export_issue_report(
     }
     let now = Utc::now().to_rfc3339();
     let export_id = format!("report_export_{}", Uuid::new_v4());
-    let content_hash = content_hash(&report.markdown_body);
+    let export_markdown = sanitize_markdown_links(&report.markdown_body);
+    let content_hash = content_hash(&export_markdown);
     connection.execute(
         "INSERT INTO issue_report_exports (
             id, report_id, export_format, content_hash, content_bytes, content_text,
@@ -85,8 +87,8 @@ pub fn export_issue_report(
             report_id,
             export_format,
             content_hash,
-            report.markdown_body.len() as i64,
-            &report.markdown_body,
+            export_markdown.len() as i64,
+            &export_markdown,
             actor_id,
             now,
         ],
@@ -520,32 +522,7 @@ pub(crate) fn content_hash(content: &str) -> String {
 }
 
 pub(crate) fn redact_support_packet_markdown(markdown: &str) -> String {
-    markdown
-        .lines()
-        .map(|line| {
-            if contains_secret_indicator(line) {
-                "[redacted support packet line]".to_string()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-pub(crate) fn contains_secret_indicator(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    [
-        "api_key",
-        "apikey",
-        "token",
-        "password",
-        "secret",
-        "vault key",
-        "bearer ",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
+    sanitize_markdown_links(&redaction::redact_support_packet_markdown(markdown))
 }
 
 pub(crate) fn set_job_running(connection: &Connection, job_id: &str) -> Result<()> {
@@ -853,7 +830,10 @@ mod tests {
                 severity: Some(IssueSeverity::High),
                 description: "Provider api_key = sk-live-secret should never leave.".to_string(),
                 expected_behavior: None,
-                actual_behavior: None,
+                actual_behavior: Some(
+                    "Unsafe link [bad](javascript:alert(1)) but safe link [ok](https://example.com)."
+                        .to_string(),
+                ),
                 steps: None,
                 source_route: None,
                 include_health_snapshot: Some(false),
@@ -884,6 +864,9 @@ mod tests {
         assert_eq!(packet.payload["externalDelivery"], false);
         let content = packet.payload["content"].as_str().unwrap();
         assert!(!content.contains("sk-live-secret"));
+        assert!(!content.contains("javascript:"));
+        assert!(content.contains("[bad](#unsafe-url-redacted)"));
+        assert!(content.contains("[ok](https://example.com)"));
         assert!(content.contains("[redacted support packet line]"));
 
         let receipts = list_support_packet_receipts(db.path(), &packet.id).unwrap();

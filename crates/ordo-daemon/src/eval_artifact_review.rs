@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 use crate::eval_harness::{
     EvalArtifactPacket, EvalEvidenceChannel, EvalFindingCategory, EvalRedactionSummary,
 };
+use crate::security::{
+    artifact_boundary::resolve_artifact_output_path, markdown::sanitize_markdown_links, redaction,
+};
 
 pub const EVAL_ARTIFACT_REVIEW_SCHEMA_VERSION: &str = "ordo.eval_artifact_review.v1";
 
@@ -88,11 +91,19 @@ pub fn write_review_artifacts(
     fs::create_dir_all(output_dir)
         .with_context(|| format!("create eval artifact review dir {}", output_dir.display()))?;
     let review = review_packet_file(packet_path)?;
-    let review_json_path = output_dir.join(format!("{}-artifact-review.json", review.case_id));
-    let review_markdown_path = output_dir.join("artifact-review.md");
+    let review_json_path = resolve_artifact_output_path(
+        output_dir,
+        format!("{}-artifact-review.json", review.case_id),
+        "artifact review JSON",
+    )?;
+    let review_markdown_path =
+        resolve_artifact_output_path(output_dir, "artifact-review.md", "artifact review markdown")?;
     write_json(&review_json_path, &review)?;
-    fs::write(&review_markdown_path, review_markdown(&review))
-        .with_context(|| format!("write artifact review {}", review_markdown_path.display()))?;
+    fs::write(
+        &review_markdown_path,
+        sanitize_markdown_links(&review_markdown(&review)),
+    )
+    .with_context(|| format!("write artifact review {}", review_markdown_path.display()))?;
     Ok(EvalArtifactReviewPaths {
         review_json_path,
         review_markdown_path,
@@ -522,65 +533,21 @@ fn redact_value(value: &mut Value, summary: &mut EvalRedactionSummary) {
 }
 
 fn redact_text(text: &str, summary: &mut EvalRedactionSummary) -> String {
-    let mut output = Vec::new();
-    for token in text.split_whitespace() {
-        let trimmed = token.trim_matches(|character: char| {
-            matches!(
-                character,
-                '"' | '\'' | ',' | '.' | ';' | ':' | '{' | '}' | '[' | ']' | '(' | ')'
-            )
-        });
-        let replacement = if looks_like_email(trimmed) {
-            Some("[REDACTED:email]")
-        } else if looks_like_phone(trimmed) {
-            Some("[REDACTED:phone]")
-        } else if looks_like_secret(trimmed) {
-            Some("[REDACTED:secret]")
-        } else if trimmed.eq_ignore_ascii_case("Project")
-            || trimmed.eq_ignore_ascii_case("Orchid")
-            || text.to_ascii_lowercase().contains("project orchid")
-        {
-            Some("[REDACTED:private_term]")
-        } else {
-            None
-        };
-        if let Some(replacement) = replacement {
-            summary.redacted_value_count += 1;
-            output.push(replacement.to_string());
-        } else {
-            output.push(token.to_string());
-        }
-    }
-    output.join(" ")
+    let redacted = redaction::redact_artifact_review_text(text);
+    summary.redacted_value_count += redacted.redacted_count;
+    redacted.text
 }
 
 fn looks_like_email(value: &str) -> bool {
-    let Some((local, domain)) = value.split_once('@') else {
-        return false;
-    };
-    !local.is_empty() && domain.contains('.') && !domain.ends_with('.')
+    redaction::looks_like_email(value)
 }
 
 fn looks_like_phone(value: &str) -> bool {
-    let digit_count = value
-        .chars()
-        .filter(|character| character.is_ascii_digit())
-        .count();
-    digit_count >= 10
-        && value
-            .chars()
-            .all(|character| character.is_ascii_digit() || "()+-. ".contains(character))
+    redaction::looks_like_phone(value)
 }
 
 fn looks_like_secret(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    lower.starts_with("sk-")
-        || lower.starts_with("api_")
-        || lower.starts_with("pat_")
-        || lower.starts_with("ghp_")
-        || lower == "bearer"
-        || lower.starts_with("bearer_")
-        || lower.starts_with("bearer-")
+    redaction::looks_like_secret(value)
 }
 
 fn stable_json_hash<T: Serialize>(value: &T) -> Result<String> {

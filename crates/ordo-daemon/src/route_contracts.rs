@@ -176,6 +176,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
     ),
     protected(
         HttpMethod::Get,
+        "/offer-builder",
+        "/offer-builder",
+        PolicyAction::Inspect,
+        "offer_builder.inspect",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/offer-builder",
+        "/offer-builder",
+        PolicyAction::Create,
+        "offer_builder.write",
+    ),
+    protected(
+        HttpMethod::Get,
         "/offers",
         "/offers",
         PolicyAction::Inspect,

@@ -74,6 +74,41 @@ test("Hosted Trials Systems room refuses member role before daemon read", async 
   }
 });
 
+test("Owner Offer Builder renders durable offers and explicit deferrals", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/owner/offers?role=owner", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Offer Builder" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("OrdoStudio NYC Pilot");
+    await expect(page.locator("main")).toContainText("ready");
+    await expect(page.locator("main")).toContainText("30 days");
+    await expect(page.locator("main")).toContainText("Accepted-offer Access grant");
+    await expect(page.locator("main")).toContainText("Hosted trial capacity");
+    await expect(page.locator("main")).toContainText("Tracked QR entry point");
+    await expect(page.locator("main")).toContainText("Feedback/referral rewards");
+    await expect(page.locator("main")).toContainText("#248");
+    await expect(page.locator("main")).toContainText("Product/workforce packs");
+    await expect(page.locator("main")).not.toContainText("sk_live");
+    await expect(page.locator("main")).not.toContainText("rawPrompt");
+    expect(daemon.state.requests).toContain("GET /offer-builder");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Offer Builder refuses member role before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/owner/offers?role=member");
+
+    await expect(page.locator("body")).not.toContainText("OrdoStudio NYC Pilot");
+    expect(daemon.state.requests).not.toContain("GET /offer-builder");
+  } finally {
+    await daemon.close();
+  }
+});
+
 test("System shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
   await page.goto(productContentUrl("/admin/system?role=owner", testInfo));
 
@@ -502,6 +537,10 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
     return jsonResponse(response, hostedTrialCapacity());
   }
 
+  if (method === "GET" && path === "/offer-builder") {
+    return jsonResponse(response, offerBuilder());
+  }
+
   if (method === "GET" && path === "/logs?limit=100") {
     return jsonResponse(response, { logs: diagnosticLogs() });
   }
@@ -724,6 +763,88 @@ function hostedTrialCapacity() {
         updatedAt: "2026-05-08T12:00:00.000Z",
       },
     ],
+  };
+}
+
+function offerBuilder() {
+  return {
+    generatedAt: "2026-05-08T12:00:00.000Z",
+    offers: [
+      {
+        offer: {
+          id: "offer_smoke_1",
+          slug: "nyc-pilot",
+          title: "OrdoStudio NYC Pilot",
+          summary: "30 days of experimental hosted OrdoStudio access.",
+          status: "available",
+          visibility: "public",
+          publicationState: "published",
+          trialDays: 30,
+          sourceKind: "offer_builder",
+          sourceRef: "nyc-pilot",
+          terms: {
+            termsVersion: "2026-05-13",
+            trialDays: 30,
+            experimentalHosting: true,
+            backupBeforeWipeRequired: true,
+            humanReviewRequired: true,
+          },
+          metadata: {},
+          createdByActorId: "actor_local_owner",
+          createdAt: "2026-05-08T12:00:00.000Z",
+          updatedAt: "2026-05-08T12:00:00.000Z",
+          publishedAt: "2026-05-08T12:00:00.000Z",
+          archivedAt: null,
+        },
+        publicPreview: {
+          id: "offer_smoke_1",
+          slug: "nyc-pilot",
+          title: "OrdoStudio NYC Pilot",
+          summary: "30 days of experimental hosted OrdoStudio access.",
+          trialDays: 30,
+          sourceKind: "offer_builder",
+          sourceRef: "nyc-pilot",
+          terms: {
+            trialDays: 30,
+            termsVersion: "2026-05-13",
+            experimentalHosting: true,
+            backupBeforeWipeRequired: true,
+            humanReviewRequired: true,
+            rewards: { status: "not_available_yet", blockedBy: "#248" },
+            packs: { status: "not_available_yet", blockedBy: "offer_pack_binding" },
+          },
+        },
+        validation: {
+          publishable: true,
+          state: "ready",
+          blockers: [],
+          warnings: [],
+          supportedReferences: [
+            offerBuilderReference("access_grant", "Accepted-offer Access grant", "available", "resource_grants"),
+            offerBuilderReference("hosted_trial_capacity", "Hosted trial capacity", "available", "hosted_trial_slots"),
+            offerBuilderReference("tracked_entry_point", "Tracked QR entry point", "available", "tracked_entry_point:entry_nyc"),
+            offerBuilderReference("support_handoff_cta", "Support handoff CTA", "available", "handoff_inbox_items"),
+          ],
+          deferredReferences: [
+            offerBuilderReference("reward_ledger", "Feedback/referral rewards", "not_available_yet", "", "#248"),
+            offerBuilderReference("product_workforce_packs", "Product/workforce packs", "not_available_yet", "", "offer_pack_binding"),
+            offerBuilderReference("external_platforms", "External publishing/payments/OAuth", "out_of_scope", "", "future_guarded_adapters"),
+          ],
+          evidenceRefs: ["offer:offer_smoke_1", "tracked_entry_point:entry_nyc"],
+        },
+      },
+    ],
+  };
+}
+
+function offerBuilderReference(key: string, label: string, status: string, evidenceRef: string, blockedBy: string | null = null) {
+  return {
+    key,
+    label,
+    status,
+    detail: `${label} is represented by durable daemon state.`,
+    evidenceRefs: evidenceRef ? [evidenceRef] : [],
+    blockedBy,
   };
 }
 

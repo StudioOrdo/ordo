@@ -79,12 +79,14 @@ use crate::mcp_packs::{
     McpPackListResponse, McpPackResponse,
 };
 use crate::offers::{
-    accept_public_offer, create_offer, list_hosted_trial_capacity, list_offer_acceptances,
-    list_offers, list_public_available_offers, list_trials, request_hosted_trial_reset,
-    transition_trial, update_offer, HostedTrialCapacityResponse, HostedTrialResetPlanView,
-    HostedTrialResetRequest, OfferAcceptanceCreateRequest, OfferAcceptanceListResponse,
-    OfferAcceptanceResponse, OfferListResponse, OfferView, OfferWriteRequest,
-    PublicOfferListResponse, TrialListResponse, TrialTransitionRequest, TrialView,
+    accept_public_offer, create_offer, inspect_offer_builder, list_hosted_trial_capacity,
+    list_offer_acceptances, list_offers, list_public_available_offers, list_trials,
+    request_hosted_trial_reset, save_offer_builder_offer, transition_trial, update_offer,
+    HostedTrialCapacityResponse, HostedTrialResetPlanView, HostedTrialResetRequest,
+    OfferAcceptanceCreateRequest, OfferAcceptanceListResponse, OfferAcceptanceResponse,
+    OfferBuilderResponse, OfferBuilderSaveRequest, OfferBuilderSaveResponse, OfferListResponse,
+    OfferView, OfferWriteRequest, PublicOfferListResponse, TrialListResponse,
+    TrialTransitionRequest, TrialView,
 };
 use crate::policy::{
     authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
@@ -529,6 +531,46 @@ pub(crate) async fn offers_handler(
     list_offers(&state.db_path)
         .map(Json)
         .map_err(internal_error)
+}
+
+pub(crate) async fn offer_builder_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<OfferBuilderResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/offer-builder"),
+        Some("offer_builder.inspect"),
+    )?;
+    inspect_offer_builder(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn offer_builder_save_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<OfferBuilderSaveRequest>,
+) -> Result<Json<OfferBuilderSaveResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/offer-builder"),
+        Some("offer_builder.write"),
+    )?;
+    let (response, event) = save_offer_builder_offer(&state.db_path, request, actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
 }
 
 pub(crate) async fn offer_create_handler(
@@ -2192,7 +2234,7 @@ pub(crate) async fn send_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::route_contracts::{RouteProtection, DAEMON_ROUTE_CONTRACTS};
+    use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
     use crate::schema::init_database;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
@@ -2839,6 +2881,36 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn offer_builder_routes_use_protected_access_boundary() {
+        let inspect_contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/offer-builder")
+            .expect("offer builder inspect route contract");
+        assert_eq!(inspect_contract.sample_route, "/offer-builder");
+        assert!(matches!(
+            inspect_contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Inspect,
+                capability_id: "offer_builder.inspect",
+            }
+        ));
+
+        let write_contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| {
+                contract.pattern == "/offer-builder" && contract.method == HttpMethod::Post
+            })
+            .expect("offer builder write route contract");
+        assert!(matches!(
+            write_contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Create,
+                capability_id: "offer_builder.write",
+            }
+        ));
     }
 
     #[test]

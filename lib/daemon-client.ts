@@ -148,6 +148,62 @@ export interface HostedTrialWaitlistEntry {
   updatedAt: string;
 }
 
+export interface OfferView {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  status: string;
+  visibility: string;
+  publicationState: string;
+  trialDays: number;
+  sourceKind: string;
+  sourceRef: string | null;
+  terms: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdByActorId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+  archivedAt: string | null;
+}
+
+export interface PublicOfferView {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  trialDays: number;
+  sourceKind: string;
+  sourceRef: string | null;
+  terms: Record<string, unknown>;
+}
+
+export interface OfferBuilderReference {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+  evidenceRefs: string[];
+  blockedBy: string | null;
+}
+
+export interface OfferBuilderValidation {
+  publishable: boolean;
+  state: string;
+  blockers: string[];
+  warnings: string[];
+  supportedReferences: OfferBuilderReference[];
+  deferredReferences: OfferBuilderReference[];
+  evidenceRefs: string[];
+}
+
+export interface OfferBuilderOffer {
+  offer: OfferView;
+  publicPreview: PublicOfferView | null;
+  validation: OfferBuilderValidation;
+}
+
 export interface RealtimeEventSummary {
   cursor: number;
   schemaVersion: string;
@@ -262,6 +318,11 @@ interface HostedTrialCapacityResponse {
   waitlist: HostedTrialWaitlistEntry[];
 }
 
+interface OfferBuilderResponse {
+  offers: OfferBuilderOffer[];
+  generatedAt: string;
+}
+
 interface EventReplayResponse {
   events: RealtimeEventSummary[];
   nextCursor: number | null;
@@ -281,6 +342,14 @@ export interface HostedTrialOperationsSnapshot {
   slots: HostedTrialSlot[];
   waitlist: HostedTrialWaitlistEntry[];
   backupJobs: BackupRestoreJobSummary[];
+  degradedReason: string | null;
+}
+
+export interface OfferBuilderSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  generatedAt: string | null;
+  offers: OfferBuilderOffer[];
   degradedReason: string | null;
 }
 
@@ -406,6 +475,20 @@ export async function getHostedTrialOperationsSnapshot(): Promise<HostedTrialOpe
     waitlist: capacityResult.data?.waitlist ?? [],
     backupJobs: backupResult.data?.jobs ?? [],
     degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
+  };
+}
+
+export async function getOfferBuilderSnapshot(): Promise<OfferBuilderSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const builderResult = await readEndpoint<OfferBuilderResponse>(baseUrl, "/offer-builder");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    generatedAt: builderResult.data?.generatedAt ?? null,
+    offers: builderResult.data?.offers ?? [],
+    degradedReason: builderResult.error,
   };
 }
 

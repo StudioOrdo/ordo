@@ -78,6 +78,10 @@ pub async fn serve(
             put(entry_point_update_handler),
         )
         .route("/visitor-sessions", get(visitor_sessions_handler))
+        .route(
+            "/offer-builder",
+            get(offer_builder_handler).post(offer_builder_save_handler),
+        )
         .route("/offers", get(offers_handler))
         .route("/offers", post(offer_create_handler))
         .route("/offers/:offer_id", put(offer_update_handler))

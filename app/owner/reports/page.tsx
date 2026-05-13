@@ -9,10 +9,16 @@ import {
   type GrowthPilotReportSection,
 } from "@/lib/daemon-client";
 import {
+  buildGrowthPilotEvidenceDrilldown,
+  buildGrowthPilotReportBrief,
   buildGrowthPilotReportView,
   growthReportSourceStatuses,
   growthReportStatusClassToken,
   growthSourceStatusLabel,
+  type GrowthPilotEvidenceDrilldown,
+  type GrowthPilotLoopBriefItem,
+  type GrowthPilotReportBrief,
+  type GrowthPilotReportExportState,
   type GrowthPilotReportSectionView,
   type GrowthPilotReportView,
 } from "@/lib/growth-pilot-report";
@@ -33,6 +39,7 @@ export default async function OwnerReportsPage({ searchParams }: { searchParams?
   const role: ProductRole = requestedRole;
   const snapshot = await getGrowthPilotReportSnapshot();
   const view = snapshot.report ? buildGrowthPilotReportView(snapshot.report) : null;
+  const brief = snapshot.report && view ? buildGrowthPilotReportBrief(snapshot.report, view) : null;
   const degraded = Boolean(snapshot.degradedReason);
 
   return (
@@ -48,11 +55,19 @@ export default async function OwnerReportsPage({ searchParams }: { searchParams?
           <span>As of {snapshot.generatedAt ?? snapshot.createdAt}</span>
           <span className={statusClass(degraded ? "error" : view ? "ready" : "empty")}>{degraded ? "degraded" : view ? "ready" : "empty"}</span>
         </div>
+        <h3 className="panel-title">{brief?.title ?? "Owner Review Brief"}</h3>
         <ul className="brief-list">
-          {summaryLines(view, degraded).map((line) => (
+          {summaryLines(brief, view, degraded).map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
+        {brief ? (
+          <ul className="brief-list">
+            {brief.limitationLines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : null}
       </section>
 
       {snapshot.degradedReason ? (
@@ -64,6 +79,12 @@ export default async function OwnerReportsPage({ searchParams }: { searchParams?
 
       {view && snapshot.report ? (
         <>
+          {brief ? (
+            <>
+              <PilotLoopPanel pilotLoop={brief.pilotLoop} />
+              <ReportExportPanel exportState={brief.exportState} />
+            </>
+          ) : null}
           <StatusSummaryPanel view={view} />
           <LimitationsPanel title="Global Limitations" limitations={snapshot.report.limitations} />
           {view.sections.map((section) => (
@@ -77,6 +98,61 @@ export default async function OwnerReportsPage({ searchParams }: { searchParams?
         </section>
       ) : null}
     </ProductShell>
+  );
+}
+
+function PilotLoopPanel({ pilotLoop }: { pilotLoop: GrowthPilotReportBrief["pilotLoop"] }) {
+  return (
+    <section className="plain-panel table-shell">
+      <h3 className="panel-title">Pilot Loop Closure Smoke</h3>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Checkpoint</th>
+            <th>Coverage</th>
+            <th>Evidence</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pilotLoop.map((item) => (
+            <PilotLoopRow key={item.key} item={item} />
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function PilotLoopRow({ item }: { item: GrowthPilotLoopBriefItem }) {
+  return (
+    <tr>
+      <td>
+        <strong>{item.label}</strong>
+        <span className="table-subtle">{item.key}</span>
+      </td>
+      <td>
+        <span className={statusClass(growthReportStatusClassToken(item.sourceStatus))}>{item.coverage}</span>
+      </td>
+      <td>{item.evidenceRefCount} safe local ref(s)</td>
+      <td>
+        {item.detail}
+        <span className="table-subtle">{item.metricSummary}</span>
+      </td>
+    </tr>
+  );
+}
+
+function ReportExportPanel({ exportState }: { exportState: GrowthPilotReportExportState }) {
+  return (
+    <section className="plain-panel">
+      <div className="meta-row">
+        <h3 className="panel-title">{exportState.label}</h3>
+        <span className={statusClass(exportState.available ? "ready" : "deferred")}>{exportState.available ? "ready" : "deferred"}</span>
+      </div>
+      <p className="brief-body">{exportState.detail}</p>
+      {exportState.blockedBy ? <p className="table-subtle">Blocked by {exportState.blockedBy}</p> : null}
+    </section>
   );
 }
 
@@ -232,14 +308,45 @@ function LimitationRow({ limitation }: { limitation: GrowthPilotReportLimitation
 }
 
 function EvidenceRefView({ evidenceRef }: { evidenceRef: GrowthPilotEvidenceRef }) {
+  const drilldown = buildGrowthPilotEvidenceDrilldown(evidenceRef);
   return (
-    <span className="table-subtle">
-      {evidenceRef.label}: {evidenceRef.uri}
-    </span>
+    <details className="detail-block evidence-drilldown">
+      <summary>{drilldown.label}</summary>
+      <EvidenceDrilldownDetail drilldown={drilldown} />
+    </details>
   );
 }
 
-function summaryLines(view: GrowthPilotReportView | null, degraded: boolean): string[] {
+function EvidenceDrilldownDetail({ drilldown }: { drilldown: GrowthPilotEvidenceDrilldown }) {
+  return (
+    <dl className="evidence-drilldown-detail">
+      <div>
+        <dt>Availability</dt>
+        <dd>{drilldown.availability}</dd>
+      </div>
+      <div>
+        <dt>Source</dt>
+        <dd>
+          {drilldown.sourceKind}:{drilldown.sourceId}
+        </dd>
+      </div>
+      <div>
+        <dt>Local ref</dt>
+        <dd>{drilldown.displayRef}</dd>
+      </div>
+      <div>
+        <dt>Reason</dt>
+        <dd>{drilldown.reason}</dd>
+      </div>
+      <div>
+        <dt>Detail</dt>
+        <dd>{drilldown.detail}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function summaryLines(brief: GrowthPilotReportBrief | null, view: GrowthPilotReportView | null, degraded: boolean): string[] {
   if (degraded) {
     return [
       "Growth report is degraded because the daemon snapshot is unavailable.",
@@ -249,5 +356,5 @@ function summaryLines(view: GrowthPilotReportView | null, degraded: boolean): st
   if (!view) {
     return ["No daemon-backed Growth report snapshot is available yet."];
   }
-  return view.summaryLines;
+  return brief?.summaryLines ?? view.summaryLines;
 }

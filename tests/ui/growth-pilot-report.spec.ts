@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  buildGrowthPilotEvidenceDrilldown,
+  buildGrowthPilotReportBrief,
   buildGrowthPilotReportView,
   growthSourceStatusLabel,
   growthSourceStatusTone,
@@ -27,7 +29,9 @@ test.describe("Growth pilot report view model", () => {
       "4 metric(s) and 2 recent evidence item(s) are available for owner review.",
       "5 missing or deferred signal(s) remain explicit instead of being treated as success metrics.",
     ]);
-    expect(view.sections[0]?.metricSummary).toBe("2 metric(s), 1 recent item(s), 1 limitation(s)");
+    expect(view.sections[0]?.metricSummary).toBe(
+      "2 metric(s), 1 recent item(s), 1 limitation(s)",
+    );
     expect(JSON.stringify(view)).not.toContain("rawPrompt");
     expect(JSON.stringify(view)).not.toContain("sk_live");
   });
@@ -65,7 +69,122 @@ test.describe("Growth pilot report view model", () => {
       deferred: 0,
       unknown: 0,
     });
-    expect(view.summaryLines).toEqual(["No Growth report sections are available yet."]);
+    expect(view.summaryLines).toEqual([
+      "No Growth report sections are available yet.",
+    ]);
+  });
+
+  test("builds a deterministic owner-review brief with explicit pilot-loop gaps and export deferral", () => {
+    const brief = buildGrowthPilotReportBrief(growthReportFixture());
+
+    expect(brief.title).toBe("Owner Review Brief");
+    expect(brief.summaryLines).toEqual([
+      "2 daemon-backed Growth report section(s) are ready for owner review.",
+      "2 / 7 pilot loop checkpoint(s) have local report sections.",
+      "2 safe local evidence reference(s) are available for owner/admin drilldown.",
+      "5 missing or deferred signal(s) remain explicit instead of being inferred as success.",
+    ]);
+    expect(
+      brief.pilotLoop.map((item) => `${item.key}:${item.coverage}`),
+    ).toEqual([
+      "tracked_entry:covered",
+      "offers:missing",
+      "hosted_trials:missing",
+      "support_handoffs:missing",
+      "feedback:missing",
+      "rewards:missing",
+      "studio_promos:covered",
+    ]);
+    expect(brief.limitationLines).toContain(
+      "External publishing is deferred: No platform publishing API is called by this report.",
+    );
+    expect(brief.exportState).toEqual({
+      available: false,
+      label: "Local report package export unavailable",
+      detail:
+        "Deterministic report-package export is not implemented for the owner Growth report route yet; use the on-screen brief and local evidence refs.",
+      blockedBy: "deterministic_export_package",
+    });
+    expect(JSON.stringify(brief)).not.toContain("sk_live");
+    expect(JSON.stringify(brief)).not.toContain("rawPrompt");
+  });
+
+  test("normalizes safe local evidence refs and withholds unsafe or mismatched refs", () => {
+    const safe = buildGrowthPilotEvidenceDrilldown({
+      sourceKind: "visitor_session",
+      sourceId: "visitor_smoke_1",
+      label: "Visitor session visitor_smoke_1",
+      uri: "ordo://visitor_session/visitor_smoke_1",
+    });
+    expect(safe).toMatchObject({
+      availability: "available",
+      displayRef: "ordo://visitor_session/visitor_smoke_1",
+      reason: "local_owner_admin_ref",
+    });
+
+    const external = buildGrowthPilotEvidenceDrilldown({
+      sourceKind: "visitor_session",
+      sourceId: "visitor_smoke_1",
+      label: "Visitor session sk_live_hidden",
+      uri: "https://analytics.example/internal?token=sk_live_hidden",
+    });
+    expect(external).toMatchObject({
+      availability: "unavailable",
+      displayRef: "external evidence ref withheld",
+      reason: "unsupported_scheme",
+    });
+    expect(JSON.stringify(external)).not.toContain("https://analytics.example");
+    expect(JSON.stringify(external)).not.toContain("sk_live_hidden");
+
+    const mismatch = buildGrowthPilotEvidenceDrilldown({
+      sourceKind: "offer",
+      sourceId: "offer_smoke_1",
+      label: "Offer offer_smoke_1",
+      uri: "ordo://trial/trial_smoke_active",
+    });
+    expect(mismatch).toMatchObject({
+      availability: "unavailable",
+      displayRef: "mismatched local evidence ref withheld",
+      reason: "source_mismatch",
+    });
+
+    const internal = buildGrowthPilotEvidenceDrilldown({
+      sourceKind: "staff_routing_details",
+      sourceId: "route_secret_1",
+      label: "Staff route sk_live_hidden",
+      uri: "ordo://staff_routing_details/route_secret_1",
+    });
+    expect(internal).toMatchObject({
+      availability: "unavailable",
+      displayRef: "unsupported local evidence ref withheld",
+      reason: "unsupported_source",
+      label: "Unsupported evidence ref",
+      sourceKind: "withheld",
+      sourceId: "withheld",
+    });
+    expect(JSON.stringify(internal)).not.toContain("staff_routing_details");
+    expect(JSON.stringify(internal)).not.toContain("route_secret_1");
+    expect(JSON.stringify(internal)).not.toContain("sk_live_hidden");
+
+    const internalExternal = buildGrowthPilotEvidenceDrilldown({
+      sourceKind: "staff_routing_details",
+      sourceId: "route_secret_2",
+      label: "Staff route sk_live_external",
+      uri: "https://analytics.example/internal?token=sk_live_external",
+    });
+    expect(internalExternal).toMatchObject({
+      availability: "unavailable",
+      displayRef: "unsupported local evidence ref withheld",
+      reason: "unsupported_source",
+      label: "Unsupported evidence ref",
+      sourceKind: "withheld",
+      sourceId: "withheld",
+    });
+    expect(JSON.stringify(internalExternal)).not.toContain(
+      "staff_routing_details",
+    );
+    expect(JSON.stringify(internalExternal)).not.toContain("route_secret_2");
+    expect(JSON.stringify(internalExternal)).not.toContain("sk_live_external");
   });
 });
 
@@ -205,7 +324,8 @@ function growthReportFixture(): GrowthPilotReportResponse {
           {
             key: "platform_analytics_missing",
             label: "Platform analytics are missing",
-            detail: "Views, watch time, and conversions need a future governed integration.",
+            detail:
+              "Views, watch time, and conversions need a future governed integration.",
             sourceStatus: "missing",
           },
         ],

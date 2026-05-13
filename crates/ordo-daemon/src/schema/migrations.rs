@@ -186,6 +186,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_reward_ledger_and_benefits",
         apply: add_reward_ledger_and_benefits,
     },
+    SchemaMigration {
+        version: 36,
+        name: "add_product_pack_manifest_spine",
+        apply: add_product_pack_manifest_spine,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -2840,6 +2845,79 @@ fn add_reward_ledger_and_benefits(connection: &Connection) -> Result<()> {
             ON qualification_reviews(decision, updated_at DESC);
         "#,
     )?;
+    Ok(())
+}
+
+fn add_product_pack_manifest_spine(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS product_packs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            manifest_json TEXT NOT NULL DEFAULT '{}',
+            validation_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_packs_status_updated
+            ON product_packs(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS product_pack_versions (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            manifest_json TEXT NOT NULL DEFAULT '{}',
+            validation_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            installed_by_actor_id TEXT,
+            installed_at TEXT NOT NULL,
+            FOREIGN KEY (pack_id) REFERENCES product_packs(id) ON DELETE CASCADE,
+            FOREIGN KEY (installed_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL,
+            UNIQUE(pack_id, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_pack_versions_pack
+            ON product_pack_versions(pack_id, installed_at DESC);
+
+        CREATE TABLE IF NOT EXISTS product_pack_bindings (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            binding_kind TEXT NOT NULL,
+            binding_key TEXT NOT NULL,
+            capability_id TEXT,
+            template_id TEXT,
+            template_version INTEGER,
+            artifact_kind TEXT,
+            contract_json TEXT NOT NULL DEFAULT '{}',
+            visibility_json TEXT NOT NULL DEFAULT '{}',
+            access_json TEXT NOT NULL DEFAULT '{}',
+            growth_json TEXT NOT NULL DEFAULT '{}',
+            limits_json TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL,
+            disabled_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (pack_id) REFERENCES product_packs(id) ON DELETE CASCADE,
+            FOREIGN KEY (capability_id) REFERENCES capabilities(id) ON DELETE SET NULL,
+            FOREIGN KEY (template_id, template_version) REFERENCES process_templates(id, version),
+            UNIQUE(pack_id, binding_kind, binding_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_pack_bindings_pack
+            ON product_pack_bindings(pack_id, binding_kind, binding_key);
+        CREATE INDEX IF NOT EXISTS idx_product_pack_bindings_capability
+            ON product_pack_bindings(capability_id, status);
+        CREATE INDEX IF NOT EXISTS idx_product_pack_bindings_template
+            ON product_pack_bindings(template_id, template_version, status);
+        "#,
+    )?;
+
     Ok(())
 }
 

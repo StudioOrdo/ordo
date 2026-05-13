@@ -12,6 +12,7 @@ chrono.workspace = true
 clap.workspace = true
 constant_time_eq.workspace = true
 jsonschema.workspace = true
+markdown.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
 secrecy.workspace = true

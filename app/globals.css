@@ -3523,6 +3523,34 @@ input:focus-visible {
   max-height: 220px;
 }
 
+.evidence-drilldown {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.evidence-drilldown-detail {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.evidence-drilldown-detail div {
+  display: grid;
+  gap: 2px;
+}
+
+.evidence-drilldown-detail dt {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.evidence-drilldown-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .report-preview {
   margin: 14px 0 0;
   line-height: 1.55;

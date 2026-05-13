@@ -1,13 +1,14 @@
-import { AppPlaceholderPage } from "@/components/app-placeholder-page";
+import { StudioWorkPage } from "@/components/studio-work-page";
 import { type SearchParams } from "@/lib/page-role";
 
+export const dynamic = "force-dynamic";
+
 export default async function StudioArtifactsPage({ searchParams }: { searchParams?: SearchParams }) {
-  return await AppPlaceholderPage({
+  return await StudioWorkPage({
     searchParams,
-    appSpaceId: "studio",
-    itemId: "artifacts",
-    eyebrow: "Studio",
+    currentItemId: "artifacts",
+    roomKind: "artifacts",
     title: "Artifacts",
-    brief: ["Artifacts are the durable outputs of the factory.", "They should know their source knowledge, job, owner, review state, and publication targets.", "Browser-generated output is candidate until daemon validation.", "The artifact library UI is deferred."],
+    description: "Durable artifact review state projected from daemon artifact work items.",
   });
 }

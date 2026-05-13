@@ -1,13 +1,14 @@
-import { AppPlaceholderPage } from "@/components/app-placeholder-page";
+import { StudioWorkPage } from "@/components/studio-work-page";
 import { type SearchParams } from "@/lib/page-role";
 
+export const dynamic = "force-dynamic";
+
 export default async function StudioFactoryJobsPage({ searchParams }: { searchParams?: SearchParams }) {
-  return await AppPlaceholderPage({
+  return await StudioWorkPage({
     searchParams,
-    appSpaceId: "studio",
-    itemId: "factory-jobs",
-    eyebrow: "Studio",
+    currentItemId: "factory-jobs",
+    roomKind: "runs",
     title: "Factory Jobs",
-    brief: ["Factory jobs produce artifacts from knowledge and requests.", "Stages should stream through pub/sub and expose progress without fake certainty.", "Examples include short videos, articles, decks, QR cards, and briefs.", "Job creation UI is deferred."],
+    description: "Durable Studio production runs projected from the daemon work-item spine.",
   });
 }

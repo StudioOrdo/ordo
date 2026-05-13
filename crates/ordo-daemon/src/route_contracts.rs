@@ -423,6 +423,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "rewards.list",
     ),
     protected(
+        HttpMethod::Get,
+        "/growth/pilot-report",
+        "/growth/pilot-report",
+        PolicyAction::Inspect,
+        "growth.pilot_report.read",
+    ),
+    protected(
         HttpMethod::Post,
         "/rewards/referrals/:referral_id/qualify",
         "/rewards/referrals/referral_1/qualify",
@@ -482,6 +489,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "/surface/work-items",
         PolicyAction::Inspect,
         "surface.work_items.list",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/studio/promo-video-packages",
+        "/studio/promo-video-packages",
+        PolicyAction::Create,
+        "studio.promo_video.package",
+    ),
+    protected(
+        HttpMethod::Put,
+        "/studio/promo-video-packages/:artifact_id/review",
+        "/studio/promo-video-packages/artifact_1/review",
+        PolicyAction::Approve,
+        "studio.promo_video.review",
     ),
     protected(
         HttpMethod::Get,
@@ -657,6 +678,34 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "/mcp/packs/pack.local.status/disable",
         PolicyAction::Update,
         "mcp.packs.write",
+    ),
+    protected(
+        HttpMethod::Get,
+        "/product-packs",
+        "/product-packs",
+        PolicyAction::Inspect,
+        "product_packs.list",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/product-packs",
+        "/product-packs",
+        PolicyAction::Validate,
+        "product_packs.write",
+    ),
+    protected(
+        HttpMethod::Get,
+        "/product-packs/:pack_id",
+        "/product-packs/product_pack.nyc.promo_ops",
+        PolicyAction::Inspect,
+        "product_packs.list",
+    ),
+    protected(
+        HttpMethod::Put,
+        "/product-packs/:pack_id/disable",
+        "/product-packs/product_pack.nyc.promo_ops/disable",
+        PolicyAction::Update,
+        "product_packs.write",
     ),
 ];
 

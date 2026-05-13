@@ -215,6 +215,65 @@ API, opens the member chat, sends one message through `/chat/ws`, and verifies
 the deterministic `local_fake` / `fake-chat` assistant reply without exposing
 raw credentials, prompt content, provider keys, or internal policy details.
 
+### #228-#231 Phase 8: Provider-Agnostic Readiness
+
+Add provider-specific readiness slices while keeping member chat deterministic
+by default and live calls disabled until a later explicit guarded validation
+path exists. This phase is about the daemon's provider boundary, not browser
+provider selection.
+
+2026 provider research baseline:
+
+- OpenAI's public API reference now lives under `developers.openai.com` and
+  emphasizes server-side Bearer API keys, request IDs, rate-limit headers,
+  backwards-compatible REST evolution, and Responses-era model behavior. Our
+  existing OpenAI-compatible adapter remains useful, but GPT-5-class behavior
+  needs readiness metadata for endpoint family, reasoning settings, timeouts,
+  and budget before any member-chat live path is allowed.
+- Anthropic's current primary API is the native Messages API at
+  `POST /v1/messages`, with token counting at `POST /v1/messages/count_tokens`.
+  Its content blocks, tools, thinking, usage, stop reasons, and stream events
+  are not OpenAI-compatible by default, so Anthropic needs a native adapter
+  contract rather than being forced through the OpenAI-compatible path.
+- DeepSeek documents both OpenAI-compatible and Anthropic-compatible API
+  formats. The OpenAI-compatible base URL is `https://api.deepseek.com`; the
+  Anthropic-compatible base URL is `https://api.deepseek.com/anthropic`. Current
+  documented models include `deepseek-v4-flash` and `deepseek-v4-pro`, while
+  `deepseek-chat` and `deepseek-reasoner` are documented as deprecated after
+  2026-07-24.
+- Ollama's local API is served by default at `http://localhost:11434/api`, with
+  `POST /api/chat`, `POST /api/generate`, `GET /api/tags`, `GET /api/ps`, and
+  `GET /api/version`. It supports streaming by default and `stream:false` for a
+  single response, plus local timing/token-ish metadata. Default CI must not
+  require Ollama to be installed.
+- Provider-agnostic gateway patterns such as LiteLLM normalize many providers
+  into an OpenAI-like shape, but Ordo should keep its daemon-owned policy,
+  prompt, privacy, accounting, and vault boundaries rather than outsourcing the
+  trust boundary to a proxy by default.
+
+Phase 8 provider issues:
+
+- #228 OpenAI provider readiness resolver: resolve configured provider/model,
+  endpoint family, key source, timeout, budget, and live-call opt-in without
+  making default network calls.
+- #229 Anthropic Messages provider readiness resolver: safely inspect config and
+  report native-adapter readiness or `unsupported_adapter` until a Messages
+  adapter exists.
+- #230 DeepSeek provider readiness resolver: normalize OpenAI-compatible versus
+  Anthropic-compatible base URLs, reject deprecated models, and prove endpoint
+  shape with mocked transport only.
+- #231 Local Ollama provider readiness resolver: decide whether `local` maps to
+  Ollama or whether `ollama` becomes its own catalog provider, then add safe
+  localhost readiness probes and mocked adapter normalization.
+
+Readiness decisions should be structured and safe, for example `disabled`,
+`missing_key`, `missing_model`, `missing_budget`, `missing_timeout`,
+`live_network_disabled`, `unsupported_adapter`, `provider_unreachable`, or
+`ready_but_live_disabled`. These decisions may be exposed to owner/admin
+surfaces later, but member chat must continue to show only safe run states and
+must never expose provider keys, raw prompts, prompt slot content, policy
+internals, staff/system-only details, or credentials.
+
 ## Validation Contract
 
 Default validation remains deterministic, local, and network-free.

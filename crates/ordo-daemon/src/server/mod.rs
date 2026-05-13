@@ -231,6 +231,13 @@ pub async fn serve(
         .route("/mcp/packs", post(mcp_pack_install_handler))
         .route("/mcp/packs/:pack_id", get(mcp_pack_read_handler))
         .route("/mcp/packs/:pack_id/disable", put(mcp_pack_disable_handler))
+        .route("/product-packs", get(product_packs_handler))
+        .route("/product-packs", post(product_pack_install_handler))
+        .route("/product-packs/:pack_id", get(product_pack_read_handler))
+        .route(
+            "/product-packs/:pack_id/disable",
+            put(product_pack_disable_handler),
+        )
         .route("/reports/issues", get(list_issue_reports_handler))
         .route("/reports/issues/:report_id", get(read_issue_report_handler))
         .route(

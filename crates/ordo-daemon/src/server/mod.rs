@@ -143,6 +143,18 @@ pub async fn serve(
             get(handoff_receipts_handler),
         )
         .route(
+            "/feedback/requests",
+            get(feedback_requests_handler).post(feedback_request_create_handler),
+        )
+        .route(
+            "/feedback/requests/:request_id/respond",
+            post(feedback_request_respond_handler),
+        )
+        .route(
+            "/feedback/requests/:request_id/review",
+            post(feedback_request_review_handler),
+        )
+        .route(
             "/public/available-offers",
             get(public_available_offers_handler),
         )

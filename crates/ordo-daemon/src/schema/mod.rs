@@ -90,6 +90,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "customer_feedback",
     "feedback_tags",
     "customer_reviews",
+    "feedback_requests",
+    "feedback_request_responses",
+    "feedback_request_reviews",
+    "feedback_reward_eligibility",
     "referral_records",
     "business_outcomes",
     "business_outcome_attributions",
@@ -108,7 +112,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 33;
+pub const CURRENT_SCHEMA_VERSION: i64 = 34;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -207,10 +211,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 33);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 34);
     }
 
     #[test]
@@ -708,6 +712,52 @@ mod tests {
             &connection,
             "hosted_trial_waitlist_entries",
             "receipt_json"
+        ));
+    }
+
+    #[test]
+    fn feedback_request_loop_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "feedback_requests"));
+        assert!(column_exists(
+            &connection,
+            "feedback_requests",
+            "target_kind"
+        ));
+        assert!(column_exists(
+            &connection,
+            "feedback_requests",
+            "member_context_summary"
+        ));
+        assert!(column_exists(
+            &connection,
+            "feedback_requests",
+            "staff_context_json"
+        ));
+        assert!(table_exists(&connection, "feedback_request_responses"));
+        assert!(column_exists(
+            &connection,
+            "feedback_request_responses",
+            "customer_feedback_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "feedback_request_responses",
+            "idempotency_key"
+        ));
+        assert!(table_exists(&connection, "feedback_request_reviews"));
+        assert!(column_exists(
+            &connection,
+            "feedback_request_reviews",
+            "decision"
+        ));
+        assert!(table_exists(&connection, "feedback_reward_eligibility"));
+        assert!(column_exists(
+            &connection,
+            "feedback_reward_eligibility",
+            "state"
         ));
     }
 

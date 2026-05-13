@@ -176,6 +176,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_hosted_trial_capacity_lifecycle",
         apply: add_hosted_trial_capacity_lifecycle,
     },
+    SchemaMigration {
+        version: 34,
+        name: "add_feedback_request_loop",
+        apply: add_feedback_request_loop,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -2536,6 +2541,121 @@ fn add_actor_experience_preferences_schema(connection: &Connection) -> Result<()
 
         CREATE INDEX IF NOT EXISTS idx_actor_experience_preferences_updated
             ON actor_experience_preferences(updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_feedback_request_loop(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS feedback_requests (
+            id TEXT PRIMARY KEY,
+            target_kind TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            member_actor_id TEXT,
+            connection_id TEXT,
+            conversation_id TEXT,
+            source_kind TEXT NOT NULL,
+            source_id TEXT,
+            prompt TEXT NOT NULL,
+            member_context_summary TEXT NOT NULL,
+            status TEXT NOT NULL,
+            due_at TEXT,
+            priority TEXT NOT NULL DEFAULT 'normal',
+            created_by_actor_id TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            staff_context_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            closed_at TEXT,
+            CHECK (status IN (
+                'open',
+                'responded',
+                'follow_up_requested',
+                'accepted',
+                'rejected',
+                'expired',
+                'canceled'
+            )),
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_target
+            ON feedback_requests(target_kind, target_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_member
+            ON feedback_requests(member_actor_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_connection
+            ON feedback_requests(connection_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_status
+            ON feedback_requests(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS feedback_request_responses (
+            id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            actor_id TEXT,
+            response_kind TEXT NOT NULL,
+            body_summary TEXT NOT NULL,
+            customer_feedback_id TEXT,
+            idempotency_key TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES feedback_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (customer_feedback_id) REFERENCES customer_feedback(id) ON DELETE SET NULL,
+            UNIQUE(request_id, idempotency_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_responses_request
+            ON feedback_request_responses(request_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_responses_actor
+            ON feedback_request_responses(actor_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS feedback_request_reviews (
+            id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            response_id TEXT,
+            reviewer_actor_id TEXT,
+            decision TEXT NOT NULL,
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            reason TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES feedback_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (response_id) REFERENCES feedback_request_responses(id) ON DELETE SET NULL,
+            CHECK (decision IN ('accepted', 'rejected', 'follow_up_requested'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_reviews_request
+            ON feedback_request_reviews(request_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_reviews_decision
+            ON feedback_request_reviews(decision, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS feedback_reward_eligibility (
+            id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            response_id TEXT,
+            review_id TEXT,
+            actor_id TEXT,
+            state TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES feedback_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (response_id) REFERENCES feedback_request_responses(id) ON DELETE SET NULL,
+            FOREIGN KEY (review_id) REFERENCES feedback_request_reviews(id) ON DELETE SET NULL,
+            UNIQUE(request_id, response_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_reward_eligibility_state
+            ON feedback_reward_eligibility(state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_reward_eligibility_actor
+            ON feedback_reward_eligibility(actor_id, updated_at DESC);
         "#,
     )?;
     Ok(())

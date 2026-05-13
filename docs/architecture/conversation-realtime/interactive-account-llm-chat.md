@@ -156,6 +156,25 @@ or API-key requirements are missing. Provider keys remain write-only and must
 not appear in UI, HTTP responses, WebSocket frames, durable events, diagnostic
 logs, reports, or test artifacts.
 
+Current implementation status: member chat is deterministic-only. The browser
+adapter sends `local_fake` / `fake-chat` and exposes no provider selector. The
+conversation gateway rejects any non-deterministic `llm.run.request` with a
+safe `live_provider_disabled` `command.rejected` frame before prompt
+compilation, privacy egress, provider dispatch, token accounting, or assistant
+message creation can run. This is intentionally daemon-level proof; browser
+coverage remains focused on deterministic behavior until a separate internal or
+admin provider-readiness surface exists.
+
+Live-provider mode remains disabled until a later guarded validation slice adds
+all of the following as explicit preconditions:
+
+- configured provider and model allowlist;
+- write-only API key presence through the provider boundary;
+- budget and timeout limits;
+- network/live-call opt-in outside CI defaults;
+- safe failure evidence that never exposes provider keys, raw prompts, prompt
+  slot content, policy internals, staff/system-only details, or credentials.
+
 ### #220 Phase 6: LLM Run States In Chat UI
 
 Expose client-safe LLM run states in the member chat surface:

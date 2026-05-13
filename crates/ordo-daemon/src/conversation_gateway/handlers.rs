@@ -311,10 +311,16 @@ pub(crate) fn llm_run_request(
         .provider_id
         .unwrap_or_else(|| "local_fake".to_string());
     let model_id = payload.model_id.unwrap_or_else(|| "fake-chat".to_string());
-    ensure!(
-        provider_id == "local_fake" && model_id == "fake-chat",
-        "Only deterministic local LLM provider mode is enabled for this gateway slice."
-    );
+    if provider_id != "local_fake" || model_id != "fake-chat" {
+        return Ok(error_output(command_rejected_error(
+            Some(&client_id),
+            Some(&conversation_id),
+            "live_provider_disabled",
+            "Live provider mode is disabled for member chat. Use deterministic local provider mode until provider readiness guards are enabled.",
+            false,
+            &Utc::now().to_rfc3339(),
+        )));
+    }
     let run_id = payload
         .run_id
         .unwrap_or_else(|| format!("llm_run_{}", Uuid::new_v4()));
@@ -1767,17 +1773,43 @@ mod tests {
                     "assistantParticipantId": assistant_id,
                     "providerId": "openai",
                     "modelId": "gpt-test",
-                    "userMessage": "Please call a live provider."
+                    "userMessage": "Please call a live provider using ava@example.com and sk-test-secret.",
+                    "promptSlots": [{
+                        "id": "live_prompt",
+                        "label": "Live Prompt",
+                        "content": "Raw prompt content must not leave this blocked request.",
+                        "sourceRefs": ["conversation_event_1"],
+                        "inclusionReason": "Attempted live provider readiness proof.",
+                        "visibilityCeiling": "participants",
+                        "contentHash": "sha256:test"
+                    }]
                 }),
             ))
             .unwrap(),
         );
         assert_eq!(rejected.frames[0].op, ConversationGatewayOp::Error);
-        assert_eq!(rejected.frames[0].payload["code"], "command_failed");
+        assert_eq!(rejected.frames[0].frame_type, "command.rejected");
+        assert_eq!(
+            rejected.frames[0].client_id.as_deref(),
+            Some("client_llm_live")
+        );
+        assert_eq!(
+            rejected.frames[0].conversation_id.as_deref(),
+            Some(conversation_id.as_str())
+        );
+        assert_eq!(rejected.frames[0].payload["code"], "live_provider_disabled");
+        assert_eq!(rejected.frames[0].payload["retryable"], false);
         assert!(rejected.frames[0].payload["message"]
             .as_str()
             .unwrap()
-            .contains("deterministic local LLM provider"));
+            .contains("Live provider mode is disabled"));
+        assert!(rejected.broadcast.is_empty());
+
+        let serialized = serde_json::to_string(&rejected.frames[0]).unwrap();
+        assert!(!serialized.contains("ava@example.com"));
+        assert!(!serialized.contains("sk-test-secret"));
+        assert!(!serialized.contains("Raw prompt content"));
+        assert!(!serialized.contains("OPENAI_API_KEY"));
     }
 
     #[test]

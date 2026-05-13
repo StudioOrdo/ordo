@@ -10,6 +10,8 @@ use crate::events::{append_realtime_event_tx, system_event, RealtimeEvent};
 
 const DEFAULT_AVAILABILITY_SCHEDULE_ID: &str = "availability_schedule_default";
 const DEFAULT_OPERATOR_PRESENCE_ID: &str = "operator_presence_default";
+const STRATEGY_SESSION_DESTINATION_KIND: &str = "support";
+const STRATEGY_SESSION_DESTINATION_ID: &str = "strategy_session";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -254,6 +256,15 @@ impl OwnerDecision {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategySessionStatusState {
+    Waiting,
+    ScreeningRequired,
+    Scheduled,
+    Declined,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailabilityWindow {
@@ -368,6 +379,25 @@ pub struct HandoffReceiptView {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrategySessionHandoffResponse {
+    pub status: StrategySessionStatusView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrategySessionStatusView {
+    pub request_id: String,
+    pub state: StrategySessionStatusState,
+    pub summary: String,
+    pub next_step: String,
+    pub source_kind: String,
+    pub source_id: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailabilityScheduleWriteRequest {
@@ -442,6 +472,23 @@ pub struct HandoffInboxResolveRequest {
     pub evidence: Option<Value>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StrategySessionHandoffRequest {
+    pub conversation_id: Option<String>,
+    pub visitor_session_id: Option<String>,
+    pub trial_id: Option<String>,
+    pub access_grant_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub member_actor_id: Option<String>,
+    pub message_excerpt: Option<String>,
+    pub context_summary: Option<String>,
+    pub urgency: Option<String>,
+    pub connection_trust: Option<ConnectionTrustLevel>,
+    pub evaluated_at: Option<String>,
+    pub evidence_refs: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone)]
 struct AvailabilityScheduleRecord {
     id: String,
@@ -490,6 +537,16 @@ struct HandoffInboxItemRecord {
     created_at: String,
     updated_at: String,
     resolved_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct StrategySessionTrialContext {
+    state: String,
+    status: Option<String>,
+    trial_ends_at: Option<String>,
+    access_state: String,
+    access_effect: Option<String>,
+    ready_for_review: bool,
 }
 
 pub fn read_availability_state(db_path: &Path) -> Result<AvailabilityStateResponse> {
@@ -1074,6 +1131,179 @@ pub fn list_handoff_receipts(db_path: &Path, item_id: &str) -> Result<HandoffRec
     Ok(HandoffReceiptListResponse { receipts })
 }
 
+pub fn request_strategy_session_handoff(
+    db_path: &Path,
+    request: StrategySessionHandoffRequest,
+    actor_id: Option<&str>,
+) -> Result<(StrategySessionHandoffResponse, RealtimeEvent)> {
+    let conversation_id = normalize_identifier_option(request.conversation_id, "Conversation id")?;
+    let visitor_session_id =
+        normalize_identifier_option(request.visitor_session_id, "Visitor session id")?;
+    let trial_id = normalize_identifier_option(request.trial_id, "Trial id")?;
+    let access_grant_id = normalize_identifier_option(request.access_grant_id, "Access grant id")?;
+    let connection_id = normalize_identifier_option(request.connection_id, "Connection id")?;
+    let member_actor_id = normalize_identifier_option(request.member_actor_id, "Member actor id")?;
+    let message_excerpt =
+        normalize_optional_text_with_limit(request.message_excerpt, "Message excerpt", 500)?;
+    let context_summary =
+        normalize_optional_text_with_limit(request.context_summary, "Context summary", 1_000)?;
+    let urgency = Some(normalize_urgency(request.urgency)?);
+    let evaluated_at = parse_optional_datetime(request.evaluated_at.as_deref())?;
+    let connection_trust = request
+        .connection_trust
+        .unwrap_or(ConnectionTrustLevel::Unknown);
+    let (source_kind, source_id) = strategy_session_source(
+        conversation_id.as_deref(),
+        trial_id.as_deref(),
+        visitor_session_id.as_deref(),
+        connection_id.as_deref(),
+        member_actor_id.as_deref(),
+    )?;
+    let connection = Connection::open(db_path)?;
+    let trial_context = read_strategy_session_trial_context(
+        &connection,
+        trial_id.as_deref(),
+        access_grant_id.as_deref(),
+        member_actor_id.as_deref(),
+        visitor_session_id.as_deref(),
+        &evaluated_at,
+    )?;
+    drop(connection);
+
+    let mut evidence_refs = normalize_evidence_refs(request.evidence_refs)?;
+    push_strategy_evidence_ref(
+        &mut evidence_refs,
+        "conversation",
+        conversation_id.as_deref(),
+    );
+    push_strategy_evidence_ref(
+        &mut evidence_refs,
+        "visitor_session",
+        visitor_session_id.as_deref(),
+    );
+    push_strategy_evidence_ref(&mut evidence_refs, "trial", trial_id.as_deref());
+    push_strategy_evidence_ref(
+        &mut evidence_refs,
+        "resource_grant",
+        access_grant_id.as_deref(),
+    );
+    push_strategy_evidence_ref(&mut evidence_refs, "connection", connection_id.as_deref());
+    push_strategy_evidence_ref(&mut evidence_refs, "actor", member_actor_id.as_deref());
+    evidence_refs = merge_unique_evidence_refs(Vec::new(), evidence_refs);
+
+    let eligibility = evaluate_handoff_eligibility(
+        db_path,
+        HandoffEligibilityRequest {
+            intent: HandoffIntent::Support,
+            connection_id: connection_id.clone(),
+            connection_trust: Some(connection_trust),
+            evaluated_at: Some(evaluated_at.to_rfc3339()),
+            evidence: Some(json!({
+                "kind": "strategy_session_request",
+                "sourceKind": source_kind,
+                "sourceId": source_id,
+                "trialId": trial_id,
+                "accessGrantId": access_grant_id,
+                "memberActorId": member_actor_id,
+            })),
+        },
+    )?;
+    let screening_required = !eligibility.allowed || !trial_context.ready_for_review;
+    let (requested_action, next_action_hint) = if screening_required {
+        (
+            "Continue Ordo screening before strategy review",
+            "Ask one qualifying question and keep the request in the Support handoff queue.",
+        )
+    } else {
+        (
+            "Review strategy session request",
+            "Review the attached evidence and accept, decline, schedule, or continue screening.",
+        )
+    };
+    let (mut item, mut event) = create_handoff_inbox_item(
+        db_path,
+        HandoffInboxCreateRequest {
+            source_kind: source_kind.clone(),
+            source_id: source_id.clone(),
+            destination_kind: STRATEGY_SESSION_DESTINATION_KIND.to_string(),
+            destination_id: Some(STRATEGY_SESSION_DESTINATION_ID.to_string()),
+            reason: Some("Strategy session requested".to_string()),
+            requested_action: Some(requested_action.to_string()),
+            urgency,
+            assignee_actor_id: None,
+            due_at: None,
+            next_action_hint: Some(next_action_hint.to_string()),
+            evidence_refs: Some(evidence_refs),
+            visibility: Some("staff".to_string()),
+            request: Some(json!({
+                "kind": "strategy_session_request",
+                "sourceKind": source_kind,
+                "sourceId": source_id,
+                "messageExcerpt": message_excerpt,
+                "contextSummary": context_summary,
+                "memberActorId": member_actor_id,
+                "connectionId": connection_id,
+                "trialId": trial_id,
+                "accessGrantId": access_grant_id,
+            })),
+            evidence: Some(json!({
+                "strategySession": {
+                    "kind": "strategy_session",
+                    "eligibility": {
+                        "id": eligibility.id,
+                        "allowed": eligibility.allowed,
+                        "reason": eligibility.reason,
+                    },
+                    "trial": trial_context.into_json(),
+                    "screeningRequired": screening_required,
+                }
+            })),
+            approval_requirement: Some(ApprovalRequirement::OwnerApprovalRequired),
+        },
+        actor_id,
+    )?;
+
+    if screening_required && item.delivery_state != DeliveryState::ContinueScreening {
+        (item, event) = update_handoff_inbox_item(
+            db_path,
+            &item.id,
+            HandoffInboxUpdateRequest {
+                delivery_state: Some(DeliveryState::ContinueScreening),
+                next_action_hint: Some(
+                    "Ask one qualifying question and keep the request in the Support handoff queue."
+                        .to_string(),
+                ),
+                evidence: Some(json!({
+                    "strategySessionScreening": {
+                        "required": true,
+                        "eligibilityAllowed": eligibility.allowed,
+                    }
+                })),
+                ..Default::default()
+            },
+            actor_id,
+        )?;
+    }
+
+    Ok((
+        StrategySessionHandoffResponse {
+            status: strategy_status_from_handoff_item(&item),
+        },
+        event,
+    ))
+}
+
+pub fn read_strategy_session_status(
+    db_path: &Path,
+    item_id: &str,
+) -> Result<StrategySessionStatusView> {
+    let item = read_handoff_inbox_item(db_path, item_id)?;
+    if item.request["kind"] != "strategy_session_request" {
+        bail!("Strategy session request was not found: {item_id}");
+    }
+    Ok(strategy_status_from_handoff_item(&item))
+}
+
 fn ensure_default_availability_state(connection: &Connection) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     connection.execute(
@@ -1597,6 +1827,217 @@ fn merge_evidence(existing: Value, addition: Option<Value>) -> Value {
     }
 }
 
+fn strategy_session_source(
+    conversation_id: Option<&str>,
+    trial_id: Option<&str>,
+    visitor_session_id: Option<&str>,
+    connection_id: Option<&str>,
+    member_actor_id: Option<&str>,
+) -> Result<(String, Option<String>)> {
+    if let Some(conversation_id) = conversation_id {
+        Ok((
+            "conversation".to_string(),
+            Some(conversation_id.to_string()),
+        ))
+    } else if let Some(trial_id) = trial_id {
+        Ok(("trial".to_string(), Some(trial_id.to_string())))
+    } else if let Some(visitor_session_id) = visitor_session_id {
+        Ok((
+            "visitor_session".to_string(),
+            Some(visitor_session_id.to_string()),
+        ))
+    } else if let Some(connection_id) = connection_id {
+        Ok(("connection".to_string(), Some(connection_id.to_string())))
+    } else if let Some(member_actor_id) = member_actor_id {
+        Ok(("actor".to_string(), Some(member_actor_id.to_string())))
+    } else {
+        bail!("Strategy session requests require conversation, trial, visitor, connection, or member context.")
+    }
+}
+
+fn read_strategy_session_trial_context(
+    connection: &Connection,
+    trial_id: Option<&str>,
+    access_grant_id: Option<&str>,
+    member_actor_id: Option<&str>,
+    visitor_session_id: Option<&str>,
+    evaluated_at: &DateTime<Utc>,
+) -> Result<StrategySessionTrialContext> {
+    let Some(trial_id) = trial_id else {
+        return Ok(StrategySessionTrialContext {
+            state: "not_supplied".to_string(),
+            status: None,
+            trial_ends_at: None,
+            access_state: "not_supplied".to_string(),
+            access_effect: None,
+            ready_for_review: false,
+        });
+    };
+    let trial = connection
+        .query_row(
+            "SELECT status, trial_ends_at FROM trials WHERE id = ?1",
+            [trial_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((status, trial_ends_at)) = trial else {
+        return Ok(StrategySessionTrialContext {
+            state: "missing".to_string(),
+            status: None,
+            trial_ends_at: None,
+            access_state: "not_checked".to_string(),
+            access_effect: None,
+            ready_for_review: false,
+        });
+    };
+    let trial_expires_at = DateTime::parse_from_rfc3339(&trial_ends_at)?.with_timezone(&Utc);
+    let trial_active = status == "started" && trial_expires_at > *evaluated_at;
+    let (access_state, access_effect, access_active) = read_strategy_session_access_context(
+        connection,
+        trial_id,
+        access_grant_id,
+        member_actor_id,
+        visitor_session_id,
+        evaluated_at,
+    )?;
+    Ok(StrategySessionTrialContext {
+        state: if trial_active { "active" } else { "inactive" }.to_string(),
+        status: Some(status),
+        trial_ends_at: Some(trial_ends_at),
+        access_state,
+        access_effect,
+        ready_for_review: trial_active && access_active,
+    })
+}
+
+fn read_strategy_session_access_context(
+    connection: &Connection,
+    trial_id: &str,
+    access_grant_id: Option<&str>,
+    member_actor_id: Option<&str>,
+    visitor_session_id: Option<&str>,
+    evaluated_at: &DateTime<Utc>,
+) -> Result<(String, Option<String>, bool)> {
+    let Some(access_grant_id) = access_grant_id else {
+        return Ok(("not_supplied".to_string(), None, false));
+    };
+    let grant = connection
+        .query_row(
+            "SELECT resource_kind, resource_id, action, subject_kind, subject_id, effect, expires_at
+             FROM resource_grants WHERE id = ?1",
+            [access_grant_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((resource_kind, resource_id, action, subject_kind, subject_id, effect, expires_at)) =
+        grant
+    else {
+        return Ok(("missing".to_string(), None, false));
+    };
+    let resource_matches = resource_kind == "trial" && resource_id == trial_id && action == "use";
+    let expected_subjects = expected_strategy_access_subjects(member_actor_id, visitor_session_id);
+    let subject_matches = expected_subjects.is_empty()
+        || (subject_kind == "actor"
+            && expected_subjects
+                .iter()
+                .any(|subject| subject == &subject_id));
+    let not_expired = expires_at
+        .as_deref()
+        .map(|value| DateTime::parse_from_rfc3339(value).map(|parsed| parsed.with_timezone(&Utc)))
+        .transpose()?
+        .is_none_or(|expires_at| expires_at > *evaluated_at);
+    let active = resource_matches && subject_matches && effect == "allow" && not_expired;
+    let access_state = if active {
+        "active"
+    } else if !resource_matches || !subject_matches {
+        "mismatched"
+    } else {
+        "inactive"
+    };
+    Ok((access_state.to_string(), Some(effect), active))
+}
+
+fn expected_strategy_access_subjects(
+    member_actor_id: Option<&str>,
+    visitor_session_id: Option<&str>,
+) -> Vec<String> {
+    let mut subjects = Vec::new();
+    if let Some(member_actor_id) = member_actor_id {
+        subjects.push(member_actor_id.to_string());
+    }
+    if let Some(visitor_session_id) = visitor_session_id {
+        let visitor_actor_id = format!("actor_{visitor_session_id}");
+        if !subjects.iter().any(|subject| subject == &visitor_actor_id) {
+            subjects.push(visitor_actor_id);
+        }
+    }
+    subjects
+}
+
+fn strategy_status_from_handoff_item(item: &HandoffInboxItemView) -> StrategySessionStatusView {
+    let (state, summary, next_step) = match item.delivery_state {
+        DeliveryState::PendingOwnerApproval | DeliveryState::Queued | DeliveryState::Assigned => (
+            StrategySessionStatusState::Waiting,
+            "Your strategy request is queued for review.",
+            "Ordo will keep the context attached and update this request when it changes.",
+        ),
+        DeliveryState::ContinueScreening => (
+            StrategySessionStatusState::ScreeningRequired,
+            "Ordo needs a little more context before human review.",
+            "Ordo will ask for the missing context before human review.",
+        ),
+        DeliveryState::ApprovedLocalOnly => (
+            StrategySessionStatusState::Scheduled,
+            "Your strategy request was accepted inside Ordo.",
+            "Scheduling details stay inside Ordo and will be handled from the Support queue.",
+        ),
+        DeliveryState::Declined => (
+            StrategySessionStatusState::Declined,
+            "Your strategy request was not accepted in its current form.",
+            "Ordo can keep helping inside the conversation.",
+        ),
+    };
+    StrategySessionStatusView {
+        request_id: item.id.clone(),
+        state,
+        summary: summary.to_string(),
+        next_step: next_step.to_string(),
+        source_kind: item.source_kind.clone(),
+        source_id: item.source_id.clone(),
+        evidence_refs: vec![format!("strategy_session_request:{}", item.id)],
+        updated_at: item.updated_at.clone(),
+    }
+}
+
+impl StrategySessionTrialContext {
+    fn into_json(self) -> Value {
+        json!({
+            "state": self.state,
+            "status": self.status,
+            "trialEndsAt": self.trial_ends_at,
+            "accessState": self.access_state,
+            "accessEffect": self.access_effect,
+            "readyForReview": self.ready_for_review,
+        })
+    }
+}
+
+fn push_strategy_evidence_ref(evidence_refs: &mut Vec<String>, kind: &str, id: Option<&str>) {
+    if let Some(id) = id {
+        evidence_refs.push(format!("{kind}:{id}"));
+    }
+}
+
 fn owner_decision_from_str(value: &str) -> Result<OwnerDecision> {
     match value {
         "accept" => Ok(OwnerDecision::Accept),
@@ -1611,6 +2052,21 @@ fn normalize_identifier_option(value: Option<String>, label: &str) -> Result<Opt
     value
         .map(|value| require_identifier(&value, label))
         .transpose()
+}
+
+fn normalize_optional_text_with_limit(
+    value: Option<String>,
+    label: &str,
+    max_len: usize,
+) -> Result<Option<String>> {
+    let normalized = normalize_optional_string(value);
+    if normalized
+        .as_deref()
+        .is_some_and(|value| value.len() > max_len)
+    {
+        bail!("{label} must be {max_len} characters or fewer.");
+    }
+    Ok(normalized)
 }
 
 fn require_identifier(value: &str, label: &str) -> Result<String> {
@@ -1638,6 +2094,9 @@ mod tests {
     use super::*;
     use crate::policy::LOCAL_OWNER_ACTOR_ID;
     use crate::schema::init_database;
+    use crate::surface_work_items::{
+        list_surface_work_items, SurfaceWorkItemQuery, SurfaceWorkItemViewer,
+    };
     use tempfile::TempDir;
 
     #[test]
@@ -2016,6 +2475,346 @@ mod tests {
     }
 
     #[test]
+    fn strategy_session_request_creates_support_handoff_with_safe_member_status() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        insert_started_trial_with_access(&db_path);
+        update_operator_presence(
+            &db_path,
+            OperatorPresenceWriteRequest {
+                status: OperatorPresenceStatus::Available,
+                threshold: InterruptionThreshold::Open,
+                status_message: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (response, event) = request_strategy_session_handoff(
+            &db_path,
+            StrategySessionHandoffRequest {
+                conversation_id: Some("conversation_1".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                trial_id: Some("trial_1".to_string()),
+                access_grant_id: Some("resource_grant_trial".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                member_actor_id: Some("actor_member_1".to_string()),
+                message_excerpt: Some("Can Keith help me sharpen my NYC launch offer?".to_string()),
+                context_summary: Some("Member is using the 30 day pilot.".to_string()),
+                urgency: Some("high".to_string()),
+                connection_trust: Some(ConnectionTrustLevel::Trusted),
+                evaluated_at: Some("2026-05-08T12:00:00Z".to_string()),
+                evidence_refs: Some(vec!["message:message_1".to_string()]),
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        assert_eq!(event.event_type, "handoff.inbox.created");
+        assert_eq!(response.status.state, StrategySessionStatusState::Waiting);
+        assert_eq!(
+            response.status.summary,
+            "Your strategy request is queued for review."
+        );
+        assert_eq!(response.status.source_kind, "conversation");
+        assert_eq!(response.status.source_id.as_deref(), Some("conversation_1"));
+
+        let serialized = serde_json::to_string(&response).unwrap();
+        for forbidden in [
+            "actor_keith",
+            "assigneeActorId",
+            "destinationId",
+            "operator_presence",
+            "threshold",
+            "providerSecret",
+            "rawPrompt",
+            "policy",
+            "resource_grant",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "member status leaked {forbidden}: {serialized}"
+            );
+        }
+
+        let item = read_handoff_inbox_item(&db_path, &response.status.request_id).unwrap();
+        assert_eq!(item.destination_kind, "support");
+        assert_eq!(item.destination_id.as_deref(), Some("strategy_session"));
+        assert_eq!(item.visibility, "staff");
+        assert_eq!(item.delivery_state, DeliveryState::PendingOwnerApproval);
+        assert_eq!(item.request["kind"], "strategy_session_request");
+        assert_eq!(
+            item.request["messageExcerpt"],
+            "Can Keith help me sharpen my NYC launch offer?"
+        );
+        assert_eq!(
+            item.evidence["strategySession"]["eligibility"]["allowed"],
+            true
+        );
+        assert_eq!(
+            item.evidence["strategySession"]["trial"]["status"],
+            "started"
+        );
+        assert!(item
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == "conversation:conversation_1"));
+        assert!(item
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == "trial:trial_1"));
+        assert!(item
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == "resource_grant:resource_grant_trial"));
+
+        let work_items = list_surface_work_items(
+            &db_path,
+            SurfaceWorkItemQuery {
+                viewer: SurfaceWorkItemViewer::Staff,
+                surface_kind: Some("support".to_string()),
+                room_kind: Some("handoffs".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let work_item = work_items
+            .items
+            .iter()
+            .find(|work_item| work_item.source_id == item.id)
+            .expect("strategy session projects to Support handoff work item");
+        assert_eq!(work_item.title, "Strategy session requested");
+        assert_eq!(work_item.visibility, "staff");
+        assert!(work_item
+            .actions
+            .iter()
+            .any(|action| action == "resolve_handoff"));
+        assert!(work_item
+            .actions
+            .iter()
+            .any(|action| action == "decline_handoff"));
+    }
+
+    #[test]
+    fn unavailable_strategy_session_requests_group_and_continue_screening() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+
+        let request = StrategySessionHandoffRequest {
+            conversation_id: Some("conversation_1".to_string()),
+            visitor_session_id: None,
+            trial_id: None,
+            access_grant_id: None,
+            connection_id: Some("connection_1".to_string()),
+            member_actor_id: Some("actor_member_1".to_string()),
+            message_excerpt: Some("I need help deciding what to build first.".to_string()),
+            context_summary: None,
+            urgency: Some("normal".to_string()),
+            connection_trust: Some(ConnectionTrustLevel::Unknown),
+            evaluated_at: Some("2026-05-08T12:00:00Z".to_string()),
+            evidence_refs: None,
+        };
+
+        let (first, _) =
+            request_strategy_session_handoff(&db_path, request.clone(), Some(LOCAL_OWNER_ACTOR_ID))
+                .unwrap();
+        let (second, _) =
+            request_strategy_session_handoff(&db_path, request, Some(LOCAL_OWNER_ACTOR_ID))
+                .unwrap();
+
+        assert_eq!(first.status.request_id, second.status.request_id);
+        assert_eq!(
+            second.status.state,
+            StrategySessionStatusState::ScreeningRequired
+        );
+        assert_eq!(
+            second.status.next_step,
+            "Ordo will ask for the missing context before human review."
+        );
+
+        let items = list_handoff_inbox_with_query(
+            &db_path,
+            HandoffInboxListQuery {
+                source_kind: Some("conversation".to_string()),
+                source_id: Some("conversation_1".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(items.items.len(), 1);
+        assert_eq!(
+            items.items[0].delivery_state,
+            DeliveryState::ContinueScreening
+        );
+
+        let serialized = serde_json::to_string(&second).unwrap();
+        assert!(!serialized.contains("operator_presence_blocks_handoff"));
+        assert!(!serialized.contains("resource_grant"));
+        assert!(!serialized.contains("staff"));
+        assert!(!serialized.contains("actor_keith"));
+    }
+
+    #[test]
+    fn strategy_session_requires_matching_active_access_grant() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        insert_started_trial_with_access(&db_path);
+        insert_mismatched_trial_access(&db_path);
+        update_operator_presence(
+            &db_path,
+            OperatorPresenceWriteRequest {
+                status: OperatorPresenceStatus::Available,
+                threshold: InterruptionThreshold::Open,
+                status_message: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (missing_access, _) = request_strategy_session_handoff(
+            &db_path,
+            StrategySessionHandoffRequest {
+                conversation_id: Some("conversation_missing_access".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                trial_id: Some("trial_1".to_string()),
+                access_grant_id: None,
+                connection_id: Some("connection_1".to_string()),
+                member_actor_id: Some("actor_member_1".to_string()),
+                message_excerpt: Some("Can I get strategy help?".to_string()),
+                context_summary: None,
+                urgency: None,
+                connection_trust: Some(ConnectionTrustLevel::Trusted),
+                evaluated_at: Some("2026-05-08T12:00:00Z".to_string()),
+                evidence_refs: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+        assert_eq!(
+            missing_access.status.state,
+            StrategySessionStatusState::ScreeningRequired
+        );
+        let missing_access_item =
+            read_handoff_inbox_item(&db_path, &missing_access.status.request_id).unwrap();
+        assert_eq!(
+            missing_access_item.evidence["existing"]["strategySession"]["trial"]["accessState"],
+            "not_supplied"
+        );
+        assert_eq!(
+            missing_access_item.evidence["existing"]["strategySession"]["trial"]["readyForReview"],
+            false
+        );
+
+        let (mismatched_access, _) = request_strategy_session_handoff(
+            &db_path,
+            StrategySessionHandoffRequest {
+                conversation_id: Some("conversation_mismatched_access".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                trial_id: Some("trial_1".to_string()),
+                access_grant_id: Some("resource_grant_other_trial".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                member_actor_id: Some("actor_member_1".to_string()),
+                message_excerpt: Some("Can I get strategy help?".to_string()),
+                context_summary: None,
+                urgency: None,
+                connection_trust: Some(ConnectionTrustLevel::Trusted),
+                evaluated_at: Some("2026-05-08T12:00:00Z".to_string()),
+                evidence_refs: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+        assert_eq!(
+            mismatched_access.status.state,
+            StrategySessionStatusState::ScreeningRequired
+        );
+        let mismatched_access_item =
+            read_handoff_inbox_item(&db_path, &mismatched_access.status.request_id).unwrap();
+        assert_eq!(
+            mismatched_access_item.evidence["existing"]["strategySession"]["trial"]["accessState"],
+            "mismatched"
+        );
+        assert_eq!(
+            mismatched_access_item.evidence["existing"]["strategySession"]["trial"]
+                ["readyForReview"],
+            false
+        );
+
+        let serialized = serde_json::to_string(&mismatched_access).unwrap();
+        assert!(!serialized.contains("resource_grant_other_trial"));
+        assert!(!serialized.contains("staff"));
+        assert!(!serialized.contains("actor_keith"));
+    }
+
+    #[test]
+    fn strategy_session_status_maps_staff_decisions_without_staff_leakage() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        insert_started_trial_with_access(&db_path);
+        update_operator_presence(
+            &db_path,
+            OperatorPresenceWriteRequest {
+                status: OperatorPresenceStatus::Available,
+                threshold: InterruptionThreshold::Open,
+                status_message: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+        let (response, _) = request_strategy_session_handoff(
+            &db_path,
+            StrategySessionHandoffRequest {
+                conversation_id: Some("conversation_2".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                trial_id: Some("trial_1".to_string()),
+                access_grant_id: Some("resource_grant_trial".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                member_actor_id: Some("actor_member_1".to_string()),
+                message_excerpt: Some("I want a strategy session.".to_string()),
+                context_summary: None,
+                urgency: None,
+                connection_trust: Some(ConnectionTrustLevel::Trusted),
+                evaluated_at: Some("2026-05-08T12:00:00Z".to_string()),
+                evidence_refs: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        resolve_handoff_inbox_item(
+            &db_path,
+            &response.status.request_id,
+            HandoffInboxResolveRequest {
+                decision: OwnerDecision::Accept,
+                decision_reason: Some("Keith will review inside Ordo".to_string()),
+                evidence: Some(json!({ "staffNote": "keep private" })),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap();
+
+        let status = read_strategy_session_status(&db_path, &response.status.request_id).unwrap();
+        assert_eq!(status.state, StrategySessionStatusState::Scheduled);
+        assert_eq!(
+            status.summary,
+            "Your strategy request was accepted inside Ordo."
+        );
+        let serialized = serde_json::to_string(&status).unwrap();
+        assert!(!serialized.contains("Keith"));
+        assert!(!serialized.contains("actor_keith"));
+        assert!(!serialized.contains("staffNote"));
+        assert!(!serialized.contains("policy"));
+        assert!(!serialized.contains("resource_grant"));
+    }
+
+    #[test]
     fn existing_assignee_does_not_assign_on_unrelated_metadata_update() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
@@ -2174,5 +2973,68 @@ mod tests {
             Some(LOCAL_OWNER_ACTOR_ID),
         );
         assert!(resolve_again.is_err());
+    }
+
+    fn insert_started_trial_with_access(db_path: &Path) {
+        let connection = Connection::open(db_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO offer_acceptances (
+                    id, offer_id, offer_slug, offer_title, visitor_session_id, entry_point_id,
+                    entry_point_slug, attribution_json, acceptance_context_json, status,
+                    accepted_at, created_at, updated_at
+                 ) VALUES (
+                    'offer_acceptance_1', 'offer_pilot', 'nyc-pilot', 'NYC Pilot',
+                    'visitor_session_1', 'entry_nyc', 'nyc', '{\"campaign\":\"nyc\"}',
+                    '{\"source\":\"test\"}', 'accepted', '2026-05-13T10:00:00Z',
+                    '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO trials (
+                    id, acceptance_id, offer_id, offer_slug, visitor_session_id, status,
+                    started_at, trial_ends_at, decision_evidence_json, created_at, updated_at
+                 ) VALUES (
+                    'trial_1', 'offer_acceptance_1', 'offer_pilot', 'nyc-pilot',
+                    'visitor_session_1', 'started', '2026-05-13T10:00:00Z',
+                    '2026-06-12T10:00:00Z', '{}', '2026-05-13T10:00:00Z',
+                    '2026-05-13T10:00:00Z'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO resource_grants (
+                    id, resource_kind, resource_id, action, subject_kind, subject_id,
+                    effect, created_at, expires_at, metadata_json
+                 ) VALUES (
+                    'resource_grant_trial', 'trial', 'trial_1', 'use',
+                    'actor', 'actor_member_1', 'allow', '2026-05-13T10:00:00Z',
+                    '2026-06-12T10:00:00Z', '{}'
+                 )",
+                [],
+            )
+            .unwrap();
+    }
+
+    fn insert_mismatched_trial_access(db_path: &Path) {
+        let connection = Connection::open(db_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO resource_grants (
+                    id, resource_kind, resource_id, action, subject_kind, subject_id,
+                    effect, created_at, expires_at, metadata_json
+                 ) VALUES (
+                    'resource_grant_other_trial', 'trial', 'trial_other', 'use',
+                    'actor', 'actor_member_1', 'allow', '2026-05-13T10:00:00Z',
+                    '2026-06-12T10:00:00Z', '{}'
+                 )",
+                [],
+            )
+            .unwrap();
     }
 }

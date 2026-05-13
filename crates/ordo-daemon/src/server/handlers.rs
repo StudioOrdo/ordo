@@ -79,11 +79,12 @@ use crate::mcp_packs::{
     McpPackListResponse, McpPackResponse,
 };
 use crate::offers::{
-    accept_public_offer, create_offer, list_offer_acceptances, list_offers,
-    list_public_available_offers, list_trials, transition_trial, update_offer,
-    OfferAcceptanceCreateRequest, OfferAcceptanceListResponse, OfferAcceptanceResponse,
-    OfferListResponse, OfferView, OfferWriteRequest, PublicOfferListResponse, TrialListResponse,
-    TrialTransitionRequest, TrialView,
+    accept_public_offer, create_offer, list_hosted_trial_capacity, list_offer_acceptances,
+    list_offers, list_public_available_offers, list_trials, request_hosted_trial_reset,
+    transition_trial, update_offer, HostedTrialCapacityResponse, HostedTrialResetPlanView,
+    HostedTrialResetRequest, OfferAcceptanceCreateRequest, OfferAcceptanceListResponse,
+    OfferAcceptanceResponse, OfferListResponse, OfferView, OfferWriteRequest,
+    PublicOfferListResponse, TrialListResponse, TrialTransitionRequest, TrialView,
 };
 use crate::policy::{
     authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
@@ -634,6 +635,50 @@ pub(crate) async fn trial_transition_handler(
         transition_trial(&state.db_path, &trial_id, request).map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
     Ok(Json(trial))
+}
+
+pub(crate) async fn hosted_trial_capacity_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<HostedTrialCapacityResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/hosted-trials/capacity"),
+        Some("hosted_trials.capacity.inspect"),
+    )?;
+    list_hosted_trial_capacity(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn hosted_trial_reset_ready_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(trial_id): AxumPath<String>,
+    Json(request): Json<HostedTrialResetRequest>,
+) -> Result<Json<HostedTrialResetPlanView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Validate,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/hosted-trials/{trial_id}/reset-ready"),
+        ),
+        Some("hosted_trials.reset_ready.validate"),
+    )?;
+    let (plan, event) = request_hosted_trial_reset(&state.db_path, &trial_id, request)
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(plan))
 }
 
 pub(crate) async fn connections_handler(
@@ -2794,6 +2839,38 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn hosted_trial_operations_routes_are_protected_by_system_capabilities() {
+        let capacity_contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/hosted-trials/capacity")
+            .expect("hosted trial capacity route contract");
+        assert_eq!(capacity_contract.sample_route, "/hosted-trials/capacity");
+        assert!(matches!(
+            capacity_contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Inspect,
+                capability_id: "hosted_trials.capacity.inspect",
+            }
+        ));
+
+        let reset_contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/hosted-trials/:trial_id/reset-ready")
+            .expect("hosted trial reset-readiness route contract");
+        assert_eq!(
+            reset_contract.sample_route,
+            "/hosted-trials/trial_1/reset-ready"
+        );
+        assert!(matches!(
+            reset_contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Validate,
+                capability_id: "hosted_trials.reset_ready.validate",
+            }
+        ));
     }
 
     #[test]

@@ -228,6 +228,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
     ),
     protected(
         HttpMethod::Get,
+        "/hosted-trials/capacity",
+        "/hosted-trials/capacity",
+        PolicyAction::Inspect,
+        "hosted_trials.capacity.inspect",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/hosted-trials/:trial_id/reset-ready",
+        "/hosted-trials/trial_1/reset-ready",
+        PolicyAction::Validate,
+        "hosted_trials.reset_ready.validate",
+    ),
+    protected(
+        HttpMethod::Get,
         "/connections",
         "/connections",
         PolicyAction::Inspect,

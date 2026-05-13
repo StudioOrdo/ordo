@@ -40,6 +40,40 @@ test("System Brief renders daemon evidence and process provenance", async ({ pag
   }
 });
 
+test("Hosted Trials Systems room renders durable capacity and reset evidence", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/admin/hosted-trials?role=owner", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Hosted Trials" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("1 / 10 active");
+    await expect(page.locator("main")).toContainText("1 waiting");
+    await expect(page.locator("main")).toContainText("trial_smoke_active");
+    await expect(page.locator("main")).toContainText("trial_smoke_reset_ready");
+    await expect(page.locator("main")).toContainText("backup_smoke_1");
+    await expect(page.locator("main")).toContainText("ready_for_owner_review");
+    await expect(page.locator("main")).toContainText("converted_no_wipe");
+    await expect(page.locator("main")).toContainText("destructive wipe unavailable");
+    expect(daemon.state.requests).toContain("GET /hosted-trials/capacity");
+    expect(daemon.state.requests).toContain("GET /backups");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Hosted Trials Systems room refuses member role before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/admin/hosted-trials?role=member");
+
+    await expect(page.locator("body")).not.toContainText("trial_smoke_active");
+    await expect(page.locator("body")).not.toContainText("backup_smoke_1");
+    expect(daemon.state.requests).not.toContain("GET /hosted-trials/capacity");
+  } finally {
+    await daemon.close();
+  }
+});
+
 test("System shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
   await page.goto(productContentUrl("/admin/system?role=owner", testInfo));
 
@@ -99,6 +133,22 @@ test("Backup And Restore renders persisted jobs and operator controls", async ({
     await expect(page.getByRole("button", { name: "Validate Restore" })).toBeEnabled();
     await expect(page.locator("main")).toContainText("backup_smoke_1");
     await expect(page.locator("main")).toContainText("/app/.data/backups/backup_smoke_1/manifest.json");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Admin backup room keeps backup and restore controls in Systems", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/admin/backup?role=owner", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Backup & Restore" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create Backup" })).toBeEnabled();
+    await expect(page.getByLabel("Backup ID")).toHaveValue("backup_smoke_1");
+    await expect(page.getByRole("button", { name: "Validate Restore" })).toBeEnabled();
+    await expect(page.locator("main")).toContainText("backup_smoke_1");
+    expect(daemon.state.requests).toContain("GET /backups");
   } finally {
     await daemon.close();
   }
@@ -357,6 +407,7 @@ test("System role can access appliance system rail without leaking it to clients
   await expect(systemNav).toBeVisible();
   await expect(systemNav.getByRole("link", { name: /Health/ })).toBeVisible();
   await expect(systemNav.getByRole("link", { name: /Events/ })).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /Hosted Trials/ })).toBeVisible();
   await expect(systemNav.getByRole("link", { name: /Backups/ })).toBeVisible();
   await expect(page.locator('.primary-link[data-shell-id="admin"]')).toHaveCount(0);
   await page.getByLabel("Open account and role menu").click();
@@ -445,6 +496,10 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
 
   if (method === "GET" && path === "/backups") {
     return jsonResponse(response, { jobs: backupJobs(state.backupCreated) });
+  }
+
+  if (method === "GET" && path === "/hosted-trials/capacity") {
+    return jsonResponse(response, hostedTrialCapacity());
   }
 
   if (method === "GET" && path === "/logs?limit=100") {
@@ -606,6 +661,104 @@ function systemBrief() {
       origin: "browser-smoke",
       status: "succeeded",
     },
+  };
+}
+
+function hostedTrialCapacity() {
+  return {
+    policies: [
+      {
+        id: "hosted_trial_capacity_policy_smoke",
+        offerId: "offer_smoke_1",
+        offerSlug: "nyc-pilot",
+        status: "active",
+        activeSlotLimit: 10,
+        activeSlotCount: 1,
+        waitlistCount: 1,
+        trialDays: 30,
+        backupBeforeWipeRequired: true,
+        resetGraceDays: 7,
+        metadata: { pilot: "nyc" },
+        createdAt: "2026-05-08T12:00:00.000Z",
+        updatedAt: "2026-05-08T12:00:00.000Z",
+      },
+    ],
+    slots: [
+      hostedTrialSlot("hosted_trial_slot_active", "trial_smoke_active", "active", "pending", "pending", {}, {}),
+      hostedTrialSlot(
+        "hosted_trial_slot_reset_ready",
+        "trial_smoke_reset_ready",
+        "expired",
+        "ready",
+        "ready_for_owner_review",
+        {
+          backupBeforeWipeRequired: true,
+          destructiveWipeAllowed: false,
+          reason: "backup_ready_owner_review_required",
+          requires: ["explicit_destructive_action"],
+        },
+        {
+          actorId: "actor_local_owner",
+          reason: "30-day trial expired after backup export.",
+          decidedAt: "2026-05-08T12:00:00.000Z",
+        },
+      ),
+      hostedTrialSlot("hosted_trial_slot_converted", "trial_smoke_converted", "converted", "retained", "converted_no_wipe", {}, {}),
+    ],
+    waitlist: [
+      {
+        id: "hosted_trial_waitlist_smoke",
+        policyId: "hosted_trial_capacity_policy_smoke",
+        acceptanceId: "acceptance_waitlist_smoke",
+        offerId: "offer_smoke_1",
+        offerSlug: "nyc-pilot",
+        visitorSessionId: "visitor_smoke_1",
+        subjectKind: "visitor_session",
+        subjectId: "visitor_smoke_1",
+        status: "waiting",
+        position: 1,
+        reason: "capacity_full",
+        receipt: { title: "Waitlisted" },
+        evidenceRefs: ["offer_acceptance:acceptance_waitlist_smoke"],
+        createdAt: "2026-05-08T12:00:00.000Z",
+        updatedAt: "2026-05-08T12:00:00.000Z",
+      },
+    ],
+  };
+}
+
+function hostedTrialSlot(
+  id: string,
+  trialId: string,
+  status: string,
+  backupStatus: string,
+  resetState: string,
+  resetGuard: Record<string, unknown>,
+  ownerOverride: Record<string, unknown>,
+) {
+  return {
+    id,
+    policyId: "hosted_trial_capacity_policy_smoke",
+    trialId,
+    acceptanceId: `acceptance_${trialId}`,
+    offerId: "offer_smoke_1",
+    offerSlug: "nyc-pilot",
+    subjectKind: "visitor_session",
+    subjectId: `visitor_${trialId}`,
+    status,
+    allocatedAt: "2026-05-01T12:00:00.000Z",
+    expiresAt: "2026-05-31T12:00:00.000Z",
+    releasedAt: status === "active" ? null : "2026-06-01T12:00:00.000Z",
+    releaseReason: status === "active" ? null : status,
+    backupRequired: true,
+    backupStatus,
+    backupEvidenceRefs: resetState === "ready_for_owner_review" ? ["backup:backup_smoke_1"] : [],
+    resetEligibleAt: status === "active" ? null : "2026-06-07T12:00:00.000Z",
+    resetState,
+    resetGuard,
+    ownerOverride,
+    createdAt: "2026-05-01T12:00:00.000Z",
+    updatedAt: "2026-06-01T12:00:00.000Z",
   };
 }
 

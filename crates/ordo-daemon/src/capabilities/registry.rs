@@ -371,6 +371,41 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &[],
         ),
         capability(
+            "hosted_trials.capacity.inspect",
+            "Inspect Hosted Trial Capacity",
+            "Read hosted trial capacity, active slots, waitlist, expiration, backup, and reset guard state.",
+            "system",
+            json!({ "type": "object", "additionalProperties": false }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
+            "hosted_trials.reset_ready.validate",
+            "Validate Hosted Trial Reset Readiness",
+            "Record owner-reviewed hosted trial reset readiness after expiration and backup/export evidence.",
+            "system",
+            json!({
+                "type": "object",
+                "required": ["trialId", "backupEvidenceRefs", "ownerDecision"],
+                "properties": {
+                    "trialId": { "type": "string" },
+                    "backupEvidenceRefs": { "type": "array", "items": { "type": "string" } },
+                    "ownerDecision": { "type": "object" }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &[],
+        ),
+        capability(
             "surface.work_items.list",
             "List Surface Work Items",
             "Refresh and read the local CQRS-lite work item projection for product surfaces.",
@@ -1565,6 +1600,12 @@ fn side_effects_for_capability(id: &str, mcp_export_policy: &str) -> Vec<String>
             "creates_job",
             "writes_sqlite",
             "writes_surface_brief_artifact",
+        ][..],
+        "hosted_trials.capacity.inspect" => &[][..],
+        "hosted_trials.reset_ready.validate" => &[
+            "writes_sqlite",
+            "records_owner_decision",
+            "marks_reset_ready_without_wipe",
         ][..],
         "backup.create" => &["creates_job", "writes_sqlite", "writes_backup_archive"][..],
         "restore.preflight.validate" => &[

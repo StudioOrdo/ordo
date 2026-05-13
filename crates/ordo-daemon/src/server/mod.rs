@@ -84,6 +84,14 @@ pub async fn serve(
         .route("/offer-acceptances", get(offer_acceptances_handler))
         .route("/trials", get(trials_handler))
         .route("/trials/:trial_id/status", put(trial_transition_handler))
+        .route(
+            "/hosted-trials/capacity",
+            get(hosted_trial_capacity_handler),
+        )
+        .route(
+            "/hosted-trials/:trial_id/reset-ready",
+            post(hosted_trial_reset_ready_handler),
+        )
         .route("/connections", get(connections_handler))
         .route("/connections", post(connection_create_handler))
         .route(

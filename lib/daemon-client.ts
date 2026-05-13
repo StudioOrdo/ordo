@@ -89,6 +89,65 @@ export interface BackupRestoreJobSummary {
   tasks: BackupRestoreTaskSummary[];
 }
 
+export interface HostedTrialCapacityPolicy {
+  id: string;
+  offerId: string;
+  offerSlug: string;
+  status: string;
+  activeSlotLimit: number;
+  activeSlotCount: number;
+  waitlistCount: number;
+  trialDays: number;
+  backupBeforeWipeRequired: boolean;
+  resetGraceDays: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HostedTrialSlot {
+  id: string;
+  policyId: string;
+  trialId: string;
+  acceptanceId: string;
+  offerId: string;
+  offerSlug: string;
+  subjectKind: string;
+  subjectId: string;
+  status: string;
+  allocatedAt: string;
+  expiresAt: string;
+  releasedAt: string | null;
+  releaseReason: string | null;
+  backupRequired: boolean;
+  backupStatus: string;
+  backupEvidenceRefs: string[];
+  resetEligibleAt: string | null;
+  resetState: string;
+  resetGuard: Record<string, unknown>;
+  ownerOverride: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HostedTrialWaitlistEntry {
+  id: string;
+  policyId: string;
+  acceptanceId: string;
+  offerId: string;
+  offerSlug: string;
+  visitorSessionId: string | null;
+  subjectKind: string;
+  subjectId: string;
+  status: string;
+  position: number;
+  reason: string;
+  receipt: Record<string, unknown>;
+  evidenceRefs: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RealtimeEventSummary {
   cursor: number;
   schemaVersion: string;
@@ -197,6 +256,12 @@ interface BackupRestoreResponse {
   jobs: BackupRestoreJobSummary[];
 }
 
+interface HostedTrialCapacityResponse {
+  policies: HostedTrialCapacityPolicy[];
+  slots: HostedTrialSlot[];
+  waitlist: HostedTrialWaitlistEntry[];
+}
+
 interface EventReplayResponse {
   events: RealtimeEventSummary[];
   nextCursor: number | null;
@@ -206,6 +271,16 @@ export interface BackupRestoreSnapshot {
   daemonUrl: string;
   createdAt: string;
   jobs: BackupRestoreJobSummary[];
+  degradedReason: string | null;
+}
+
+export interface HostedTrialOperationsSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  policies: HostedTrialCapacityPolicy[];
+  slots: HostedTrialSlot[];
+  waitlist: HostedTrialWaitlistEntry[];
+  backupJobs: BackupRestoreJobSummary[];
   degradedReason: string | null;
 }
 
@@ -311,6 +386,26 @@ export async function getBackupRestoreSnapshot(): Promise<BackupRestoreSnapshot>
     createdAt,
     jobs: backupResult.data?.jobs ?? [],
     degradedReason: backupResult.error,
+  };
+}
+
+export async function getHostedTrialOperationsSnapshot(): Promise<HostedTrialOperationsSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const [capacityResult, backupResult] = await Promise.all([
+    readEndpoint<HostedTrialCapacityResponse>(baseUrl, "/hosted-trials/capacity"),
+    readEndpoint<BackupRestoreResponse>(baseUrl, "/backups"),
+  ]);
+  const degradedReasons = [capacityResult.error, backupResult.error].filter(Boolean);
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    policies: capacityResult.data?.policies ?? [],
+    slots: capacityResult.data?.slots ?? [],
+    waitlist: capacityResult.data?.waitlist ?? [],
+    backupJobs: backupResult.data?.jobs ?? [],
+    degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
   };
 }
 

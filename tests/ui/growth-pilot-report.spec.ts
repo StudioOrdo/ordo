@@ -44,6 +44,29 @@ test.describe("Growth pilot report view model", () => {
     expect(growthSourceStatusTone("deferred")).toBe("warn");
     expect(growthSourceStatusTone("unknown")).toBe("error");
   });
+
+  test("keeps empty reports explicit instead of inventing success metrics", () => {
+    const view = buildGrowthPilotReportView({
+      schemaVersion: "ordo.growth_pilot_report.v1",
+      generatedAt: "2026-05-13T18:00:00.000Z",
+      sections: [],
+      limitations: [],
+    });
+
+    expect(view.sectionCount).toBe(0);
+    expect(view.metricCount).toBe(0);
+    expect(view.recentItemCount).toBe(0);
+    expect(view.evidenceRefCount).toBe(0);
+    expect(view.missingOrDeferredCount).toBe(0);
+    expect(view.statusCounts).toEqual({
+      measured: 0,
+      manual: 0,
+      missing: 0,
+      deferred: 0,
+      unknown: 0,
+    });
+    expect(view.summaryLines).toEqual(["No Growth report sections are available yet."]);
+  });
 });
 
 function growthReportFixture(): GrowthPilotReportResponse {

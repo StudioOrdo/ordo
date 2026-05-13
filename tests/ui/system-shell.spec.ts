@@ -112,24 +112,26 @@ test("Owner Offer Builder refuses member role before daemon read", async ({ page
 test("Owner Growth report renders daemon-backed pilot evidence", async ({ page }, testInfo) => {
   const daemon = await startMockDaemon();
   try {
-    await page.goto(productContentUrl("/owner/reports?role=owner", testInfo));
+    for (const role of ["owner", "admin"] as const) {
+      await page.goto(productContentUrl(`/owner/reports?role=${role}`, testInfo));
 
-    await expect(page.locator("main").getByRole("heading", { name: "Growth Pilot Report" })).toBeVisible();
-    await expect(page.locator("main")).toContainText("Tracked Entry And Sessions");
-    await expect(page.locator("main")).toContainText("Offers And Acceptances");
-    await expect(page.locator("main")).toContainText("Hosted Trials, Capacity, Backup, And Reset");
-    await expect(page.locator("main")).toContainText("Support Handoffs And Strategy Sessions");
-    await expect(page.locator("main")).toContainText("Feedback Requests And Review");
-    await expect(page.locator("main")).toContainText("Rewards, Ledger, Benefits, And Balances");
-    await expect(page.locator("main")).toContainText("Studio Promo Packages And Publication Evidence");
-    await expect(page.locator("main")).toContainText("External publishing is deferred");
-    await expect(page.locator("main")).toContainText("Platform analytics are missing");
-    await expect(page.locator("main")).toContainText("ordo://visitor_session/visitor_smoke_1");
-    await expect(page.locator("main")).toContainText("deferred");
-    await expect(page.locator("main")).toContainText("missing");
-    await expect(page.locator("main")).not.toContainText("sk_live");
-    await expect(page.locator("main")).not.toContainText("rawPrompt");
-    expect(daemon.state.requests).toContain("GET /growth/pilot-report");
+      await expect(page.locator("main").getByRole("heading", { name: "Growth Pilot Report" })).toBeVisible();
+      await expect(page.locator("main")).toContainText("Tracked Entry And Sessions");
+      await expect(page.locator("main")).toContainText("Offers And Acceptances");
+      await expect(page.locator("main")).toContainText("Hosted Trials, Capacity, Backup, And Reset");
+      await expect(page.locator("main")).toContainText("Support Handoffs And Strategy Sessions");
+      await expect(page.locator("main")).toContainText("Feedback Requests And Review");
+      await expect(page.locator("main")).toContainText("Rewards, Ledger, Benefits, And Balances");
+      await expect(page.locator("main")).toContainText("Studio Promo Packages And Publication Evidence");
+      await expect(page.locator("main")).toContainText("External publishing is deferred");
+      await expect(page.locator("main")).toContainText("Platform analytics are missing");
+      await expect(page.locator("main")).toContainText("ordo://visitor_session/visitor_smoke_1");
+      await expect(page.locator("main")).toContainText("deferred");
+      await expect(page.locator("main")).toContainText("missing");
+      await expect(page.locator("main")).not.toContainText("sk_live");
+      await expect(page.locator("main")).not.toContainText("rawPrompt");
+    }
+    expect(daemon.state.requests.filter((request) => request === "GET /growth/pilot-report")).toHaveLength(2);
     expect(daemon.state.requests).not.toContain("GET /reports/issues");
   } finally {
     await daemon.close();

@@ -114,8 +114,24 @@ pub fn load_surface_work_items(
             .into_iter()
             .filter(|item| query_matches_item(&query, item))
             .take(limit)
+            .map(|item| surface_work_item_for_viewer(query.viewer, item))
             .collect(),
     })
+}
+
+fn surface_work_item_for_viewer(
+    viewer: SurfaceWorkItemViewer,
+    mut item: SurfaceWorkItemView,
+) -> SurfaceWorkItemView {
+    if matches!(
+        viewer,
+        SurfaceWorkItemViewer::Public | SurfaceWorkItemViewer::Member
+    ) && item.source_kind == "feedback_request"
+    {
+        item.actor_context = json!({});
+        item.connection_context = json!({});
+    }
+    item
 }
 
 #[derive(Debug, Clone)]
@@ -1442,6 +1458,18 @@ mod tests {
                     .actions
                     .iter()
                     .any(|action| action == "answer_feedback_request")));
+        let feedback_request = member_items
+            .iter()
+            .find(|item| item.source_kind == "feedback_request")
+            .unwrap();
+        let feedback_request_json = serde_json::to_string(feedback_request).unwrap();
+        assert_eq!(feedback_request.actor_context, json!({}));
+        assert_eq!(feedback_request.connection_context, json!({}));
+        assert!(!feedback_request_json.contains("actor_member_1"));
+        assert!(!feedback_request_json.contains("connection_1"));
+        assert!(!feedback_request_json.contains("handoff_1"));
+        assert!(!feedback_request_json.contains("trial_1"));
+        assert!(!feedback_request_json.contains("staffNotes"));
         assert!(!member_items
             .iter()
             .any(|item| item.source_kind == "resource_grant"

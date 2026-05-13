@@ -83,6 +83,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "knowledge_graph_edge_candidates",
     "artifacts",
     "artifact_versions",
+    "artifact_patch_proposals",
     "artifact_links",
     "artifact_deliverables",
     "surface_briefs",
@@ -122,7 +123,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 36;
+pub const CURRENT_SCHEMA_VERSION: i64 = 37;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -221,10 +222,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 36);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 37);
     }
 
     #[test]
@@ -1174,6 +1175,17 @@ mod tests {
             &connection,
             "artifact_versions",
             "metadata_json"
+        ));
+        assert!(table_exists(&connection, "artifact_patch_proposals"));
+        assert!(column_exists(
+            &connection,
+            "artifact_patch_proposals",
+            "patch_text"
+        ));
+        assert!(column_exists(
+            &connection,
+            "artifact_patch_proposals",
+            "review_state"
         ));
         assert!(table_exists(&connection, "artifact_links"));
         assert!(column_exists(&connection, "artifact_links", "relation"));

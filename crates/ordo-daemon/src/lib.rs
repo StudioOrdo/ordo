@@ -1,4 +1,5 @@
 pub mod answer_drafts;
+pub mod artifact_patches;
 pub mod artifacts;
 pub mod attribution;
 pub mod availability;

@@ -77,4 +77,30 @@ test.describe("Studio work view model", () => {
     ]);
     expect(deferredStudioActions(["approve_artifact"]).map((action) => action.key)).not.toContain("approve_artifact");
   });
+
+  test("keeps empty and non-Studio snapshots explicit", () => {
+    const emptySnapshot = buildStudioWorkSnapshot([]);
+    expect(emptySnapshot.totalItems).toBe(0);
+    expect(emptySnapshot.runs.emptyLabel).toBe("No durable production runs are available.");
+    expect(emptySnapshot.artifacts.emptyLabel).toBe("No durable artifacts are available.");
+    expect(emptySnapshot.backedActionLabels).toEqual([]);
+
+    const ignoredSnapshot = buildStudioWorkSnapshot([
+      {
+        ...baseItem,
+        id: "support_handoff_1",
+        surfaceKind: "support",
+        roomKind: "handoffs",
+        sourceKind: "handoff",
+        objectKind: "handoff",
+        title: "Support handoff",
+        summary: "This should not render inside Studio.",
+        status: "open",
+        evidenceRefs: ["handoff:handoff_1"],
+        actions: ["claim_handoff"],
+      },
+    ]);
+    expect(ignoredSnapshot.totalItems).toBe(0);
+    expect(JSON.stringify(ignoredSnapshot)).not.toContain("Support handoff");
+  });
 });

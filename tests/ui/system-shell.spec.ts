@@ -162,6 +162,15 @@ test("Studio shell refuses member role before daemon read", async ({ page }) => 
   }
 });
 
+test("Studio shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/studio?role=studio", testInfo));
+
+  await expect(page.locator("main").getByRole("heading", { name: "Studio Production" })).toBeVisible();
+  await expect(page.locator("main")).toContainText("degraded");
+  await expect(page.locator("main")).toContainText("Studio snapshot is degraded because the daemon work-item read model is unavailable.");
+  await expect(page.locator("main")).toContainText("/surface/work-items?viewer=staff&surfaceKind=studio&limit=100");
+});
+
 test("System shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
   await page.goto(productContentUrl("/admin/system?role=owner", testInfo));
 

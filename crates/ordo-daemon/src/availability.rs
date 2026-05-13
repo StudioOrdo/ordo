@@ -1164,6 +1164,8 @@ pub fn request_strategy_session_handoff(
         &connection,
         trial_id.as_deref(),
         access_grant_id.as_deref(),
+        member_actor_id.as_deref(),
+        visitor_session_id.as_deref(),
         &evaluated_at,
     )?;
     drop(connection);
@@ -1857,6 +1859,8 @@ fn read_strategy_session_trial_context(
     connection: &Connection,
     trial_id: Option<&str>,
     access_grant_id: Option<&str>,
+    member_actor_id: Option<&str>,
+    visitor_session_id: Option<&str>,
     evaluated_at: &DateTime<Utc>,
 ) -> Result<StrategySessionTrialContext> {
     let Some(trial_id) = trial_id else {
@@ -1888,8 +1892,14 @@ fn read_strategy_session_trial_context(
     };
     let trial_expires_at = DateTime::parse_from_rfc3339(&trial_ends_at)?.with_timezone(&Utc);
     let trial_active = status == "started" && trial_expires_at > *evaluated_at;
-    let (access_state, access_effect, access_active) =
-        read_strategy_session_access_context(connection, access_grant_id, evaluated_at)?;
+    let (access_state, access_effect, access_active) = read_strategy_session_access_context(
+        connection,
+        trial_id,
+        access_grant_id,
+        member_actor_id,
+        visitor_session_id,
+        evaluated_at,
+    )?;
     Ok(StrategySessionTrialContext {
         state: if trial_active { "active" } else { "inactive" }.to_string(),
         status: Some(status),
@@ -1902,33 +1912,76 @@ fn read_strategy_session_trial_context(
 
 fn read_strategy_session_access_context(
     connection: &Connection,
+    trial_id: &str,
     access_grant_id: Option<&str>,
+    member_actor_id: Option<&str>,
+    visitor_session_id: Option<&str>,
     evaluated_at: &DateTime<Utc>,
 ) -> Result<(String, Option<String>, bool)> {
     let Some(access_grant_id) = access_grant_id else {
-        return Ok(("not_supplied".to_string(), None, true));
+        return Ok(("not_supplied".to_string(), None, false));
     };
     let grant = connection
         .query_row(
-            "SELECT effect, expires_at FROM resource_grants WHERE id = ?1",
+            "SELECT resource_kind, resource_id, action, subject_kind, subject_id, effect, expires_at
+             FROM resource_grants WHERE id = ?1",
             [access_grant_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            },
         )
         .optional()?;
-    let Some((effect, expires_at)) = grant else {
+    let Some((resource_kind, resource_id, action, subject_kind, subject_id, effect, expires_at)) =
+        grant
+    else {
         return Ok(("missing".to_string(), None, false));
     };
+    let resource_matches = resource_kind == "trial" && resource_id == trial_id && action == "use";
+    let expected_subjects = expected_strategy_access_subjects(member_actor_id, visitor_session_id);
+    let subject_matches = expected_subjects.is_empty()
+        || (subject_kind == "actor"
+            && expected_subjects
+                .iter()
+                .any(|subject| subject == &subject_id));
     let not_expired = expires_at
         .as_deref()
         .map(|value| DateTime::parse_from_rfc3339(value).map(|parsed| parsed.with_timezone(&Utc)))
         .transpose()?
         .is_none_or(|expires_at| expires_at > *evaluated_at);
-    let active = effect == "allow" && not_expired;
-    Ok((
-        if active { "active" } else { "inactive" }.to_string(),
-        Some(effect),
-        active,
-    ))
+    let active = resource_matches && subject_matches && effect == "allow" && not_expired;
+    let access_state = if active {
+        "active"
+    } else if !resource_matches || !subject_matches {
+        "mismatched"
+    } else {
+        "inactive"
+    };
+    Ok((access_state.to_string(), Some(effect), active))
+}
+
+fn expected_strategy_access_subjects(
+    member_actor_id: Option<&str>,
+    visitor_session_id: Option<&str>,
+) -> Vec<String> {
+    let mut subjects = Vec::new();
+    if let Some(member_actor_id) = member_actor_id {
+        subjects.push(member_actor_id.to_string());
+    }
+    if let Some(visitor_session_id) = visitor_session_id {
+        let visitor_actor_id = format!("actor_{visitor_session_id}");
+        if !subjects.iter().any(|subject| subject == &visitor_actor_id) {
+            subjects.push(visitor_actor_id);
+        }
+    }
+    subjects
 }
 
 fn strategy_status_from_handoff_item(item: &HandoffInboxItemView) -> StrategySessionStatusView {
@@ -2605,6 +2658,100 @@ mod tests {
     }
 
     #[test]
+    fn strategy_session_requires_matching_active_access_grant() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        insert_started_trial_with_access(&db_path);
+        insert_mismatched_trial_access(&db_path);
+        update_operator_presence(
+            &db_path,
+            OperatorPresenceWriteRequest {
+                status: OperatorPresenceStatus::Available,
+                threshold: InterruptionThreshold::Open,
+                status_message: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (missing_access, _) = request_strategy_session_handoff(
+            &db_path,
+            StrategySessionHandoffRequest {
+                conversation_id: Some("conversation_missing_access".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                trial_id: Some("trial_1".to_string()),
+                access_grant_id: None,
+                connection_id: Some("connection_1".to_string()),
+                member_actor_id: Some("actor_member_1".to_string()),
+                message_excerpt: Some("Can I get strategy help?".to_string()),
+                context_summary: None,
+                urgency: None,
+                connection_trust: Some(ConnectionTrustLevel::Trusted),
+                evaluated_at: Some("2026-05-08T12:00:00Z".to_string()),
+                evidence_refs: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+        assert_eq!(
+            missing_access.status.state,
+            StrategySessionStatusState::ScreeningRequired
+        );
+        let missing_access_item =
+            read_handoff_inbox_item(&db_path, &missing_access.status.request_id).unwrap();
+        assert_eq!(
+            missing_access_item.evidence["existing"]["strategySession"]["trial"]["accessState"],
+            "not_supplied"
+        );
+        assert_eq!(
+            missing_access_item.evidence["existing"]["strategySession"]["trial"]["readyForReview"],
+            false
+        );
+
+        let (mismatched_access, _) = request_strategy_session_handoff(
+            &db_path,
+            StrategySessionHandoffRequest {
+                conversation_id: Some("conversation_mismatched_access".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                trial_id: Some("trial_1".to_string()),
+                access_grant_id: Some("resource_grant_other_trial".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                member_actor_id: Some("actor_member_1".to_string()),
+                message_excerpt: Some("Can I get strategy help?".to_string()),
+                context_summary: None,
+                urgency: None,
+                connection_trust: Some(ConnectionTrustLevel::Trusted),
+                evaluated_at: Some("2026-05-08T12:00:00Z".to_string()),
+                evidence_refs: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+        assert_eq!(
+            mismatched_access.status.state,
+            StrategySessionStatusState::ScreeningRequired
+        );
+        let mismatched_access_item =
+            read_handoff_inbox_item(&db_path, &mismatched_access.status.request_id).unwrap();
+        assert_eq!(
+            mismatched_access_item.evidence["existing"]["strategySession"]["trial"]["accessState"],
+            "mismatched"
+        );
+        assert_eq!(
+            mismatched_access_item.evidence["existing"]["strategySession"]["trial"]
+                ["readyForReview"],
+            false
+        );
+
+        let serialized = serde_json::to_string(&mismatched_access).unwrap();
+        assert!(!serialized.contains("resource_grant_other_trial"));
+        assert!(!serialized.contains("staff"));
+        assert!(!serialized.contains("actor_keith"));
+    }
+
+    #[test]
     fn strategy_session_status_maps_staff_decisions_without_staff_leakage() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
@@ -2866,6 +3013,23 @@ mod tests {
                     effect, created_at, expires_at, metadata_json
                  ) VALUES (
                     'resource_grant_trial', 'trial', 'trial_1', 'use',
+                    'actor', 'actor_member_1', 'allow', '2026-05-13T10:00:00Z',
+                    '2026-06-12T10:00:00Z', '{}'
+                 )",
+                [],
+            )
+            .unwrap();
+    }
+
+    fn insert_mismatched_trial_access(db_path: &Path) {
+        let connection = Connection::open(db_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO resource_grants (
+                    id, resource_kind, resource_id, action, subject_kind, subject_id,
+                    effect, created_at, expires_at, metadata_json
+                 ) VALUES (
+                    'resource_grant_other_trial', 'trial', 'trial_other', 'use',
                     'actor', 'actor_member_1', 'allow', '2026-05-13T10:00:00Z',
                     '2026-06-12T10:00:00Z', '{}'
                  )",

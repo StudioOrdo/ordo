@@ -260,6 +260,45 @@ pub fn publish_deliverable(
     artifact_id: &str,
     input: DeliverableInput,
 ) -> Result<(DeliverableView, RealtimeEvent)> {
+    record_deliverable(
+        connection,
+        artifact_id,
+        input,
+        "deliverable.published",
+        |status, now| {
+            if status == "published" {
+                Some(now.to_string())
+            } else {
+                None
+            }
+        },
+    )
+}
+
+pub fn stage_deliverable(
+    connection: &Connection,
+    artifact_id: &str,
+    input: DeliverableInput,
+) -> Result<(DeliverableView, RealtimeEvent)> {
+    record_deliverable(
+        connection,
+        artifact_id,
+        input,
+        "deliverable.staged",
+        |_status, _now| None,
+    )
+}
+
+fn record_deliverable<F>(
+    connection: &Connection,
+    artifact_id: &str,
+    input: DeliverableInput,
+    event_type: &str,
+    published_at_for: F,
+) -> Result<(DeliverableView, RealtimeEvent)>
+where
+    F: FnOnce(&str, &str) -> Option<String>,
+{
     ensure!(
         artifact_exists(connection, artifact_id)?,
         "deliverable requires a known artifact"
@@ -270,11 +309,7 @@ pub fn publish_deliverable(
     );
     ensure!(!input.summary.trim().is_empty(), "summary is required");
     let now = Utc::now().to_rfc3339();
-    let published_at = if input.status == "published" {
-        Some(now.clone())
-    } else {
-        None
-    };
+    let published_at = published_at_for(&input.status, &now);
     let id = format!("deliverable_{}", Uuid::new_v4());
     connection.execute(
         "INSERT INTO artifact_deliverables (
@@ -296,7 +331,7 @@ pub fn publish_deliverable(
     let event = append_realtime_event(
         connection,
         &system_event(
-            "deliverable.published",
+            event_type,
             json!({
                 "deliverableId": deliverable.id,
                 "artifactId": deliverable.artifact_id,
@@ -345,22 +380,30 @@ pub fn list_deliverables_for_artifact(
     connection: &Connection,
     artifact_id: &str,
 ) -> Result<Vec<DeliverableView>> {
-    connection.query_many("SELECT id, artifact_id, client_label, status, visibility, summary, created_at,
+    connection.query_many(
+        "SELECT id, artifact_id, client_label, status, visibility, summary, created_at,
                 updated_at, published_at
          FROM artifact_deliverables
          WHERE artifact_id = ?1
-         ORDER BY updated_at DESC", [artifact_id], deliverable_from_row)
+         ORDER BY updated_at DESC",
+        [artifact_id],
+        deliverable_from_row,
+    )
 }
 
 pub fn list_artifact_links(
     connection: &Connection,
     artifact_id: &str,
 ) -> Result<Vec<ArtifactLinkView>> {
-    connection.query_many("SELECT id, artifact_id, link_kind, source_kind, source_id, relation,
+    connection.query_many(
+        "SELECT id, artifact_id, link_kind, source_kind, source_id, relation,
                 evidence_refs_json, provenance_json, created_at
          FROM artifact_links
          WHERE artifact_id = ?1
-         ORDER BY created_at DESC", [artifact_id], artifact_link_from_row)
+         ORDER BY created_at DESC",
+        [artifact_id],
+        artifact_link_from_row,
+    )
 }
 
 fn validate_artifact_input(input: &ArtifactInput) -> Result<()> {

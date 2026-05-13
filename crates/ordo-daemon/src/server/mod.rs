@@ -163,6 +163,7 @@ pub async fn serve(
             post(feedback_request_review_handler),
         )
         .route("/rewards", get(rewards_handler))
+        .route("/growth/pilot-report", get(growth_pilot_report_handler))
         .route(
             "/rewards/referrals/:referral_id/qualify",
             post(reward_referral_qualify_handler),
@@ -200,6 +201,14 @@ pub async fn serve(
         .route("/restore/validate", post(validate_restore_handler))
         .route("/events", get(events_handler))
         .route("/surface/work-items", get(surface_work_items_handler))
+        .route(
+            "/studio/promo-video-packages",
+            post(studio_promo_video_package_create_handler),
+        )
+        .route(
+            "/studio/promo-video-packages/:artifact_id/review",
+            put(studio_promo_video_package_review_handler),
+        )
         .route("/corpus/sources", get(corpus_sources_handler))
         .route("/corpus/sources", post(corpus_source_create_handler))
         .route(
@@ -222,6 +231,13 @@ pub async fn serve(
         .route("/mcp/packs", post(mcp_pack_install_handler))
         .route("/mcp/packs/:pack_id", get(mcp_pack_read_handler))
         .route("/mcp/packs/:pack_id/disable", put(mcp_pack_disable_handler))
+        .route("/product-packs", get(product_packs_handler))
+        .route("/product-packs", post(product_pack_install_handler))
+        .route("/product-packs/:pack_id", get(product_pack_read_handler))
+        .route(
+            "/product-packs/:pack_id/disable",
+            put(product_pack_disable_handler),
+        )
         .route("/reports/issues", get(list_issue_reports_handler))
         .route("/reports/issues/:report_id", get(read_issue_report_handler))
         .route(

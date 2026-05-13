@@ -5,6 +5,17 @@ import {
   type StudioWorkSnapshotView,
   type StudioWorkViewer,
 } from "@/lib/studio-work";
+import type { GrowthPilotReportResponse } from "@/lib/growth-pilot-report";
+
+export type {
+  GrowthPilotEvidenceRef,
+  GrowthPilotReportItem,
+  GrowthPilotReportLimitation,
+  GrowthPilotReportMetric,
+  GrowthPilotReportResponse,
+  GrowthPilotReportSection,
+  GrowthReportSourceStatus,
+} from "@/lib/growth-pilot-report";
 
 export type {
   StudioDeferredAction,
@@ -326,6 +337,14 @@ export interface IssueReportsSnapshot {
   degradedReason: string | null;
 }
 
+export interface GrowthPilotReportSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  report: GrowthPilotReportResponse | null;
+  generatedAt: string | null;
+  degradedReason: string | null;
+}
+
 interface BackupRestoreResponse {
   jobs: BackupRestoreJobSummary[];
 }
@@ -591,6 +610,20 @@ export async function getIssueReportsSnapshot(): Promise<IssueReportsSnapshot> {
     reports,
     latestReport: latestReportResult.data?.report ?? null,
     degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
+  };
+}
+
+export async function getGrowthPilotReportSnapshot(): Promise<GrowthPilotReportSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const reportResult = await readEndpoint<GrowthPilotReportResponse>(baseUrl, "/growth/pilot-report");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    report: reportResult.data,
+    generatedAt: reportResult.data?.generatedAt ?? null,
+    degradedReason: reportResult.error,
   };
 }
 

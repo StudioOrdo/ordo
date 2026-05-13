@@ -71,6 +71,61 @@ export interface GrowthPilotReportView {
   sections: GrowthPilotReportSectionView[];
 }
 
+export type GrowthPilotEvidenceAvailability = "available" | "unavailable";
+
+export type GrowthPilotEvidenceReason = "local_owner_admin_ref" | "unsupported_scheme" | "source_mismatch" | "empty_ref";
+
+export interface GrowthPilotEvidenceDrilldown {
+  key: string;
+  label: string;
+  sourceKind: string;
+  sourceId: string;
+  displayRef: string;
+  availability: GrowthPilotEvidenceAvailability;
+  reason: GrowthPilotEvidenceReason;
+  detail: string;
+}
+
+export type GrowthPilotLoopCoverage = "covered" | "needs_attention" | "missing";
+
+export interface GrowthPilotLoopBriefItem {
+  key: string;
+  label: string;
+  coverage: GrowthPilotLoopCoverage;
+  sourceStatus: GrowthReportSourceStatus;
+  metricSummary: string;
+  evidenceRefCount: number;
+  limitationCount: number;
+  detail: string;
+}
+
+export interface GrowthPilotReportExportState {
+  available: boolean;
+  label: string;
+  detail: string;
+  blockedBy: string | null;
+}
+
+export interface GrowthPilotReportBrief {
+  title: string;
+  generatedAt: string;
+  summaryLines: string[];
+  limitationLines: string[];
+  evidenceDrilldowns: GrowthPilotEvidenceDrilldown[];
+  pilotLoop: GrowthPilotLoopBriefItem[];
+  exportState: GrowthPilotReportExportState;
+}
+
+const growthPilotLoopRequirements = [
+  { key: "tracked_entry", label: "Tracked entry and session evidence" },
+  { key: "offers", label: "Offer and acceptance evidence" },
+  { key: "hosted_trials", label: "Hosted trial capacity, waitlist, backup, and reset evidence" },
+  { key: "support_handoffs", label: "Support handoff and strategy session evidence" },
+  { key: "feedback", label: "Feedback request and review evidence" },
+  { key: "rewards", label: "Reward ledger, benefit, and balance evidence" },
+  { key: "studio_promos", label: "Studio promo package and publication evidence" },
+] as const;
+
 export function buildGrowthPilotReportView(report: GrowthPilotReportResponse): GrowthPilotReportView {
   const statusCounts = emptyGrowthStatusCounts();
   const refsByUri = new Map<string, GrowthPilotEvidenceRef>();
@@ -125,6 +180,77 @@ export function buildGrowthPilotReportView(report: GrowthPilotReportResponse): G
   };
 }
 
+export function buildGrowthPilotReportBrief(report: GrowthPilotReportResponse, view = buildGrowthPilotReportView(report)): GrowthPilotReportBrief {
+  const evidenceDrilldowns = collectGrowthPilotEvidenceDrilldowns(report);
+  const safeEvidenceRefCount = evidenceDrilldowns.filter((drilldown) => drilldown.availability === "available").length;
+  const pilotLoop = buildGrowthPilotLoopBrief(report);
+  const coveredLoopCount = pilotLoop.filter((item) => item.coverage === "covered").length;
+
+  return {
+    title: "Owner Review Brief",
+    generatedAt: report.generatedAt,
+    summaryLines: [
+      `${view.sectionCount} daemon-backed Growth report section(s) are ready for owner review.`,
+      `${coveredLoopCount} / ${growthPilotLoopRequirements.length} pilot loop checkpoint(s) have local report sections.`,
+      `${safeEvidenceRefCount} safe local evidence reference(s) are available for owner/admin drilldown.`,
+      `${view.missingOrDeferredCount} missing or deferred signal(s) remain explicit instead of being inferred as success.`,
+    ],
+    limitationLines: growthPilotLimitationLines(report),
+    evidenceDrilldowns,
+    pilotLoop,
+    exportState: growthPilotReportExportState(),
+  };
+}
+
+export function buildGrowthPilotEvidenceDrilldown(ref: GrowthPilotEvidenceRef): GrowthPilotEvidenceDrilldown {
+  const label = safeEvidenceLabel(ref.label, ref.sourceKind, ref.sourceId);
+  const sourceKind = safeRefSegment(ref.sourceKind);
+  const sourceId = safeRefSegment(ref.sourceId);
+  const key = `${sourceKind}:${sourceId}`;
+
+  if (!ref.uri || !ref.sourceKind || !ref.sourceId) {
+    return {
+      key,
+      label,
+      sourceKind,
+      sourceId,
+      displayRef: "empty evidence ref withheld",
+      availability: "unavailable",
+      reason: "empty_ref",
+      detail: "Evidence reference is incomplete, so the owner report keeps it unavailable instead of linking to uncertain data.",
+    };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(ref.uri);
+  } catch {
+    return unavailableEvidenceDrilldown(key, label, sourceKind, sourceId, "unsupported_scheme", "external evidence ref withheld");
+  }
+
+  if (parsed.protocol !== "ordo:") {
+    return unavailableEvidenceDrilldown(key, label, sourceKind, sourceId, "unsupported_scheme", "external evidence ref withheld");
+  }
+
+  const uriSourceKind = decodeURIComponent(parsed.hostname);
+  const uriSourceId = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+  if (uriSourceKind !== ref.sourceKind || uriSourceId !== ref.sourceId) {
+    return unavailableEvidenceDrilldown(key, label, sourceKind, sourceId, "source_mismatch", "mismatched local evidence ref withheld");
+  }
+
+  const displayRef = `ordo://${safeRefSegment(uriSourceKind)}/${safeRefSegment(uriSourceId)}`;
+  return {
+    key,
+    label,
+    sourceKind,
+    sourceId,
+    displayRef,
+    availability: "available",
+    reason: "local_owner_admin_ref",
+    detail: `Local ${sourceKind} evidence ref ${sourceId} is available for owner/admin drilldown.`,
+  };
+}
+
 export function growthSourceStatusLabel(status: GrowthReportSourceStatus): string {
   return status.replaceAll("_", " ");
 }
@@ -155,6 +281,124 @@ function growthReportSummaryLines(sectionCount: number, metricCount: number, rec
   ];
 }
 
+function buildGrowthPilotLoopBrief(report: GrowthPilotReportResponse): GrowthPilotLoopBriefItem[] {
+  const sectionsByKey = new Map(report.sections.map((section) => [section.key, section]));
+
+  return growthPilotLoopRequirements.map((requirement) => {
+    const section = sectionsByKey.get(requirement.key);
+    if (!section) {
+      return {
+        key: requirement.key,
+        label: requirement.label,
+        coverage: "missing",
+        sourceStatus: "missing",
+        metricSummary: "0 metric(s), 0 recent item(s), 0 limitation(s)",
+        evidenceRefCount: 0,
+        limitationCount: 0,
+        detail: "No local report section exists yet; do not infer completion for this pilot checkpoint.",
+      };
+    }
+
+    const safeEvidenceRefCount = collectSectionEvidenceDrilldowns(section).filter((drilldown) => drilldown.availability === "available").length;
+    return {
+      key: requirement.key,
+      label: requirement.label,
+      coverage: coverageForStatus(section.sourceStatus),
+      sourceStatus: section.sourceStatus,
+      metricSummary: `${section.metrics.length} metric(s), ${section.recentItems.length} recent item(s), ${section.limitations.length} limitation(s)`,
+      evidenceRefCount: safeEvidenceRefCount,
+      limitationCount: section.limitations.length,
+      detail: `${section.title} is represented by daemon report data with ${safeEvidenceRefCount} safe local evidence ref(s).`,
+    };
+  });
+}
+
+function collectGrowthPilotEvidenceDrilldowns(report: GrowthPilotReportResponse): GrowthPilotEvidenceDrilldown[] {
+  const drilldownsByKey = new Map<string, GrowthPilotEvidenceDrilldown>();
+  for (const section of report.sections) {
+    for (const drilldown of collectSectionEvidenceDrilldowns(section)) {
+      setBestEvidenceDrilldown(drilldownsByKey, drilldown);
+    }
+  }
+  return Array.from(drilldownsByKey.values()).sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function collectSectionEvidenceDrilldowns(section: GrowthPilotReportSection): GrowthPilotEvidenceDrilldown[] {
+  const refs = [
+    ...section.evidenceRefs,
+    ...section.metrics.flatMap((metric) => metric.evidenceRefs),
+    ...section.recentItems.flatMap((item) => item.evidenceRefs),
+  ];
+  const drilldownsByKey = new Map<string, GrowthPilotEvidenceDrilldown>();
+  for (const ref of refs) {
+    const drilldown = buildGrowthPilotEvidenceDrilldown(ref);
+    setBestEvidenceDrilldown(drilldownsByKey, drilldown);
+  }
+  return Array.from(drilldownsByKey.values());
+}
+
+function setBestEvidenceDrilldown(drilldownsByKey: Map<string, GrowthPilotEvidenceDrilldown>, drilldown: GrowthPilotEvidenceDrilldown) {
+  const existing = drilldownsByKey.get(drilldown.key);
+  if (!existing || (existing.availability === "unavailable" && drilldown.availability === "available")) {
+    drilldownsByKey.set(drilldown.key, drilldown);
+  }
+}
+
+function coverageForStatus(status: GrowthReportSourceStatus): GrowthPilotLoopCoverage {
+  if (status === "measured" || status === "manual") {
+    return "covered";
+  }
+  if (status === "deferred") {
+    return "needs_attention";
+  }
+  return "missing";
+}
+
+function growthPilotLimitationLines(report: GrowthPilotReportResponse): string[] {
+  const limitationLines = [
+    "No live platform analytics, external publishing, payments, OAuth, provider behavior, uptime, or AI-authored claims are inferred.",
+  ];
+  for (const limitation of report.limitations) {
+    limitationLines.push(`${redactSensitiveText(limitation.label)}: ${redactSensitiveText(limitation.detail)}`);
+  }
+  for (const section of report.sections) {
+    for (const limitation of section.limitations) {
+      limitationLines.push(`${redactSensitiveText(limitation.label)}: ${redactSensitiveText(limitation.detail)}`);
+    }
+  }
+  return Array.from(new Set(limitationLines));
+}
+
+function growthPilotReportExportState(): GrowthPilotReportExportState {
+  return {
+    available: false,
+    label: "Local report package export unavailable",
+    detail:
+      "Deterministic report-package export is not implemented for the owner Growth report route yet; use the on-screen brief and local evidence refs.",
+    blockedBy: "deterministic_export_package",
+  };
+}
+
+function unavailableEvidenceDrilldown(
+  key: string,
+  label: string,
+  sourceKind: string,
+  sourceId: string,
+  reason: GrowthPilotEvidenceReason,
+  displayRef: string,
+): GrowthPilotEvidenceDrilldown {
+  return {
+    key,
+    label,
+    sourceKind,
+    sourceId,
+    displayRef,
+    availability: "unavailable",
+    reason,
+    detail: "Evidence reference is not a safe matching local Ordo ref, so it is withheld from owner drilldown.",
+  };
+}
+
 function emptyGrowthStatusCounts(): GrowthReportStatusCounts {
   return {
     measured: 0,
@@ -179,4 +423,19 @@ function collectEvidenceRefs(refsByUri: Map<string, GrowthPilotEvidenceRef>, ref
 
 function countMissingOrDeferred(statuses: GrowthReportSourceStatus[]): number {
   return statuses.filter((status) => status === "missing" || status === "deferred").length;
+}
+
+function safeEvidenceLabel(label: string, sourceKind: string, sourceId: string): string {
+  const fallback = `${safeRefSegment(sourceKind)} ${safeRefSegment(sourceId)}`.trim();
+  const safeLabel = redactSensitiveText(label.trim() || fallback || "Local evidence ref");
+  return safeLabel.slice(0, 160);
+}
+
+function safeRefSegment(value: string): string {
+  const safe = redactSensitiveText(value).replace(/[^A-Za-z0-9_.:-]/g, "_");
+  return (safe || "unknown").slice(0, 96);
+}
+
+function redactSensitiveText(value: string): string {
+  return value.replace(/sk[-_][A-Za-z0-9_-]+/g, "[redacted]").replace(/rawPrompt/gi, "[redacted]");
 }

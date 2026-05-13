@@ -17,7 +17,7 @@ pub enum SurfaceWorkItemViewer {
 
 impl Default for SurfaceWorkItemViewer {
     fn default() -> Self {
-        Self::Staff
+        Self::Member
     }
 }
 
@@ -27,6 +27,8 @@ pub struct SurfaceWorkItemQuery {
     pub viewer: SurfaceWorkItemViewer,
     pub surface_kind: Option<String>,
     pub room_kind: Option<String>,
+    pub actor_id: Option<String>,
+    pub connection_id: Option<String>,
     pub limit: Option<usize>,
 }
 
@@ -868,6 +870,8 @@ fn surface_work_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Surfa
 
 fn query_matches_item(query: &SurfaceWorkItemQuery, item: &SurfaceWorkItemView) -> bool {
     viewer_can_read(query.viewer, &item.visibility)
+        && viewer_surface_scope_matches(query.viewer, item)
+        && member_subject_scope_matches(query, item)
         && query
             .surface_kind
             .as_deref()
@@ -884,6 +888,44 @@ fn viewer_can_read(viewer: SurfaceWorkItemViewer, visibility: &str) -> bool {
         SurfaceWorkItemViewer::Member => matches!(visibility, "public" | "authenticated"),
         SurfaceWorkItemViewer::Staff => matches!(visibility, "public" | "authenticated" | "staff"),
         SurfaceWorkItemViewer::Owner | SurfaceWorkItemViewer::System => true,
+    }
+}
+
+fn viewer_surface_scope_matches(viewer: SurfaceWorkItemViewer, item: &SurfaceWorkItemView) -> bool {
+    match viewer {
+        SurfaceWorkItemViewer::Public | SurfaceWorkItemViewer::Member => {
+            item.surface_kind == "member"
+        }
+        SurfaceWorkItemViewer::Staff
+        | SurfaceWorkItemViewer::Owner
+        | SurfaceWorkItemViewer::System => true,
+    }
+}
+
+fn member_subject_scope_matches(query: &SurfaceWorkItemQuery, item: &SurfaceWorkItemView) -> bool {
+    if query.viewer != SurfaceWorkItemViewer::Member {
+        return true;
+    }
+
+    match item.source_kind.as_str() {
+        "resource_grant" => subject_matches_query(query, &item.actor_context),
+        _ => true,
+    }
+}
+
+fn subject_matches_query(query: &SurfaceWorkItemQuery, actor_context: &Value) -> bool {
+    let subject_kind = actor_context.get("subjectKind").and_then(Value::as_str);
+    let subject_id = actor_context.get("subjectId").and_then(Value::as_str);
+
+    match subject_kind {
+        Some("actor") => query
+            .actor_id
+            .as_deref()
+            .is_some_and(|actor_id| subject_id.is_some_and(|subject_id| subject_id == actor_id)),
+        Some("connection") => query.connection_id.as_deref().is_some_and(|connection_id| {
+            subject_id.is_some_and(|subject_id| subject_id == connection_id)
+        }),
+        _ => false,
     }
 }
 
@@ -1063,6 +1105,7 @@ mod tests {
             SurfaceWorkItemQuery {
                 viewer: SurfaceWorkItemViewer::Member,
                 surface_kind: Some("member".to_string()),
+                actor_id: Some("actor_member_1".to_string()),
                 ..SurfaceWorkItemQuery::default()
             },
         )
@@ -1075,6 +1118,10 @@ mod tests {
                 && item.source_id == "grant_member_trial"));
         assert!(!member_items
             .iter()
+            .any(|item| item.source_kind == "resource_grant"
+                && item.source_id == "grant_member_other"));
+        assert!(!member_items
+            .iter()
             .any(|item| item.source_kind == "handoff_inbox_item"));
         assert!(!member_items
             .iter()
@@ -1083,6 +1130,43 @@ mod tests {
         assert!(member_items
             .iter()
             .all(|item| matches!(item.visibility.as_str(), "public" | "authenticated")));
+    }
+
+    #[test]
+    fn member_and_public_reads_are_least_privilege_when_scope_is_missing() {
+        let mut connection = setup_connection();
+        insert_full_pilot_fixture(&connection);
+        rebuild_surface_work_items(&mut connection).unwrap();
+
+        let default_items = load_surface_work_items(&connection, SurfaceWorkItemQuery::default())
+            .unwrap()
+            .items;
+        assert!(default_items
+            .iter()
+            .all(|item| item.surface_kind == "member"));
+        assert!(!default_items
+            .iter()
+            .any(|item| item.source_kind == "resource_grant"));
+        assert!(!default_items
+            .iter()
+            .any(|item| item.actions.iter().any(|action| action == "edit_offer")));
+
+        let public_items = load_surface_work_items(
+            &connection,
+            SurfaceWorkItemQuery {
+                viewer: SurfaceWorkItemViewer::Public,
+                ..SurfaceWorkItemQuery::default()
+            },
+        )
+        .unwrap()
+        .items;
+        assert!(public_items
+            .iter()
+            .all(|item| item.surface_kind == "member"));
+        assert!(public_items.iter().all(|item| item.visibility == "public"));
+        assert!(!public_items
+            .iter()
+            .any(|item| item.source_kind == "resource_grant"));
     }
 
     #[test]
@@ -1298,6 +1382,18 @@ mod tests {
                  ) VALUES (
                     'grant_member_trial', 'offer', 'offer_pilot', 'use', 'actor',
                     'actor_member_1', 'allow', ?1, '{\"reason\":\"accepted_offer\"}'
+                 )",
+                [NOW],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO resource_grants (
+                    id, resource_kind, resource_id, action, subject_kind, subject_id, effect,
+                    created_at, metadata_json
+                 ) VALUES (
+                    'grant_member_other', 'offer', 'offer_pilot', 'use', 'actor',
+                    'actor_member_2', 'allow', ?1, '{\"reason\":\"accepted_offer\"}'
                  )",
                 [NOW],
             )

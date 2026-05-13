@@ -378,9 +378,14 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             json!({
                 "type": "object",
                 "properties": {
-                    "viewer": { "type": "string" },
+                    "viewer": {
+                        "type": "string",
+                        "enum": ["public", "member", "staff", "owner", "system"]
+                    },
                     "surfaceKind": { "type": "string" },
                     "roomKind": { "type": "string" },
+                    "actorId": { "type": "string" },
+                    "connectionId": { "type": "string" },
                     "limit": { "type": "integer", "minimum": 0, "maximum": 500 }
                 },
                 "additionalProperties": false

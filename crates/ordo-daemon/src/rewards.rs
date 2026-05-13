@@ -1173,6 +1173,10 @@ fn expire_reward_event_tx(
     reviewer_actor_id: Option<&str>,
     now: &str,
 ) -> Result<()> {
+    ensure!(
+        !matches!(event.state.as_str(), "granted" | "reversed"),
+        "granted rewards must be reversed instead of expired"
+    );
     transaction.execute(
         "UPDATE reward_events
          SET state = 'expired', expired_at = ?2, reason = ?3, updated_at = ?2
@@ -1205,6 +1209,10 @@ fn cap_reward_event_tx(
     reviewer_actor_id: Option<&str>,
     now: &str,
 ) -> Result<()> {
+    ensure!(
+        !matches!(event.state.as_str(), "granted" | "reversed"),
+        "granted rewards must be reversed instead of capped"
+    );
     transaction.execute(
         "UPDATE reward_events
          SET state = 'capped', capped_at = ?2, reason = ?3, updated_at = ?2
@@ -2708,6 +2716,96 @@ mod tests {
             )
             .unwrap();
         assert_eq!(leaked_actor_count, 0);
+    }
+
+    #[test]
+    fn granted_reward_cannot_be_expired_or_capped_without_reversal() {
+        let (_temp_dir, db_path) = setup_db();
+        let (response, _) = qualify_referral_reward(
+            &db_path,
+            "referral_1",
+            RewardQualificationRequest {
+                trial_id: Some("trial_benefit".to_string()),
+                activation_trial_id: Some("trial_activation".to_string()),
+                connection_id: Some("connection_referrer".to_string()),
+                ..RewardQualificationRequest::default()
+            },
+            Some("actor_local_owner"),
+        )
+        .unwrap();
+        assert_eq!(response.event.state, "granted");
+
+        let connection = Connection::open(&db_path).unwrap();
+        let trial_ends_after_grant: String = connection
+            .query_row(
+                "SELECT trial_ends_at FROM trials WHERE id = 'trial_benefit'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(connection);
+
+        let expire_error = transition_reward_event(
+            &db_path,
+            &response.event.id,
+            RewardEventTransitionRequest {
+                state: "expired".to_string(),
+                reason: "Reward aged out.".to_string(),
+                evidence_refs: vec!["manual_review:expire".to_string()],
+            },
+            Some("actor_local_owner"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(expire_error.contains("granted rewards must be reversed"));
+
+        let cap_error = transition_reward_event(
+            &db_path,
+            &response.event.id,
+            RewardEventTransitionRequest {
+                state: "capped".to_string(),
+                reason: "Reward should be capped.".to_string(),
+                evidence_refs: vec!["manual_review:cap".to_string()],
+            },
+            Some("actor_local_owner"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(cap_error.contains("granted rewards must be reversed"));
+
+        let connection = Connection::open(&db_path).unwrap();
+        let event_state: String = connection
+            .query_row(
+                "SELECT state FROM reward_events WHERE id = ?1",
+                [response.event.id.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_state, "granted");
+        let grant_state: String = connection
+            .query_row(
+                "SELECT state FROM benefit_grants WHERE event_id = ?1",
+                [response.event.id.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(grant_state, "active");
+        let trial_ends_after_failed_transition: String = connection
+            .query_row(
+                "SELECT trial_ends_at FROM trials WHERE id = 'trial_benefit'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(trial_ends_after_failed_transition, trial_ends_after_grant);
+        let active_balance: i64 = connection
+            .query_row(
+                "SELECT total_active FROM benefit_balances WHERE connection_id = 'connection_referrer'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(active_balance, REFERRAL_HOSTED_DAYS);
     }
 
     #[test]

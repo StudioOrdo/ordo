@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::capabilities::{load_capability, MCP_EXPORT_POLICY_DANGEROUS_NONE};
+use crate::schema::db::ConnectionExt;
 use crate::policy::{
     provenance_metadata, ActorContext, ActorKind, PolicyAction, ResourceClassification,
     ResourceKind, ResourceRef,
@@ -419,15 +420,10 @@ fn mcp_pack_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<McpPackRecord>
 }
 
 fn load_pack_tools(connection: &Connection, pack_id: &str) -> Result<Vec<McpPackToolView>> {
-    let mut statement = connection.prepare(
-        "SELECT id, pack_id, tool_name, capability_id, input_schema_json, output_contract_json,
+    connection.query_many("SELECT id, pack_id, tool_name, capability_id, input_schema_json, output_contract_json,
                 side_effects_json, approval_requirement, artifact_kinds_json, mcp_export_policy,
                 export_status, disabled_at, created_at, updated_at
-         FROM mcp_pack_tools WHERE pack_id = ?1 ORDER BY tool_name ASC",
-    )?;
-    let rows = statement.query_map([pack_id], mcp_pack_tool_from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+         FROM mcp_pack_tools WHERE pack_id = ?1 ORDER BY tool_name ASC", [pack_id], mcp_pack_tool_from_row)
 }
 
 fn mcp_pack_tool_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<McpPackToolView> {

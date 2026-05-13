@@ -484,7 +484,7 @@ next slice.
 
 ## Follow-On Product Surface Arc
 
-Status: prepared as 0.1.6 Product Onboarding Surfaces.
+Status: prepared as 0.1.7 Product Onboarding Surfaces.
 
 The immediate follow-on milestone is not deeper live LLM orchestration or real
 outbound email. The completed journey evals should first become usable product

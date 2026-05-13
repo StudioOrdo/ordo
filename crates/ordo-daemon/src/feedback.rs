@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::events::{append_realtime_event, system_event, RealtimeEvent};
+use crate::schema::db::ConnectionExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -429,33 +430,23 @@ pub fn list_private_feedback(
     connection: &Connection,
     conversation_id: &str,
 ) -> Result<Vec<CustomerFeedbackView>> {
-    let mut statement = connection.prepare(
-        "SELECT id, connection_id, conversation_id, segment_id, message_id, feedback_kind,
+    connection.query_many("SELECT id, connection_id, conversation_id, segment_id, message_id, feedback_kind,
                 status, visibility, body_summary, is_starred, source_refs_json,
                 evidence_refs_json, provenance_json, created_at, updated_at
          FROM customer_feedback
          WHERE conversation_id = ?1 AND visibility = 'private_business_intelligence'
-         ORDER BY updated_at DESC",
-    )?;
-    let rows = statement.query_map([conversation_id], feedback_from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+         ORDER BY updated_at DESC", [conversation_id], feedback_from_row)
 }
 
 pub fn list_public_reviews(connection: &Connection) -> Result<Vec<CustomerReviewView>> {
-    let mut statement = connection.prepare(
-        "SELECT id, feedback_id, connection_id, conversation_id, status, review_body,
+    connection.query_many("SELECT id, feedback_id, connection_id, conversation_id, status, review_body,
                 publication_visibility, consent_evidence_refs_json,
                 approval_evidence_refs_json, evidence_refs_json, provenance_json,
                 created_at, updated_at, published_at, featured_at, retired_at
          FROM customer_reviews
          WHERE publication_visibility = 'public_review'
            AND status IN ('published', 'featured')
-         ORDER BY updated_at DESC",
-    )?;
-    let rows = statement.query_map([], review_from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+         ORDER BY updated_at DESC", [], review_from_row)
 }
 
 fn load_feedback(connection: &Connection, feedback_id: &str) -> Result<CustomerFeedbackView> {

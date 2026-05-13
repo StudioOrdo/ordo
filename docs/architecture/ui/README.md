@@ -109,6 +109,12 @@ Every surface should answer:
 - What evidence supports this?
 - What changed because of my action?
 
+The product shell and business-process IA are defined in
+[Ordo Product IA Contract](./ordo-product-ia.md). Use that document when
+deciding what belongs in Public/Site, Member/Ordo, Support, Growth, or System,
+and how rooms, work items, selected details, timelines, and proof should map to
+shared business objects.
+
 ## Architecture Shape
 
 The frontend is organized around five layers:
@@ -771,6 +777,27 @@ Deferred beyond 0.1.6:
 
 Keep the reference UI visually plain. Correctness, determinism,
 accessibility, and testability come before elite visuals.
+
+## Follow-On Product Surface Arc
+
+0.1.6 deliberately stopped at the substrate. The stale 0.1.7 Product
+Onboarding Surfaces arc was superseded before implementation. The active
+follow-on arc is `0.1.8 Interactive Account And LLM Chat`, documented in
+`docs/architecture/conversation-realtime/interactive-account-llm-chat.md`.
+
+That arc should consume this foundation rather than bypass it:
+
+- login/register uses local appliance session state without hosted auth claims;
+- chat bootstrap resolves canonical conversation and participant identity;
+- client-safe relationship chat uses canonical command/event/replay contracts;
+- deterministic LLM chat uses daemon-owned policy, privacy, prompt-slot,
+  provider, and accounting boundaries;
+- route smoke coverage proves role boundaries, degraded states, replay behavior,
+  and deterministic no-live-provider defaults.
+
+Final AI Swiss visual design, advanced motion, scrollytelling, broad browser
+processing, and real outbound email remain later arcs unless a future issue
+proves one of them is the smallest safe product slice.
 
 ## 0.1.6 Acceptance Gates
 

@@ -67,14 +67,14 @@ remain evidence-backed and agency-preserving. Ordo should help a person decide
 whether trying OrdoStudio fits their situation; it must not invent proof,
 manufacture urgency, hide pressure, or treat model persuasion as truth.
 
-The next product arc after those evals is 0.1.6 Product Onboarding Surfaces.
-The doctrine for this arc is simple: turn proven journeys into real surfaces
-before expanding automation. QR/event landing, public Home/About and Offer
-context, OrdoStudio trial acceptance, relationship conversation onboarding,
-review-return links, affiliate/referral landing, and staff/admin review work
-should all use the durable backend evidence already exercised by 0.1.5. The
-frontend is not allowed to substitute marketing copy, fake proof, or hidden
-automation for evidence-backed product state.
+The 0.1.7 Product Onboarding Surfaces direction was superseded before
+implementation after the May 12, 2026 product direction reset. The active arc is
+0.1.8 Interactive Account And LLM Chat. The doctrine for this arc is narrower:
+first make the local account entry, relationship conversation, browser
+`/chat/ws`, and daemon-owned LLM path work as one inspectable loop. Public
+onboarding, offer, referral, review-return, and staff cockpit surfaces should
+wait until they can rely on real session, chat bootstrap, durable message, and
+assistant-response evidence instead of fixture-only conversation state.
 
 ## Navigation And Information Architecture
 

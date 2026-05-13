@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
 use uuid::Uuid;
+use crate::schema::db::ConnectionExt;
 
 const DEFAULT_LOG_LIMIT: usize = 100;
 const MAX_LOG_LIMIT: usize = 500;
@@ -132,8 +133,7 @@ pub fn query_diagnostic_logs(
     query: &DiagnosticLogQuery,
 ) -> Result<Vec<DiagnosticLogEntry>> {
     let limit = query.limit.unwrap_or(DEFAULT_LOG_LIMIT).min(MAX_LOG_LIMIT);
-    let mut statement = connection.prepare(
-        "SELECT id, timestamp, level, source, message, request_id, job_id, task_key,
+    connection.query_many("SELECT id, timestamp, level, source, message, request_id, job_id, task_key,
                 capability_id, event_type, error_code, duration_ms, payload_json
          FROM diagnostic_logs
          WHERE (?1 IS NULL OR level = ?1)
@@ -143,10 +143,7 @@ pub fn query_diagnostic_logs(
            AND (?5 IS NULL OR capability_id = ?5)
            AND (?6 IS NULL OR timestamp >= ?6)
          ORDER BY timestamp DESC, id DESC
-         LIMIT ?7",
-    )?;
-    let rows = statement.query_map(
-        params![
+         LIMIT ?7", params![
             query.level.as_deref().map(normalize_level),
             query.source,
             query.job_id,
@@ -155,10 +152,7 @@ pub fn query_diagnostic_logs(
             query.since,
             limit as i64,
         ],
-        diagnostic_log_from_row,
-    )?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+        diagnostic_log_from_row,)
 }
 
 fn diagnostic_log_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DiagnosticLogEntry> {

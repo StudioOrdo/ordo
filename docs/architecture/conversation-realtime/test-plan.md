@@ -48,7 +48,7 @@ readiness, affected UI/API behavior, and clean up disposable state.
 
 ## Product Onboarding Surface Tests
 
-0.1.6 implementation issues should use the completed 0.1.5 journey evals as
+0.1.7 implementation issues should use the completed 0.1.5 journey evals as
 acceptance evidence, then add route/UI tests for the real surfaces being built.
 
 Coverage:

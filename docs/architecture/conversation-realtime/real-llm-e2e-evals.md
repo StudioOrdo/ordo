@@ -136,11 +136,12 @@ Current code-recognized provider key names:
 - `OPENAI_API_KEY`
 - `API__OPENAI_API_KEY`
 - `DEEPSEEK_API_KEY`
+- `deepseek`
 
 Observed local key names include Anthropic and OpenAI keys plus a lowercase
-DeepSeek-shaped key. The provider catalog expects `DEEPSEEK_API_KEY`, so a
-lowercase `deepseek` key will not be recognized by current Rust provider config
-resolution unless normalized by shell tooling or renamed.
+DeepSeek-shaped key. The provider catalog recognizes both `DEEPSEEK_API_KEY`
+and the local lowercase `deepseek` spelling so Docker/Compose `.env.local`
+experiments can surface the configured provider without committing secrets.
 
 Recommended live-eval guard variables:
 

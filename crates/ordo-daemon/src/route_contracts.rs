@@ -64,6 +64,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         PolicyAction::Read,
         "conversation.read",
     ),
+    protected(
+        HttpMethod::Post,
+        "/chat/bootstrap",
+        "/chat/bootstrap",
+        PolicyAction::Create,
+        "conversation.bootstrap",
+    ),
     local_mcp(HttpMethod::Post, "/mcp", "/mcp"),
     protected(
         HttpMethod::Get,
@@ -78,6 +85,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "/install/complete",
         PolicyAction::Create,
         "install.complete",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/local-sessions/login",
+        "/local-sessions/login",
+        PolicyAction::Create,
+        "local_session.login",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/local-sessions/register",
+        "/local-sessions/register",
+        PolicyAction::Create,
+        "local_session.register",
     ),
     protected(
         HttpMethod::Get,

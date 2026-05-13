@@ -1,34 +1,23 @@
-import { SystemShell } from "@/components/system-shell";
-import { PageTitle } from "@/components/system-panels";
-import { getSystemSnapshot } from "@/lib/daemon-client";
+import { AppPlaceholderPage } from "@/components/app-placeholder-page";
+import { type SearchParams } from "@/lib/page-role";
 
-export const dynamic = "force-dynamic";
-
-export default async function PreferencesPage() {
-  const snapshot = await getSystemSnapshot();
-
-  return (
-    <SystemShell currentItemId="preferences" websocketUrl={snapshot.degradedReason ? null : snapshot.websocketUrl}>
-      <PageTitle
-        eyebrow="Settings"
-        title="Preferences"
-        description="System preferences will persist through the appliance SQLite boundary."
-      />
-
-      <section className="plain-panel">
-        <div className="data-row">
-          <span className="label">Daemon URL</span>
-          <span className="value">{snapshot.daemonUrl}</span>
-        </div>
-        <div className="data-row">
-          <span className="label">WebSocket URL</span>
-          <span className="value">{snapshot.websocketUrl}</span>
-        </div>
-        <div className="data-row">
-          <span className="label">Automatic Backups</span>
-          <span className="value">Not configured.</span>
-        </div>
-      </section>
-    </SystemShell>
-  );
+export default async function PreferencesPage({ searchParams }: { searchParams?: SearchParams }) {
+  return await AppPlaceholderPage({
+    searchParams,
+    appSpaceId: "my-ordo",
+    itemId: "preferences",
+    eyebrow: "Preferences",
+    title: "Experience Preferences",
+    brief: [
+      "Preferences are user/account experience settings, not a path to privileged internals.",
+      "Font size, contrast, motion, color-blind mode, density, theme, locale, and performance mode persist as requested settings.",
+      "Effective settings are resolved by role and capability before rendering.",
+      "The final settings controls are deferred; this page proves the navigation home.",
+    ],
+    facts: [
+      { label: "Stored value", value: "Requested settings only." },
+      { label: "Rendered value", value: "Role-constrained effective settings." },
+      { label: "Accessibility", value: "Font size, contrast, reduced motion, and color-blind modes are first-class." },
+    ],
+  });
 }

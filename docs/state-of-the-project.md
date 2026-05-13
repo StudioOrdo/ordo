@@ -1,6 +1,6 @@
 # State Of The Project
 
-Date: 2026-05-09
+Date: 2026-05-12
 
 Ordo has completed the 0.1.0 Appliance Specimen implementation pass, the 0.1.1
 appliance trust-boundary stabilization pass, the 0.1.2 backend readiness
@@ -176,6 +176,14 @@ guarded-live journey evidence, not yet production business automation.
   simulated email/link artifacts, affiliate referral eval, admin/staff eval,
   cross-persona analyzed reports, and the decision to defer real outbound
   email until governed delivery gates exist.
+- The 0.1.7 Product Onboarding Surfaces issue arc (#205 through #213) has been
+  closed as stale/not planned after the May 12, 2026 product direction reset.
+  It remains historical direction, not the active implementation queue.
+- The active planning arc is 0.1.8 Interactive Account And LLM Chat (#214
+  through #221). It is a documentation-backed contract to connect local
+  login/register, daemon chat bootstrap, browser `/chat/ws`, deterministic LLM
+  chat, guarded OpenAI-compatible local testing, UI run states, and end-to-end
+  smoke evidence.
 
 ## What Is Not Built Yet
 
@@ -186,7 +194,9 @@ guarded-live journey evidence, not yet production business automation.
   Today, full public offer/ask/feed portals, and staff candidate review
   workbenches are not built yet.
 - Authentication UI, hosted identity, OAuth/email login, public portals, and
-  multi-user product surfaces are not implemented yet.
+  multi-user product surfaces are not implemented yet. The active 0.1.8 arc is
+  limited to a local appliance account/session scaffold and must not claim
+  hosted identity or production multi-user auth.
 - Frontend install wizard UI and provider network validation are not implemented
   yet; current install/provider support is daemon-owned backend state and
   protected local routes only.
@@ -208,7 +218,9 @@ guarded-live journey evidence, not yet production business automation.
   evidence, local inbox events, and receipt evidence only.
 - Embeddings, vector search, provider-backed RAG answer generation, live
   provider calls for answers, real-provider scorecards, and external
-  integrations are not implemented yet.
+  integrations are not implemented yet. The active 0.1.8 arc may add guarded
+  OpenAI-compatible chat testing, but deterministic mode remains the default
+  and broad live-provider orchestration remains future work.
 - Report submission and support packet transport to external systems are not
   implemented yet; Reports 1.0 and support packet approval remain local evidence
   and approval records only.
@@ -219,14 +231,15 @@ guarded-live journey evidence, not yet production business automation.
 
 ## Current Goal
 
-Use the completed eval foundation and live journey evidence as the contract for
-the next product layer. The next highest-leverage work is 0.1.6 Product
-Onboarding Surfaces: QR/event landing, public Home/About and Offer context,
-OrdoStudio 30-day trial acceptance, client-safe relationship conversation
-onboarding, review-return links, affiliate/referral landing, and the first
-staff/admin review cockpit. The product remains explicitly pre-production:
-hosted identity, real outbound email, payments, external transports, broad live
-provider orchestration, embeddings/vector search, Worker Ordos, and A2A are
+Use the completed appliance, conversation realtime, and LLM gateway foundations
+to make one inspectable interactive loop real before expanding public product
+surfaces. The next highest-leverage work is 0.1.8 Interactive Account And LLM
+Chat: local login/register scaffold, daemon chat bootstrap, browser `/chat/ws`,
+deterministic LLM chat, guarded OpenAI-compatible local testing, UI run states,
+and focused smoke evidence. The product remains explicitly pre-production:
+hosted identity, OAuth/email login, production multi-user auth, real outbound
+email, payments, external transports, broad live-provider orchestration,
+embeddings/vector search, Worker Ordos, A2A, and public chatbot behavior are
 still future work.
 
 ## Useful Current References
@@ -277,7 +290,11 @@ still future work.
 - [Live Product Journey Evals](architecture/conversation-realtime/live-product-journey-evals.md)
   records the completed 0.1.5 persona-backed journey eval arc.
 - [Product Onboarding Surfaces](architecture/conversation-realtime/product-onboarding-surfaces.md)
-  defines the accepted 0.1.6 product surface arc.
+  records the superseded 0.1.7 product surface arc.
+- [Interactive Account And LLM Chat](architecture/conversation-realtime/interactive-account-llm-chat.md)
+  defines the active 0.1.8 contract for local account entry, chat bootstrap,
+  browser `/chat/ws`, deterministic LLM chat, guarded OpenAI-compatible local
+  testing, UI run states, and smoke evidence.
 - [Ordo Core](business/ordo-core.md) describes the durable product doctrine and
   how future MCP tools and packs should customize the work without bypassing the
   trust boundary.

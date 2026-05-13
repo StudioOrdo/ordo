@@ -1,0 +1,1691 @@
+    Checking ordo-daemon v0.1.0 (/Users/kwilliams/Projects/studioOrdo/crates/ordo-daemon)
+error: expected item after attributes
+   --> crates/ordo-daemon/src/live_eval_runner/review_return.rs:740:1
+    |
+740 | #[derive(Debug, Clone)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: expected item after attributes
+   --> crates/ordo-daemon/src/live_eval_runner/affiliate_referral.rs:882:1
+    |
+882 | #[derive(Debug, Clone)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0774]: `derive` may only be applied to `struct`s, `enum`s and `union`s
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:78:1
+   |
+78 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not applicable here
+79 |
+80 | pub mod qr_to_trial;
+   | -------------------- not a `struct`, `enum` or `union`
+
+error: expected item after attributes
+   --> crates/ordo-daemon/src/live_eval_runner/qr_to_trial.rs:658:1
+    |
+658 | #[derive(Debug, Clone)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: cannot find attribute `serde` in this scope
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:92:3
+   |
+92 | #[serde(rename_all = "snake_case")]
+   |   ^^^^^
+   |
+   = note: `serde` is in scope, but it is a crate, not an attribute
+help: `serde` is an attribute that can be used by the derive macros `Deserialize` and `Serialize`, you might be missing a `derive` attribute
+   |
+93 + #[derive(Deserialize, Serialize)]
+94 | pub enum LiveEvalStatus {
+   |
+
+error[E0425]: cannot find function `write_json` in this scope
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:147:5
+     |
+ 147 |     write_json(&journey_manifest_path, &manifest)?;
+     |     ^^^^^^^^^^ not found in this scope
+     |
+note: these functions exist but are inaccessible
+    --> crates/ordo-daemon/src/eval_artifact_review.rs:488:1
+     |
+ 488 | fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::eval_artifact_review::write_json`: not accessible
+     |
+    ::: crates/ordo-daemon/src/eval_harness.rs:3305:1
+     |
+3305 | fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::eval_harness::write_json`: not accessible
+     |
+    ::: crates/ordo-daemon/src/live_journey_report.rs:1016:1
+     |
+1016 | fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `crate::live_journey_report::write_json`: not accessible
+
+warning: unused imports: `anyhow` and `ensure`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:1:14
+  |
+1 | use anyhow::{anyhow, ensure, Result};
+  |              ^^^^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Connection` and `params`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:2:16
+  |
+2 | use rusqlite::{params, Connection};
+  |                ^^^^^^  ^^^^^^^^^^
+
+warning: unused imports: `Value` and `json`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:4:18
+  |
+4 | use serde_json::{json, Value};
+  |                  ^^^^  ^^^^^
+
+warning: unused import: `std::fs`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:7:5
+  |
+7 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused import: `Path`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:8:17
+  |
+8 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `std::time::Instant`
+ --> crates/ordo-daemon/src/live_eval_runner/mod.rs:9:5
+  |
+9 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:11:20
+   |
+11 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused imports: `ArtifactInput` and `record_artifact`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:13:24
+   |
+13 | use crate::artifacts::{record_artifact, ArtifactInput};
+   |                        ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+
+warning: unused imports: `BusinessOutcomeAttributionInput`, `BusinessOutcomeInput`, `ReferralRecordInput`, `list_attributions_for_outcome`, `list_outcomes_by_offer`, `propose_attribution`, `record_outcome`, and `record_referral`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:15:5
+   |
+15 |     list_attributions_for_outcome, list_outcomes_by_offer, propose_attribution, record_outcome,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+16 |     record_referral, BusinessOutcomeAttributionInput, BusinessOutcomeInput, ReferralRecordInput,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BusinessFactVisibility` and `PublicationState`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:18:23
+   |
+18 | use crate::business::{BusinessFactVisibility, PublicationState};
+   |                       ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ConnectionGrantCreateRequest`, `ConnectionGrantRevokeRequest`, `ConnectionStatus`, `ConnectionType`, `ConnectionWriteRequest`, `create_connection_grant`, `create_connection`, `list_connection_grants`, and `revoke_connection_grant`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:20:5
+   |
+20 |     create_connection, create_connection_grant, list_connection_grants, revoke_connection_grant,
+   |     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+21 |     ConnectionGrantCreateRequest, ConnectionGrantRevokeRequest, ConnectionStatus, ConnectionType,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+22 |     ConnectionWriteRequest,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CanonicalConversationRequest`, `ConversationHandoffCreateRequest`, `ConversationMessageCreateRequest`, `ConversationMode`, `ConversationParticipantCreateRequest`, `ConversationRole`, `HandoffStatus`, `PublicPostContext`, `QueueScope`, `conversation_queue`, `create_conversation_handoff`, `create_conversation_message`, `create_conversation_participant`, `find_or_create_canonical_conversation`, `may_agent_post_publicly`, `record_staff_activity_sets_human_led`, `transition_conversation_handoff`, and `upsert_conversation_mode`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:25:5
+   |
+25 |     conversation_queue, create_conversation_handoff, create_conversation_message,
+   |     ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+26 |     create_conversation_participant, find_or_create_canonical_conversation,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+27 |     may_agent_post_publicly, record_staff_activity_sets_human_led, transition_conversation_handoff,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+28 |     upsert_conversation_mode, CanonicalConversationRequest, ConversationHandoffCreateRequest,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+29 |     ConversationMessageCreateRequest, ConversationMode, ConversationParticipantCreateRequest,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 |     ConversationRole, HandoffStatus, PublicPostContext, QueueScope,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^
+
+warning: unused imports: `EntryPointStatus`, `EntryPointWriteRequest`, `PublicDestinationSurface`, `VisitorSessionCreateRequest`, `create_entry_point`, and `create_visitor_session`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:33:5
+   |
+33 |     create_entry_point, create_visitor_session, EntryPointStatus, EntryPointWriteRequest,
+   |     ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+34 |     PublicDestinationSurface, VisitorSessionCreateRequest,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DeterministicEvalClock`, `DeterministicEvalHarness`, `EvalActorRole`, `EvalArtifactPaths`, `EvalArtifactWriter`, `EvalAssertion`, `EvalCase`, `EvalEvidenceChannel`, and `EvalStep`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:37:5
+   |
+37 |     DeterministicEvalClock, DeterministicEvalHarness, EvalActorRole, EvalArtifactPaths,
+   |     ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+38 |     EvalArtifactWriter, EvalAssertion, EvalCase, EvalEvidenceChannel, EvalStep,
+   |     ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused imports: `EvalPersona` and `load_persona_dir`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:40:28
+   |
+40 | use crate::eval_personas::{load_persona_dir, EvalPersona};
+   |                            ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `CustomerFeedbackInput`, `ReviewCandidateInput`, `ReviewStatus`, `capture_feedback`, `create_review_candidate`, `list_private_feedback`, `list_public_reviews`, and `transition_review`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:42:5
+   |
+42 |     capture_feedback, create_review_candidate, list_private_feedback, list_public_reviews,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+43 |     transition_review, CustomerFeedbackInput, ReviewCandidateInput, ReviewStatus,
+   |     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `DeterministicLlmProvider`, `LlmGatewayRequest`, `LlmGateway`, `OpenAiCompatibleProvider`, `OpenAiCompatibleTransport`, `PromptSlot`, and `ReqwestOpenAiTransport`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:46:5
+   |
+46 |     DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, LlmProviderAdapter,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+47 |     OpenAiCompatibleConfig, OpenAiCompatibleProvider, OpenAiCompatibleTransport, PromptSlot,
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^
+48 |     ReqwestOpenAiTransport,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `OfferAcceptanceCreateRequest`, `OfferStatus`, `OfferWriteRequest`, `accept_public_offer`, and `create_offer`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:51:5
+   |
+51 |     accept_public_offer, create_offer, OfferAcceptanceCreateRequest, OfferStatus, OfferWriteRequest,
+   |     ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ActorContext`, `LOCAL_OWNER_ACTOR_ID`, `PolicyAction`, `PolicyDecisionCorrelation`, `PolicyOutcome`, `ResourceKind`, `ResourceRef`, `authorize_connection_resource_access`, and `record_policy_decision`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:54:5
+   |
+54 |     authorize_connection_resource_access, record_policy_decision, ActorContext, PolicyAction,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^
+55 |     PolicyDecisionCorrelation, PolicyOutcome, ResourceKind, ResourceRef, LOCAL_OWNER_ACTOR_ID,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `params`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:2:16
+  |
+2 | use rusqlite::{params, Connection};
+  |                ^^^^^^
+
+warning: unused import: `Value`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:4:24
+  |
+4 | use serde_json::{json, Value};
+  |                        ^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:5:5
+  |
+5 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fmt`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:6:5
+  |
+6 | use std::fmt;
+  |     ^^^^^^^^
+
+warning: unused import: `std::fs`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:7:5
+  |
+7 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:9:5
+  |
+9 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:10:20
+   |
+10 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused import: `crate::artifacts::*`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:11:5
+   |
+11 | use crate::artifacts::*;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::attribution::*`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:12:5
+   |
+12 | use crate::attribution::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::business::*`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:13:5
+   |
+13 | use crate::business::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::entry_points::*`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:16:5
+   |
+16 | use crate::entry_points::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_gateway::*`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:20:5
+   |
+20 | use crate::llm_gateway::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::offers::*`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:21:5
+   |
+21 | use crate::offers::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/live_eval_runner/planning.rs:3:13
+  |
+3 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `Value`
+ --> crates/ordo-daemon/src/live_eval_runner/planning.rs:4:24
+  |
+4 | use serde_json::{json, Value};
+  |                        ^^^^^
+
+warning: unused import: `std::fmt`
+ --> crates/ordo-daemon/src/live_eval_runner/planning.rs:6:5
+  |
+6 | use std::fmt;
+  |     ^^^^^^^^
+
+warning: unused import: `Sha256`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:10:20
+   |
+10 | use sha2::{Digest, Sha256};
+   |                    ^^^^^^
+
+warning: unused import: `crate::artifacts::*`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:11:5
+   |
+11 | use crate::artifacts::*;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::attribution::*`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:12:5
+   |
+12 | use crate::attribution::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::business::*`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:13:5
+   |
+13 | use crate::business::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::connections::*`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:14:5
+   |
+14 | use crate::connections::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::entry_points::*`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:16:5
+   |
+16 | use crate::entry_points::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::feedback::*`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:19:5
+   |
+19 | use crate::feedback::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::offers::*`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:21:5
+   |
+21 | use crate::offers::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `anyhow` and `ensure`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:1:14
+  |
+1 | use anyhow::{anyhow, ensure, Result};
+  |              ^^^^^^  ^^^^^^
+
+warning: unused imports: `Connection` and `params`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:2:16
+  |
+2 | use rusqlite::{params, Connection};
+  |                ^^^^^^  ^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:3:13
+  |
+3 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `json`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:4:18
+  |
+4 | use serde_json::{json, Value};
+  |                  ^^^^
+
+warning: unused import: `std::fmt`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:6:5
+  |
+6 | use std::fmt;
+  |     ^^^^^^^^
+
+warning: unused import: `std::fs`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:7:5
+  |
+7 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused imports: `PathBuf` and `Path`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:8:17
+  |
+8 | use std::path::{Path, PathBuf};
+  |                 ^^^^  ^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> crates/ordo-daemon/src/live_eval_runner/utils.rs:9:5
+  |
+9 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Digest` and `Sha256`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:10:12
+   |
+10 | use sha2::{Digest, Sha256};
+   |            ^^^^^^  ^^^^^^
+
+warning: unused import: `crate::artifacts::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:11:5
+   |
+11 | use crate::artifacts::*;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::attribution::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:12:5
+   |
+12 | use crate::attribution::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::business::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:13:5
+   |
+13 | use crate::business::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::connections::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:14:5
+   |
+14 | use crate::connections::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::conversations::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:15:5
+   |
+15 | use crate::conversations::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::entry_points::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:16:5
+   |
+16 | use crate::entry_points::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::eval_harness::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:17:5
+   |
+17 | use crate::eval_harness::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::eval_personas::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:18:5
+   |
+18 | use crate::eval_personas::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::feedback::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:19:5
+   |
+19 | use crate::feedback::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm_gateway::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:20:5
+   |
+20 | use crate::llm_gateway::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::offers::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:21:5
+   |
+21 | use crate::offers::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::policy::*`
+  --> crates/ordo-daemon/src/live_eval_runner/utils.rs:22:5
+   |
+22 | use crate::policy::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `qr_to_trial::*`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:86:9
+   |
+86 | pub use qr_to_trial::*;
+   |         ^^^^^^^^^^^^^^
+
+warning: unused import: `review_return::*`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:87:9
+   |
+87 | pub use review_return::*;
+   |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `affiliate_referral::*`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:88:9
+   |
+88 | pub use affiliate_referral::*;
+   |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:25:9
+   |
+25 | pub use supervisor::*;
+   |         ^^^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> crates/ordo-daemon/src/server/mod.rs:26:9
+   |
+26 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+error[E0277]: `AdminStaffJourneyEvidence` doesn't implement `Debug`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:54:5
+   |
+46 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |          ----- in this derive macro expansion
+...
+54 |     pub evidence: AdminStaffJourneyEvidence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Debug` is not implemented for `AdminStaffJourneyEvidence`
+   |
+   = note: add `#[derive(Debug)]` to `AdminStaffJourneyEvidence` or manually `impl Debug for AdminStaffJourneyEvidence`
+help: consider annotating `AdminStaffJourneyEvidence` with `#[derive(Debug)]`
+   |
+24 + #[derive(Debug)]
+25 | pub struct AdminStaffJourneyEvidence {
+   |
+
+error[E0277]: the trait bound `AdminStaffJourneyEvidence: Clone` is not satisfied
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:54:5
+   |
+46 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                 ----- in this derive macro expansion
+...
+54 |     pub evidence: AdminStaffJourneyEvidence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `AdminStaffJourneyEvidence`
+   |
+help: consider annotating `AdminStaffJourneyEvidence` with `#[derive(Clone)]`
+   |
+24 + #[derive(Clone)]
+25 | pub struct AdminStaffJourneyEvidence {
+   |
+
+error[E0369]: binary operation `==` cannot be applied to type `AdminStaffJourneyEvidence`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:54:5
+   |
+46 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                        --------- in this derive macro expansion
+...
+54 |     pub evidence: AdminStaffJourneyEvidence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: an implementation of `PartialEq` might be missing for `AdminStaffJourneyEvidence`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:24:1
+   |
+24 | pub struct AdminStaffJourneyEvidence {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `AdminStaffJourneyEvidence` with `#[derive(PartialEq)]`
+   |
+24 + #[derive(PartialEq)]
+25 | pub struct AdminStaffJourneyEvidence {
+   |
+
+error[E0277]: the trait bound `AdminStaffJourneyEvidence: Eq` is not satisfied
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:54:5
+   |
+46 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                                   -- in this derive macro expansion
+...
+54 |     pub evidence: AdminStaffJourneyEvidence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Eq` is not implemented for `AdminStaffJourneyEvidence`
+   |
+note: required by a bound in `AssertParamIsEq`
+  --> library/core/src/cmp.rs:371:0
+help: consider annotating `AdminStaffJourneyEvidence` with `#[derive(Eq)]`
+   |
+24 + #[derive(Eq)]
+25 | pub struct AdminStaffJourneyEvidence {
+   |
+
+error[E0277]: the trait bound `AdminStaffJourneyEvidence: serde::Serialize` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:46:39
+     |
+  46 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+     |                                       ^^^^^^^^^ unsatisfied trait bound
+...
+  54 |     pub evidence: AdminStaffJourneyEvidence,
+     |     --- required by a bound introduced by this call
+     |
+help: the trait `Serialize` is not implemented for `AdminStaffJourneyEvidence`
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:24:1
+     |
+  24 | pub struct AdminStaffJourneyEvidence {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `AdminStaffJourneyEvidence` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 425 others
+note: required by a bound in `answer_drafts::_::_serde::ser::SerializeStruct::serialize_field`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/ser/mod.rs:1917:21
+     |
+1915 |     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
+     |        --------------- required by a bound in this associated function
+1916 |     where
+1917 |         T: ?Sized + Serialize;
+     |                     ^^^^^^^^^ required by this bound in `SerializeStruct::serialize_field`
+     = note: this error originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `AdminStaffJourneyEvidence: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:54:19
+     |
+  54 |     pub evidence: AdminStaffJourneyEvidence,
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `AdminStaffJourneyEvidence`
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:24:1
+     |
+  24 | pub struct AdminStaffJourneyEvidence {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `AdminStaffJourneyEvidence` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 400 others
+note: required by a bound in `next_element`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1771:12
+     |
+1769 |     fn next_element<T>(&mut self) -> Result<Option<T>, Self::Error>
+     |        ------------ required by a bound in this associated function
+1770 |     where
+1771 |         T: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `SeqAccess::next_element`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `AdminStaffJourneyEvidence: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:54:19
+     |
+  54 |     pub evidence: AdminStaffJourneyEvidence,
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `AdminStaffJourneyEvidence`
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:24:1
+     |
+  24 | pub struct AdminStaffJourneyEvidence {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `AdminStaffJourneyEvidence` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 400 others
+note: required by a bound in `next_value`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1916:12
+     |
+1914 |     fn next_value<V>(&mut self) -> Result<V, Self::Error>
+     |        ---------- required by a bound in this associated function
+1915 |     where
+1916 |         V: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `MapAccess::next_value`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `AdminStaffJourneyEvidence: serde::Deserialize<'de>` is not satisfied
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:46:50
+   |
+46 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                                                  ^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Deserialize<'_>` is not implemented for `AdminStaffJourneyEvidence`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:24:1
+   |
+24 | pub struct AdminStaffJourneyEvidence {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `AdminStaffJourneyEvidence` type
+   = note: for types from other crates check whether the crate offers a `serde` feature flag
+   = help: the following other types implement trait `Deserialize<'de>`:
+             &'a [u8]
+             &'a serde_json::value::RawValue
+             &'a std::path::Path
+             &'a str
+             ()
+             (T,)
+             (T0, T1)
+             (T0, T1, T2)
+           and 400 others
+note: required by a bound in `answer_drafts::_::_serde::__private228::de::missing_field`
+  --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:26:8
+   |
+24 | pub fn missing_field<'de, V, E>(field: &'static str) -> Result<V, E>
+   |        ------------- required by a bound in this function
+25 | where
+26 |     V: Deserialize<'de>,
+   |        ^^^^^^^^^^^^^^^^ required by this bound in `missing_field`
+   = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+   = note: consider using `--verbose` to print the full type name to the console
+   = note: this error originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `live_eval_runner::LiveEvalStatus` doesn't implement `Debug`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:65:5
+   |
+61 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |          ----- in this derive macro expansion
+...
+65 |     pub status: LiveEvalStatus,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Debug` is not implemented for `live_eval_runner::LiveEvalStatus`
+   |
+   = note: add `#[derive(Debug)]` to `live_eval_runner::LiveEvalStatus` or manually `impl Debug for live_eval_runner::LiveEvalStatus`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Debug)]`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 + #[derive(Debug)]
+94 | pub enum LiveEvalStatus {
+   |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Clone` is not satisfied
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:65:5
+   |
+61 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                 ----- in this derive macro expansion
+...
+65 |     pub status: LiveEvalStatus,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `live_eval_runner::LiveEvalStatus`
+   |
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Clone)]`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 + #[derive(Clone)]
+94 | pub enum LiveEvalStatus {
+   |
+
+error[E0369]: binary operation `==` cannot be applied to type `live_eval_runner::LiveEvalStatus`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:65:5
+   |
+61 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                        --------- in this derive macro expansion
+...
+65 |     pub status: LiveEvalStatus,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: an implementation of `PartialEq` might be missing for `live_eval_runner::LiveEvalStatus`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 | pub enum LiveEvalStatus {
+   | ^^^^^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(PartialEq)]`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 + #[derive(PartialEq)]
+94 | pub enum LiveEvalStatus {
+   |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Eq` is not satisfied
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:65:5
+   |
+61 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                                   -- in this derive macro expansion
+...
+65 |     pub status: LiveEvalStatus,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Eq` is not implemented for `live_eval_runner::LiveEvalStatus`
+   |
+note: required by a bound in `AssertParamIsEq`
+  --> library/core/src/cmp.rs:371:0
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Eq)]`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 + #[derive(Eq)]
+94 | pub enum LiveEvalStatus {
+   |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Serialize` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:61:39
+     |
+  61 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+     |                                       ^^^^^^^^^ unsatisfied trait bound
+...
+  65 |     pub status: LiveEvalStatus,
+     |     --- required by a bound introduced by this call
+     |
+help: the trait `Serialize` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 425 others
+note: required by a bound in `answer_drafts::_::_serde::ser::SerializeStruct::serialize_field`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/ser/mod.rs:1917:21
+     |
+1915 |     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
+     |        --------------- required by a bound in this associated function
+1916 |     where
+1917 |         T: ?Sized + Serialize;
+     |                     ^^^^^^^^^ required by this bound in `SerializeStruct::serialize_field`
+     = note: this error originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:65:17
+     |
+  65 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 400 others
+note: required by a bound in `next_element`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1771:12
+     |
+1769 |     fn next_element<T>(&mut self) -> Result<Option<T>, Self::Error>
+     |        ------------ required by a bound in this associated function
+1770 |     where
+1771 |         T: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `SeqAccess::next_element`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:65:17
+     |
+  65 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 400 others
+note: required by a bound in `next_value`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1916:12
+     |
+1914 |     fn next_value<V>(&mut self) -> Result<V, Self::Error>
+     |        ---------- required by a bound in this associated function
+1915 |     where
+1916 |         V: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `MapAccess::next_value`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:61:50
+   |
+61 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+   |                                                  ^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 | pub enum LiveEvalStatus {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+   = note: for types from other crates check whether the crate offers a `serde` feature flag
+   = help: the following other types implement trait `Deserialize<'de>`:
+             &'a [u8]
+             &'a serde_json::value::RawValue
+             &'a std::path::Path
+             &'a str
+             ()
+             (T,)
+             (T0, T1)
+             (T0, T1, T2)
+           and 400 others
+note: required by a bound in `answer_drafts::_::_serde::__private228::de::missing_field`
+  --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:26:8
+   |
+24 | pub fn missing_field<'de, V, E>(field: &'static str) -> Result<V, E>
+   |        ------------- required by a bound in this function
+25 | where
+26 |     V: Deserialize<'de>,
+   |        ^^^^^^^^^^^^^^^^ required by this bound in `missing_field`
+   = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+   = note: consider using `--verbose` to print the full type name to the console
+   = note: this error originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `clone` found for struct `AdminStaffJourneyEvidence` in the current scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:132:28
+    |
+ 24 | pub struct AdminStaffJourneyEvidence {
+    | ------------------------------------ method `clone` not found for this struct
+...
+132 |         evidence: evidence.clone(),
+    |                            ^^^^^ method not found in `AdminStaffJourneyEvidence`
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following trait defines an item `clone`, perhaps you need to implement it:
+            candidate #1: `Clone`
+
+error[E0425]: cannot find function `required_state` in this scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:230:30
+    |
+230 |             conversation_id: required_state(self.conversation_id, "conversation id")?,
+    |                              ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `required_state` in this scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:231:33
+    |
+231 |             visitor_message_id: required_state(self.visitor_message_id, "visitor message id")?,
+    |                                 ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `required_state` in this scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:232:25
+    |
+232 |             handoff_id: required_state(self.handoff_id, "handoff id")?,
+    |                         ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `required_state` in this scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:233:35
+    |
+233 |             final_handoff_status: required_state(
+    |                                   ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `required_state` in this scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:240:24
+    |
+240 |             review_id: required_state(self.review_id, "review id")?,
+    |                        ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `required_state` in this scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:243:38
+    |
+243 |             affiliate_connection_id: required_state(
+    |                                      ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `required_state` in this scope
+   --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:247:33
+    |
+247 |             affiliate_grant_id: required_state(self.affiliate_grant_id, "affiliate grant id")?,
+    |                                 ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0369]: binary operation `==` cannot be applied to type `live_eval_runner::LiveEvalStatus`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:78:30
+   |
+78 |     if manifest_guard.status == LiveEvalStatus::Allowed
+   |        --------------------- ^^ ----------------------- live_eval_runner::LiveEvalStatus
+   |        |
+   |        live_eval_runner::LiveEvalStatus
+   |
+note: an implementation of `PartialEq` might be missing for `live_eval_runner::LiveEvalStatus`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 | pub enum LiveEvalStatus {
+   | ^^^^^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(PartialEq)]`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+   |
+93 + #[derive(PartialEq)]
+94 | pub enum LiveEvalStatus {
+   |
+
+error[E0599]: no method named `clone` found for enum `live_eval_runner::LiveEvalStatus` in the current scope
+   --> crates/ordo-daemon/src/live_eval_runner/planning.rs:132:39
+    |
+132 |         status: manifest_guard.status.clone(),
+    |                                       ^^^^^ method not found in `live_eval_runner::LiveEvalStatus`
+    |
+   ::: crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ----------------------- method `clone` not found for this enum
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following trait defines an item `clone`, perhaps you need to implement it:
+            candidate #1: `Clone`
+
+error[E0277]: `live_eval_runner::LiveEvalStatus` doesn't implement `Debug`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:104:5
+    |
+101 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |          ----- in this derive macro expansion
+...
+104 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Debug` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+    = note: add `#[derive(Debug)]` to `live_eval_runner::LiveEvalStatus` or manually `impl Debug for live_eval_runner::LiveEvalStatus`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Debug)]`
+    |
+ 93 + #[derive(Debug)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Clone` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:104:5
+    |
+101 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                 ----- in this derive macro expansion
+...
+104 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Clone)]`
+    |
+ 93 + #[derive(Clone)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0369]: binary operation `==` cannot be applied to type `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:104:5
+    |
+101 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                        --------- in this derive macro expansion
+...
+104 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: an implementation of `PartialEq` might be missing for `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(PartialEq)]`
+    |
+ 93 + #[derive(PartialEq)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Eq` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:104:5
+    |
+101 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                                   -- in this derive macro expansion
+...
+104 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Eq` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+note: required by a bound in `AssertParamIsEq`
+   --> library/core/src/cmp.rs:371:0
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Eq)]`
+    |
+ 93 + #[derive(Eq)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Serialize` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:101:39
+     |
+ 101 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+     |                                       ^^^^^^^^^ unsatisfied trait bound
+...
+ 104 |     pub status: LiveEvalStatus,
+     |     --- required by a bound introduced by this call
+     |
+help: the trait `Serialize` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 425 others
+note: required by a bound in `answer_drafts::_::_serde::ser::SerializeStruct::serialize_field`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/ser/mod.rs:1917:21
+     |
+1915 |     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
+     |        --------------- required by a bound in this associated function
+1916 |     where
+1917 |         T: ?Sized + Serialize;
+     |                     ^^^^^^^^^ required by this bound in `SerializeStruct::serialize_field`
+     = note: this error originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:104:17
+     |
+ 104 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 398 others
+note: required by a bound in `next_element`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1771:12
+     |
+1769 |     fn next_element<T>(&mut self) -> Result<Option<T>, Self::Error>
+     |        ------------ required by a bound in this associated function
+1770 |     where
+1771 |         T: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `SeqAccess::next_element`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:104:17
+     |
+ 104 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 398 others
+note: required by a bound in `next_value`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1916:12
+     |
+1914 |     fn next_value<V>(&mut self) -> Result<V, Self::Error>
+     |        ---------- required by a bound in this associated function
+1915 |     where
+1916 |         V: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `MapAccess::next_value`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:101:50
+    |
+101 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                                                  ^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `Deserialize<'de>`:
+              &'a [u8]
+              &'a serde_json::value::RawValue
+              &'a std::path::Path
+              &'a str
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+            and 398 others
+note: required by a bound in `answer_drafts::_::_serde::__private228::de::missing_field`
+   --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:26:8
+    |
+ 24 | pub fn missing_field<'de, V, E>(field: &'static str) -> Result<V, E>
+    |        ------------- required by a bound in this function
+ 25 | where
+ 26 |     V: Deserialize<'de>,
+    |        ^^^^^^^^^^^^^^^^ required by this bound in `missing_field`
+    = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `live_eval_runner::LiveEvalStatus` doesn't implement `Debug`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:268:5
+    |
+264 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |          ----- in this derive macro expansion
+...
+268 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Debug` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+    = note: add `#[derive(Debug)]` to `live_eval_runner::LiveEvalStatus` or manually `impl Debug for live_eval_runner::LiveEvalStatus`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Debug)]`
+    |
+ 93 + #[derive(Debug)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Clone` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:268:5
+    |
+264 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                 ----- in this derive macro expansion
+...
+268 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Clone)]`
+    |
+ 93 + #[derive(Clone)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0369]: binary operation `==` cannot be applied to type `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:268:5
+    |
+264 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                        --------- in this derive macro expansion
+...
+268 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: an implementation of `PartialEq` might be missing for `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(PartialEq)]`
+    |
+ 93 + #[derive(PartialEq)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Eq` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:268:5
+    |
+264 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                                   -- in this derive macro expansion
+...
+268 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Eq` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+note: required by a bound in `AssertParamIsEq`
+   --> library/core/src/cmp.rs:371:0
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Eq)]`
+    |
+ 93 + #[derive(Eq)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Serialize` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:264:39
+     |
+ 264 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+     |                                       ^^^^^^^^^ unsatisfied trait bound
+...
+ 268 |     pub status: LiveEvalStatus,
+     |     --- required by a bound introduced by this call
+     |
+help: the trait `Serialize` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 425 others
+note: required by a bound in `answer_drafts::_::_serde::ser::SerializeStruct::serialize_field`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/ser/mod.rs:1917:21
+     |
+1915 |     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
+     |        --------------- required by a bound in this associated function
+1916 |     where
+1917 |         T: ?Sized + Serialize;
+     |                     ^^^^^^^^^ required by this bound in `SerializeStruct::serialize_field`
+     = note: this error originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:268:17
+     |
+ 268 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 398 others
+note: required by a bound in `next_element`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1771:12
+     |
+1769 |     fn next_element<T>(&mut self) -> Result<Option<T>, Self::Error>
+     |        ------------ required by a bound in this associated function
+1770 |     where
+1771 |         T: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `SeqAccess::next_element`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:268:17
+     |
+ 268 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 398 others
+note: required by a bound in `next_value`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1916:12
+     |
+1914 |     fn next_value<V>(&mut self) -> Result<V, Self::Error>
+     |        ---------- required by a bound in this associated function
+1915 |     where
+1916 |         V: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `MapAccess::next_value`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:264:50
+    |
+264 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                                                  ^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `Deserialize<'de>`:
+              &'a [u8]
+              &'a serde_json::value::RawValue
+              &'a std::path::Path
+              &'a str
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+            and 398 others
+note: required by a bound in `answer_drafts::_::_serde::__private228::de::missing_field`
+   --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:26:8
+    |
+ 24 | pub fn missing_field<'de, V, E>(field: &'static str) -> Result<V, E>
+    |        ------------- required by a bound in this function
+ 25 | where
+ 26 |     V: Deserialize<'de>,
+    |        ^^^^^^^^^^^^^^^^ required by this bound in `missing_field`
+    = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `clone` found for enum `live_eval_runner::LiveEvalStatus` in the current scope
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:291:34
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ----------------------- method `clone` not found for this enum
+...
+291 |             status: guard.status.clone(),
+    |                                  ^^^^^ method not found in `live_eval_runner::LiveEvalStatus`
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following trait defines an item `clone`, perhaps you need to implement it:
+            candidate #1: `Clone`
+
+error[E0277]: `live_eval_runner::LiveEvalStatus` doesn't implement `Debug`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:490:5
+    |
+486 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |          ----- in this derive macro expansion
+...
+490 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Debug` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+    = note: add `#[derive(Debug)]` to `live_eval_runner::LiveEvalStatus` or manually `impl Debug for live_eval_runner::LiveEvalStatus`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Debug)]`
+    |
+ 93 + #[derive(Debug)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Clone` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:490:5
+    |
+486 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                 ----- in this derive macro expansion
+...
+490 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Clone)]`
+    |
+ 93 + #[derive(Clone)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0369]: binary operation `==` cannot be applied to type `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:490:5
+    |
+486 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                        --------- in this derive macro expansion
+...
+490 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: an implementation of `PartialEq` might be missing for `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(PartialEq)]`
+    |
+ 93 + #[derive(PartialEq)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: Eq` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:490:5
+    |
+486 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                                   -- in this derive macro expansion
+...
+490 |     pub status: LiveEvalStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Eq` is not implemented for `live_eval_runner::LiveEvalStatus`
+    |
+note: required by a bound in `AssertParamIsEq`
+   --> library/core/src/cmp.rs:371:0
+help: consider annotating `live_eval_runner::LiveEvalStatus` with `#[derive(Eq)]`
+    |
+ 93 + #[derive(Eq)]
+ 94 | pub enum LiveEvalStatus {
+    |
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Serialize` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:486:39
+     |
+ 486 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+     |                                       ^^^^^^^^^ unsatisfied trait bound
+...
+ 490 |     pub status: LiveEvalStatus,
+     |     --- required by a bound introduced by this call
+     |
+help: the trait `Serialize` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 425 others
+note: required by a bound in `answer_drafts::_::_serde::ser::SerializeStruct::serialize_field`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/ser/mod.rs:1917:21
+     |
+1915 |     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
+     |        --------------- required by a bound in this associated function
+1916 |     where
+1917 |         T: ?Sized + Serialize;
+     |                     ^^^^^^^^^ required by this bound in `SerializeStruct::serialize_field`
+     = note: this error originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:490:17
+     |
+ 490 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 398 others
+note: required by a bound in `next_element`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1771:12
+     |
+1769 |     fn next_element<T>(&mut self) -> Result<Option<T>, Self::Error>
+     |        ------------ required by a bound in this associated function
+1770 |     where
+1771 |         T: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `SeqAccess::next_element`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:490:17
+     |
+ 490 |     pub status: LiveEvalStatus,
+     |                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+    --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+     |
+  93 | pub enum LiveEvalStatus {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `Deserialize<'de>`:
+               &'a [u8]
+               &'a serde_json::value::RawValue
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+             and 398 others
+note: required by a bound in `next_value`
+    --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs:1916:12
+     |
+1914 |     fn next_value<V>(&mut self) -> Result<V, Self::Error>
+     |        ---------- required by a bound in this associated function
+1915 |     where
+1916 |         V: Deserialize<'de>,
+     |            ^^^^^^^^^^^^^^^^ required by this bound in `MapAccess::next_value`
+     = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `live_eval_runner::LiveEvalStatus: serde::Deserialize<'de>` is not satisfied
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:486:50
+    |
+486 | #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    |                                                  ^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Deserialize<'_>` is not implemented for `live_eval_runner::LiveEvalStatus`
+   --> crates/ordo-daemon/src/live_eval_runner/mod.rs:93:1
+    |
+ 93 | pub enum LiveEvalStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `live_eval_runner::LiveEvalStatus` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `Deserialize<'de>`:
+              &'a [u8]
+              &'a serde_json::value::RawValue
+              &'a std::path::Path
+              &'a str
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+            and 398 others
+note: required by a bound in `answer_drafts::_::_serde::__private228::de::missing_field`
+   --> /Users/kwilliams/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:26:8
+    |
+ 24 | pub fn missing_field<'de, V, E>(field: &'static str) -> Result<V, E>
+    |        ------------- required by a bound in this function
+ 25 | where
+ 26 |     V: Deserialize<'de>,
+    |        ^^^^^^^^^^^^^^^^ required by this bound in `missing_field`
+    = note: the full name for the type has been written to '/Users/kwilliams/Projects/studioOrdo/target/debug/deps/ordo_daemon-0ecb686ab9a64f21.long-type-17512740389681184189.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/live_eval_runner/admin_staff.rs:10:12
+   |
+10 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/live_eval_runner/planning.rs:10:12
+   |
+10 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+warning: unused import: `LlmProviderAdapter`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:46:62
+   |
+46 |     DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, LlmProviderAdapter,
+   |                                                              ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Digest`
+  --> crates/ordo-daemon/src/live_eval_runner/mod.rs:11:12
+   |
+11 | use sha2::{Digest, Sha256};
+   |            ^^^^^^
+
+Some errors have detailed explanations: E0277, E0369, E0425, E0599, E0774.
+For more information about an error, try `rustc --explain E0277`.
+warning: `ordo-daemon` (lib) generated 73 warnings
+error: could not compile `ordo-daemon` (lib) due to 57 previous errors; 73 warnings emitted

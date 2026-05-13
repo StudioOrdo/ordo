@@ -10,13 +10,14 @@ provider, and realtime event foundations.
 
 ## Current Tables To Reuse
 
-0.1.6 Product Onboarding Surfaces should reuse the current durable tables before
-adding schema. The expected product surfaces are mostly route/read-model work on
-top of tracked entry points, visitor sessions, offers/trials, conversations,
-feedback/reviews, affiliate connections/grants, referrals, outcomes,
-attributions, artifacts, and journey reports. Each implementation issue should
-begin with fresh diagnosis and add schema only when the existing contract cannot
-represent the evidence safely.
+0.1.8 Interactive Account And LLM Chat should reuse the current durable tables
+before adding schema. The expected active work is mostly route/read-model,
+session, bootstrap, websocket, and LLM gateway integration on top of actors,
+roles, conversations, participants, messages, LLM invocation records, prompt
+slot usage, privacy transforms, token ledger entries, and provider
+configuration. Each implementation issue should begin with fresh diagnosis and
+add schema only when the existing contract cannot represent the evidence
+safely.
 
 | Table | Conversation role |
 | --- | --- |

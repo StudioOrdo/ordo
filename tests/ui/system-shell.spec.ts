@@ -9,16 +9,24 @@ interface MockDaemonState {
   requests: string[];
 }
 
+function productContentUrl(path: string, testInfo: { project: { name: string } }): string {
+  return testInfo.project.name === "mobile-chromium" ? `${path}${path.includes("?") ? "&" : "?"}mobile=content` : path;
+}
+
+function productEvidenceUrl(path: string, testInfo: { project: { name: string } }): string {
+  return testInfo.project.name === "mobile-chromium" ? `${path}${path.includes("?") ? "&" : "?"}mobile=evidence` : path;
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.afterEach(async ({ page }) => {
   await page.close();
 });
 
-test("System Brief renders daemon evidence and process provenance", async ({ page }) => {
+test("System Brief renders daemon evidence and process provenance", async ({ page }, testInfo) => {
   const daemon = await startMockDaemon();
   try {
-    await page.goto("/");
+    await page.goto(productContentUrl("/admin/system?role=owner", testInfo));
 
     await expect(page.getByRole("heading", { name: "System Brief" })).toBeVisible();
     await expect(page.locator("main")).toContainText("Mocked system brief is available for browser smoke coverage.");
@@ -32,8 +40,8 @@ test("System Brief renders daemon evidence and process provenance", async ({ pag
   }
 });
 
-test("System shell shows daemon-degraded fallback state", async ({ page }) => {
-  await page.goto("/");
+test("System shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/admin/system?role=owner", testInfo));
 
   await expect(page.getByRole("heading", { name: "System Brief" })).toBeVisible();
   await expect(page.locator("main")).toContainText("The daemon is not reachable");
@@ -43,6 +51,40 @@ test("System shell shows daemon-degraded fallback state", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Health", exact: true })).toBeVisible();
   await expect(page.locator("main")).toContainText("health unavailable");
   await expect(page.locator("main")).toContainText("ready unavailable");
+});
+
+test("Root renders the public Ordo/story surface deck instead of the System Brief", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: /A business appliance/ })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Home");
+  await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Ordo");
+  await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Login");
+  await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Register");
+  await expect(page.getByLabel("Studio Ordo surface deck")).toContainText("Try OrdoStudio for 30 days");
+  await expect(page.getByRole("navigation", { name: "Surface progress" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open full-screen Ordo" })).toBeVisible();
+  await page.goto("/?home=chat&role=admin");
+  await expect(page.getByRole("heading", { name: /What should your business do next/ })).toBeVisible();
+  await expect(page.getByLabel("Current shell")).toContainText("Site");
+  await expect(page.getByLabel("Open user menu")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Member actions" })).toContainText("Open Ordo");
+  await expect(page.locator("main")).not.toContainText("The daemon is not reachable");
+});
+
+test("Login and register keep the public top rail and enter the authenticated shell", async ({ page }) => {
+  await page.goto("/login");
+
+  await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Studio Ordo");
+  await expect(page.getByLabel("Studio Ordo home").locator("img")).toHaveAttribute("src", "/logo.png");
+  await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Register");
+  await page.getByRole("link", { name: "Continue" }).click();
+  await expect(page.getByRole("navigation", { name: "Ordo room labels" })).toBeVisible();
+
+  await page.goto("/register");
+  await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Studio Ordo");
+  await page.getByRole("link", { name: "Create account" }).click();
+  await expect(page.getByRole("navigation", { name: "Ordo room labels" })).toBeVisible();
 });
 
 test("Backup And Restore renders persisted jobs and operator controls", async ({ page }) => {
@@ -111,10 +153,15 @@ test("Reports can prepare and display local evidence packages", async ({ page })
   }
 });
 
-test("Client chat keeps one relationship conversation and hides staff rails", async ({ page }) => {
-  await page.goto("/chat?role=client");
+test("Client chat keeps one relationship conversation and hides staff rails", async ({ page }, testInfo) => {
+  const isMobile = testInfo.project.name === "mobile-chromium";
+  await page.goto(productContentUrl("/chat?role=client", testInfo));
 
-  await expect(page.getByRole("navigation", { name: "Public and member navigation" })).toBeVisible();
+  if (!isMobile) {
+    await expect(page.getByRole("navigation", { name: "Functional workspaces" })).toBeVisible();
+    await expect(page.locator('.primary-link[data-shell-id="my-ordo"]')).toHaveCount(1);
+    await expect(page.locator('.primary-link[data-shell-id="staff"]')).toHaveCount(0);
+  }
   await expect(page.getByRole("heading", { name: "Your conversation with Studio Ordo" })).toBeVisible();
   await expect(page.locator("main")).toContainText("single relationship conversation");
   await expect(page.getByLabel("Deliverable cards")).toContainText("Deliverable: QR card proof");
@@ -124,29 +171,94 @@ test("Client chat keeps one relationship conversation and hides staff rails", as
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByLabel("Conversation timeline")).toContainText("Please send me the digital proof.");
   await expect(page.getByLabel("Conversation timeline")).toContainText(/Ack message_submit_/);
-  await expect(page.getByRole("navigation", { name: "Staff business navigation" })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Staff rooms" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "System View rooms" })).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("Logs");
   await expect(page.locator("body")).not.toContainText("Backup");
 });
 
-test("Staff navigation defaults to handoff work before relationship memory", async ({ page }) => {
-  await page.goto("/conversations?role=staff");
+test("User messages collapse the secondary menu into one primary conversation", async ({ page }, testInfo) => {
+  const isMobile = testInfo.project.name === "mobile-chromium";
+  await page.goto(productContentUrl("/my/chat?role=client", testInfo));
 
-  const staffNav = page.getByRole("navigation", { name: "Staff business navigation" });
-  await expect(staffNav).toBeVisible();
-  await expect(staffNav.getByRole("link", { name: /Conversations/ })).toBeVisible();
-  await expect(staffNav.getByRole("link", { name: /Connections/ })).toBeVisible();
-  await expect(staffNav.getByRole("link", { name: /Conversations/ })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Queues" })).toBeVisible();
-  await expect(page.locator("main")).toContainText("My Handoffs");
-  await expect(page.locator("main")).toContainText("Why this is here");
-  await expect(page.locator("main")).toContainText("Handoff Brief");
+  if (!isMobile) {
+    await expect(page.getByRole("navigation", { name: "Ordo room labels" })).toBeVisible();
+  }
+  await expect(page.getByRole("complementary", { name: "Ordo evidence and assets" })).toHaveCount(0);
+  await expect(page.getByLabel("Studio Ordo conversation")).toBeVisible();
+  await expect(page.getByLabel("Ordo relationship brief")).toContainText("One relationship conversation");
+  await expect(page.getByLabel("Safe handoff status")).toContainText("Keith handoff remains available");
+  await expect(page.getByLabel("Safe handoff status")).toContainText("internal routing and provider details stay hidden");
+  await expect(page.getByRole("region", { name: "Message Ordo" })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("Staff-only notes");
 });
 
-test("Premium conversation UI supports edit, undo, retry, unread, reactions, and presence", async ({ page }) => {
-  await page.goto("/conversations?role=staff");
+test("User rooms use the second column for evidence and assets", async ({ page }, testInfo) => {
+  const isMobile = testInfo.project.name === "mobile-chromium";
+  await page.goto(productEvidenceUrl("/my/capabilities?role=client", testInfo));
+
+  if (!isMobile) {
+    const roomLabels = page.getByRole("navigation", { name: "Ordo room labels" });
+    await expect(roomLabels).toBeVisible();
+    await expect(roomLabels.getByRole("link", { name: /Capabilities/ })).toHaveAttribute("aria-current", "page");
+  }
+  await expect(page.getByRole("complementary", { name: "Ordo evidence and assets" })).toBeVisible();
+  await expect(page.getByLabel("Capabilities worklist")).toContainText("Hosted 30-day trial is active");
+
+  if (isMobile) {
+    await page.getByRole("link", { name: /Open content/i }).click();
+  }
+
+  const capabilityContent = page.getByLabel("Hosted 30-day trial is active detail");
+  await expect(capabilityContent).toContainText("Hosted 30-day trial is active");
+  await expect(capabilityContent).toContainText("Why it matters");
+  await expect(capabilityContent).toContainText("Timeline");
+  await expect(capabilityContent).toContainText("Evidence");
+  await expect(capabilityContent).toContainText("Hosted trial");
+});
+
+test("Product shell uses the Ordo rail icon to toggle the room drawer", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile-chromium", "mobile uses the pane stack instead of desktop rail");
+  await page.goto("/my/offers?role=client&rail=collapsed");
+
+  await expect(page.locator(".product-shell")).toHaveAttribute("data-rail-mode", "collapsed");
+  await expect(page.getByRole("navigation", { name: "Functional workspaces" })).toBeVisible();
+  await expect(page.locator(".rail-collapse-toggle")).toHaveCount(0);
+  await expect(page.locator(".product-rail-home").locator("img")).toHaveAttribute("src", "/logo.png");
+  const userNav = page.getByRole("navigation", { name: "Ordo room labels" });
+  await expect(userNav).toBeHidden();
+  const ordoRailLink = page.locator('.product-shell-menu [data-shell-id="my-ordo"]');
+  await expect(ordoRailLink).toHaveAttribute("aria-expanded", "false");
+  await expect(ordoRailLink).toHaveAttribute("href", "/my/offers?role=client");
+  await expect(page.getByRole("complementary", { name: "Ordo evidence and assets" })).toBeVisible();
+  await expect(page).toHaveURL(/\/my\/offers\?role=client&rail=collapsed$/);
+
+  await ordoRailLink.click();
+  await expect(page.locator(".product-shell")).toHaveAttribute("data-rail-mode", "expanded");
+  await expect(userNav).toBeVisible();
+  await expect(userNav.getByRole("link", { name: /Offers/ })).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/\/my\/offers\?role=client$/);
+});
+
+test("Staff navigation defaults to handoff work before relationship memory", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile-chromium", "desktop staff shell composition is covered separately from mobile pane stack");
+  await page.goto("/staff/conversations?role=staff");
+
+  const staffNav = page.getByRole("navigation", { name: "Support room labels" });
+  await expect(staffNav).toBeVisible();
+  await expect(staffNav.getByRole("link", { name: /Conversations/ })).toBeVisible();
+  await expect(staffNav.getByRole("link", { name: /Handoffs/ })).toBeVisible();
+  await expect(staffNav.getByRole("link", { name: /Conversations/ })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "System room labels" })).toHaveCount(0);
+  await expect(page.locator('.primary-link[data-shell-id="staff"]')).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
+  await expect(page.locator("main")).toContainText("Maya asked to talk to Keith live");
+  await expect(page.locator("main")).toContainText("Take over");
+});
+
+test("Premium conversation UI supports edit, undo, retry, unread, reactions, and presence", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile-chromium", "staff conversation chrome is desktop-focused in the shell prototype");
+  await page.goto(productContentUrl("/chat?role=staff", testInfo));
 
   await expect(page.getByLabel("Conversation workspace")).toBeVisible();
   await expect(page.getByRole("button", { name: "Jump to first unread" })).toBeVisible();
@@ -186,8 +298,8 @@ test("Premium conversation UI supports edit, undo, retry, unread, reactions, and
   await expect(page.getByLabel("Conversation timeline")).toContainText("Retried");
 });
 
-test("Conversation recovery replays missed state and reconciles pending clientId without duplicates", async ({ page }) => {
-  await page.goto("/conversations?role=staff");
+test("Conversation recovery replays missed state and reconciles pending clientId without duplicates", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/chat?role=staff", testInfo));
 
   await page.getByLabel("Write a reply").fill("hold this pending message");
   await page.getByRole("button", { name: "Send" }).click();
@@ -201,8 +313,8 @@ test("Conversation recovery replays missed state and reconciles pending clientId
   await expect(page.getByText("hold this pending message")).toHaveCount(1);
 });
 
-test("Conversation recovery can replay missed durable state after offline gap", async ({ page }) => {
-  await page.goto("/chat?role=client");
+test("Conversation recovery can replay missed durable state after offline gap", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/chat?role=client", testInfo));
 
   await page.getByRole("button", { name: "Simulate offline" }).click();
   await expect(page.getByLabel("Connection status")).toContainText("Offline");
@@ -212,8 +324,8 @@ test("Conversation recovery can replay missed durable state after offline gap", 
   await expect(page.getByLabel("Conversation timeline")).toContainText("Recovered missed durable conversation state after reconnect.");
 });
 
-test("Conversation core mobile layout avoids horizontal overflow", async ({ page }) => {
-  await page.goto("/chat?role=client");
+test("Conversation core mobile layout avoids horizontal overflow", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/chat?role=client", testInfo));
 
   await expect(page.getByLabel("Conversation workspace")).toBeVisible();
   await expect(page.getByLabel("Ethical persuasion guidance")).toHaveCount(0);
@@ -227,9 +339,9 @@ test("Conversation core mobile layout avoids horizontal overflow", async ({ page
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("Conversation reduced motion keeps state legible without smooth scroll dependency", async ({ page }) => {
+test("Conversation reduced motion keeps state legible without smooth scroll dependency", async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/conversations?role=staff");
+  await page.goto(productContentUrl("/chat?role=staff", testInfo));
 
   await page.getByRole("button", { name: "Jump to latest" }).click();
   await expect(page.getByLabel("Conversation timeline")).toContainText("Ava is typing");
@@ -237,30 +349,50 @@ test("Conversation reduced motion keeps state legible without smooth scroll depe
   expect(scrollBehavior).toBe("auto");
 });
 
-test("Admin role can access appliance system rail without leaking it to clients", async ({ page }) => {
-  await page.goto("/chat?role=admin");
+test("System role can access appliance system rail without leaking it to clients", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile-chromium", "mobile system route uses the stacked pane contract");
+  await page.goto("/admin/system?role=admin");
 
-  const systemNav = page.getByRole("navigation", { name: "Admin system navigation" });
+  const systemNav = page.getByRole("navigation", { name: "System room labels" });
   await expect(systemNav).toBeVisible();
-  await expect(systemNav.getByRole("link", { name: /System/ })).toBeVisible();
-  await expect(systemNav.getByRole("link", { name: /Logs/ })).toBeVisible();
-  await expect(systemNav.getByRole("link", { name: /Backup/ })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Staff business navigation" })).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /Health/ })).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /Events/ })).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /Backups/ })).toBeVisible();
+  await expect(page.locator('.primary-link[data-shell-id="admin"]')).toHaveCount(0);
+  await page.getByLabel("Open account and role menu").click();
+  const userMenu = page.locator(".product-rail-menu-panel");
+  await expect(userMenu.getByRole("link", { name: "Account", exact: true })).toBeVisible();
+  await expect(userMenu.getByRole("link", { name: "Preferences", exact: true })).toBeVisible();
+  await expect(userMenu.getByRole("link", { name: "Public home", exact: true })).toBeVisible();
+  await expect(userMenu.getByRole("link", { name: "Admin", exact: true })).toHaveCount(0);
 });
 
-test("Account tools are role-specific and keep affiliates outside the staff rail", async ({ page }) => {
-  await page.goto("/account?role=affiliate");
+test("Account tools are role-specific and keep affiliates outside the staff rail", async ({ page }, testInfo) => {
+  const isMobile = testInfo.project.name === "mobile-chromium";
+  await page.goto(productContentUrl("/account?role=affiliate", testInfo));
 
-  await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible();
-  await expect(page.locator("main")).toContainText("Affiliate dashboard");
-  await expect(page.locator("main")).toContainText("Referral links");
-  await expect(page.locator("main")).toContainText("Approved materials");
-  await expect(page.getByRole("navigation", { name: "Staff business navigation" })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Admin system navigation" })).toHaveCount(0);
+  if (!isMobile) {
+    await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible();
+  }
+  await expect(page.locator("body")).toContainText("Identity, access, and security evidence");
+  await expect(page.locator("body")).toContainText("Password reset");
+  await expect(page.locator("body")).toContainText("User shell");
+
+  if (!isMobile) {
+    await page.getByLabel("Open account and role menu").click();
+    await expect(page.getByRole("link", { name: "Account", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Preferences", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Public home", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sign out", exact: true })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("Prototype role");
+  }
+
+  await expect(page.getByRole("navigation", { name: "Support room labels" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "System room labels" })).toHaveCount(0);
 });
 
-test("Product surfaces load latest completed brief before raw surface detail", async ({ page }) => {
-  await page.goto("/offers?role=staff");
+test("Product surfaces load latest completed brief before raw surface detail", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/offers?role=staff", testInfo));
 
   const latestBrief = page.getByLabel("Latest completed surface brief");
   await expect(latestBrief).toBeVisible();

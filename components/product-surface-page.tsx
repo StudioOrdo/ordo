@@ -1,10 +1,11 @@
 import { ProductShell } from "@/components/product-shell";
-import { roleFromSearchParams, type SearchParams } from "@/lib/page-role";
-import { type ProductRole } from "@/lib/product-navigation";
+import { mobileStepFromSearchParams, railModeFromSearchParams, roleFromSearchParams, type SearchParams } from "@/lib/page-role";
+import { type ProductAppSpace, type ProductRole } from "@/lib/product-navigation";
 
 interface Props {
   searchParams?: SearchParams;
-  topItemId: string;
+  appSpaceId?: ProductAppSpace;
+  itemId: string;
   title: string;
   eyebrow: string;
   brief: readonly string[];
@@ -21,12 +22,14 @@ interface SurfaceBriefFixture {
   limitations: readonly string[];
 }
 
-export async function ProductSurfacePage({ searchParams, topItemId, title, eyebrow, brief, surfaceBrief, accountTools }: Props) {
+export async function ProductSurfacePage({ searchParams, appSpaceId = "site", itemId, title, eyebrow, brief, surfaceBrief, accountTools }: Props) {
   const role = await roleFromSearchParams(searchParams);
+  const railMode = await railModeFromSearchParams(searchParams);
+  const mobileStep = await mobileStepFromSearchParams(searchParams);
   const tools = accountTools?.(role) ?? [];
 
   return (
-    <ProductShell role={role} currentTopItemId={topItemId}>
+    <ProductShell role={role} appSpaceId={appSpaceId} currentItemId={itemId} railMode={railMode} mobileStep={mobileStep}>
       {surfaceBrief ? <SurfaceBriefPanel brief={surfaceBrief} /> : null}
       <section className="brief-panel narrative-brief">
         <span className="eyebrow">{eyebrow}</span>

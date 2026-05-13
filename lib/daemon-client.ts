@@ -234,6 +234,7 @@ export interface SystemSnapshot {
 
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:17760";
 const DEFAULT_DAEMON_WS_URL = "ws://127.0.0.1:17760/ws";
+const DEFAULT_DAEMON_CHAT_WS_URL = "ws://127.0.0.1:17760/chat/ws";
 const DAEMON_REQUEST_TIMEOUT_MS = 2_000;
 
 export function daemonUrl(): string {
@@ -242,6 +243,15 @@ export function daemonUrl(): string {
 
 export function daemonWebSocketUrl(): string {
   return process.env.NEXT_PUBLIC_ORDO_DAEMON_WS_URL?.trim() || DEFAULT_DAEMON_WS_URL;
+}
+
+export function daemonChatWebSocketUrl(): string {
+  const configuredChatUrl = process.env.NEXT_PUBLIC_ORDO_DAEMON_CHAT_WS_URL?.trim();
+  if (configuredChatUrl) {
+    return configuredChatUrl;
+  }
+  const websocketUrl = daemonWebSocketUrl();
+  return websocketUrl.endsWith("/ws") ? websocketUrl.replace(/\/ws$/, "/chat/ws") : DEFAULT_DAEMON_CHAT_WS_URL;
 }
 
 async function fetchJson<T>(baseUrl: string, path: string): Promise<T> {

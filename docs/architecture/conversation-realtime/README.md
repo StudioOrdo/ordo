@@ -62,10 +62,13 @@ The current codebase already provides the spine this work should extend:
 - [Live Product Journey Evals](live-product-journey-evals.md) defines the
   completed 0.1.5 persona-backed QR-to-trial, review-return, affiliate,
   admin/staff, and analyzed report eval arc.
-- [Product Onboarding Surfaces](product-onboarding-surfaces.md) defines the
-  accepted 0.1.6 arc for turning that evidence into real QR/event landing,
-  offer/trial, client conversation, review-return, referral, and staff review
-  surfaces.
+- [Product Onboarding Surfaces](product-onboarding-surfaces.md) records the
+  superseded 0.1.7 arc for QR/event landing, offer/trial, client conversation,
+  review-return, referral, and staff review surfaces.
+- [Interactive Account And LLM Chat](interactive-account-llm-chat.md) defines
+  the active 0.1.8 contract for local login/register, chat bootstrap, browser
+  `/chat/ws`, deterministic LLM chat, guarded OpenAI-compatible testing, UI run
+  states, and end-to-end smoke evidence.
 
 ## Design Doctrine
 

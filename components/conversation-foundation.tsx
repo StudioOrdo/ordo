@@ -203,7 +203,7 @@ function ConversationList({
   if (!isStaff) {
     return (
       <aside className="conversation-list" aria-label="Relationship conversation">
-        <span className="eyebrow">Chat</span>
+        <span className="eyebrow">Ordo</span>
         <h2>Your conversation</h2>
         <button type="button" className="conversation-row active" aria-current="true">
           <span>

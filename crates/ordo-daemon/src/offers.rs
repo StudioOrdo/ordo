@@ -1322,16 +1322,38 @@ pub fn request_hosted_trial_reset(
     if evidence_refs.is_empty() {
         bail!("Hosted trial reset/wipe requires backup/export evidence.");
     }
-    let owner_decision = request.owner_decision.unwrap_or_else(|| json!({}));
+    let owner_decision = request.owner_decision.ok_or_else(|| {
+        anyhow::anyhow!("Hosted trial reset/wipe requires owner decision evidence.")
+    })?;
+    let owner_decision_object = owner_decision.as_object().ok_or_else(|| {
+        anyhow::anyhow!("Hosted trial reset/wipe owner decision evidence must be an object.")
+    })?;
+    if owner_decision_object.is_empty() {
+        bail!("Hosted trial reset/wipe requires owner decision evidence.");
+    }
     let mut connection = Connection::open(db_path)?;
     let transaction = connection.transaction()?;
     let trial = find_trial_by_id(&transaction, &trial_id)?
         .ok_or_else(|| anyhow::anyhow!("Trial was not found: {trial_id}"))?;
     let slot = find_hosted_trial_slot_by_trial_id(&transaction, &trial_id)?
         .ok_or_else(|| anyhow::anyhow!("Hosted trial slot was not found for trial: {trial_id}"))?;
-    if trial.status == TrialStatus::Started || slot.status == HOSTED_TRIAL_SLOT_STATUS_ACTIVE {
+    match trial.status {
+        TrialStatus::Expired | TrialStatus::Voided => {}
+        TrialStatus::Converted => {
+            bail!(
+                "Converted hosted trials are retained and cannot be marked ready for reset/wipe through the hosted trial expiration guard."
+            );
+        }
+        TrialStatus::Started | TrialStatus::FollowUpNeeded => {
+            bail!("Hosted trial reset/wipe is blocked until the trial is expired or voided.");
+        }
+    }
+    if slot.status == HOSTED_TRIAL_SLOT_STATUS_ACTIVE {
+        bail!("Hosted trial reset/wipe is blocked until the trial is expired or voided.");
+    }
+    if slot.status == TrialStatus::Converted.as_str() || slot.reset_state == "converted_no_wipe" {
         bail!(
-            "Hosted trial reset/wipe is blocked until the trial is expired, voided, or converted."
+            "Converted hosted trials are retained and cannot be marked ready for reset/wipe through the hosted trial expiration guard."
         );
     }
     let now = Utc::now().to_rfc3339();
@@ -1371,6 +1393,7 @@ pub fn request_hosted_trial_reset(
             "slotId": slot.id,
             "backupEvidenceRefs": evidence_refs,
             "resetState": HOSTED_TRIAL_RESET_READY_FOR_OWNER_REVIEW,
+            "ownerDecision": owner_decision,
         }),
         &now,
     )?;
@@ -1588,35 +1611,18 @@ fn ensure_hosted_trial_capacity_policy_tx(
     offer: &PublicOfferRecord,
     now: &str,
 ) -> Result<HostedTrialCapacityPolicyRecord> {
-    if let Some(existing) = find_hosted_trial_capacity_policy_by_offer_id(transaction, &offer.id)? {
-        transaction.execute(
-            "UPDATE hosted_trial_capacity_policies
-             SET offer_slug = ?1,
-                 trial_days = ?2,
-                 active_slot_limit = ?3,
-                 backup_before_wipe_required = 1,
-                 updated_at = ?4
-             WHERE id = ?5",
-            params![
-                offer.slug,
-                offer.trial_days,
-                HOSTED_TRIAL_ACTIVE_SLOT_LIMIT,
-                now,
-                existing.id,
-            ],
-        )?;
-        return Ok(
-            find_hosted_trial_capacity_policy_by_offer_id(transaction, &offer.id)?
-                .expect("hosted trial capacity policy just updated"),
-        );
-    }
-
     let id = format!("hosted_trial_capacity_policy_{}", Uuid::new_v4());
     transaction.execute(
         "INSERT INTO hosted_trial_capacity_policies (
             id, offer_id, offer_slug, status, active_slot_limit, trial_days,
             backup_before_wipe_required, reset_grace_days, metadata_json, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 0, ?7, ?8, ?8)",
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 0, ?7, ?8, ?8)
+         ON CONFLICT(offer_id) DO UPDATE SET
+             offer_slug = excluded.offer_slug,
+             trial_days = excluded.trial_days,
+             active_slot_limit = excluded.active_slot_limit,
+             backup_before_wipe_required = 1,
+             updated_at = excluded.updated_at",
         params![
             id,
             offer.id,
@@ -1635,7 +1641,7 @@ fn ensure_hosted_trial_capacity_policy_tx(
     )?;
     Ok(
         find_hosted_trial_capacity_policy_by_offer_id(transaction, &offer.id)?
-            .expect("hosted trial capacity policy just inserted"),
+            .expect("hosted trial capacity policy just upserted"),
     )
 }
 
@@ -3066,6 +3072,18 @@ mod tests {
         .to_string();
         assert!(blocked.contains("backup/export evidence"));
 
+        let missing_owner_decision = request_hosted_trial_reset(
+            &db_path,
+            &first_trial_id,
+            HostedTrialResetRequest {
+                backup_evidence_refs: vec!["backup:export_1".to_string()],
+                owner_decision: None,
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(missing_owner_decision.contains("owner decision evidence"));
+
         let (plan, event) = request_hosted_trial_reset(
             &db_path,
             &first_trial_id,
@@ -3105,6 +3123,71 @@ mod tests {
             .unwrap();
         assert_eq!(policy.active_slot_count, 10);
         assert_eq!(policy.waitlist_count, 0);
+    }
+
+    #[test]
+    fn converted_hosted_trial_cannot_be_marked_reset_ready() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (offer, _) = create_offer(
+            &db_path,
+            public_offer_request("converted-pack"),
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (_, trial, _, _, _) = accept_public_offer(
+            &db_path,
+            &offer.slug,
+            OfferAcceptanceCreateRequest {
+                visitor_session_id: None,
+                local_session_id: None,
+                idempotency_key: Some("converted-active".to_string()),
+                attribution: None,
+                acceptance_context: None,
+            },
+        )
+        .unwrap();
+
+        transition_trial(
+            &db_path,
+            &trial.id,
+            TrialTransitionRequest {
+                status: TrialStatus::Converted,
+                decision_evidence: Some(json!({
+                    "actorId": LOCAL_OWNER_ACTOR_ID,
+                    "reason": "user converted to retained account"
+                })),
+            },
+        )
+        .unwrap();
+
+        let blocked = request_hosted_trial_reset(
+            &db_path,
+            &trial.id,
+            HostedTrialResetRequest {
+                backup_evidence_refs: vec!["backup:converted_export".to_string()],
+                owner_decision: Some(json!({
+                    "actorId": LOCAL_OWNER_ACTOR_ID,
+                    "reason": "operator attempted converted reset"
+                })),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(blocked.contains("Converted hosted trials are retained"));
+
+        let capacity = list_hosted_trial_capacity(&db_path).unwrap();
+        let slot = capacity
+            .slots
+            .iter()
+            .find(|slot| slot.trial_id == trial.id)
+            .unwrap();
+        assert_eq!(slot.status, "converted");
+        assert_eq!(slot.reset_state, "converted_no_wipe");
+        assert_eq!(slot.backup_status, "required");
+        assert!(slot.backup_evidence_refs.is_empty());
     }
 
     #[test]

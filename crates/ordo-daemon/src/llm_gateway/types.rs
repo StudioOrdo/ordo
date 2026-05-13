@@ -7,6 +7,7 @@ use crate::llm_accounting::*;
 use crate::policy::*;
 use crate::privacy_egress::*;
 use crate::schema::*;
+use crate::secrets::{expose_secret, OrdoSecretString};
 use crate::vault::*;
 use anyhow::bail;
 use anyhow::{anyhow, ensure, Context, Result};
@@ -415,7 +416,7 @@ pub struct OpenAiCompatibleConfig {
     pub provider_id: String,
     pub model_id: String,
     pub base_url: String,
-    pub api_key: String,
+    pub api_key: OrdoSecretString,
     pub timeout_ms: u64,
 }
 
@@ -424,7 +425,7 @@ impl OpenAiCompatibleConfig {
         provider_id: impl Into<String>,
         model_id: impl Into<String>,
         base_url: impl Into<String>,
-        api_key: impl Into<String>,
+        api_key: impl Into<OrdoSecretString>,
     ) -> Result<Self> {
         let config = Self {
             provider_id: provider_id.into(),
@@ -437,7 +438,10 @@ impl OpenAiCompatibleConfig {
         Ok(config)
     }
 
-    pub fn openai(model_id: impl Into<String>, api_key: impl Into<String>) -> Result<Self> {
+    pub fn openai(
+        model_id: impl Into<String>,
+        api_key: impl Into<OrdoSecretString>,
+    ) -> Result<Self> {
         Self::new("openai", model_id, "https://api.openai.com/v1", api_key)
     }
 
@@ -455,7 +459,7 @@ impl OpenAiCompatibleConfig {
         crate::conversations::require_text("provider_id", &self.provider_id)?;
         crate::conversations::require_text("model_id", &self.model_id)?;
         crate::conversations::require_text("base_url", &self.base_url)?;
-        crate::conversations::require_text("api_key", &self.api_key)?;
+        crate::conversations::require_text("api_key", expose_secret(&self.api_key))?;
         ensure!(self.timeout_ms > 0, "timeout_ms must be positive");
         Ok(())
     }
@@ -555,7 +559,7 @@ impl<T: OpenAiCompatibleTransport> LlmProviderAdapter for OpenAiCompatibleProvid
         let body = self.request_body(request);
         let response = self.transport.post_chat_completions(
             &self.config.chat_completions_url(),
-            &self.config.api_key,
+            expose_secret(&self.config.api_key),
             self.config.timeout_ms,
             &body,
         );

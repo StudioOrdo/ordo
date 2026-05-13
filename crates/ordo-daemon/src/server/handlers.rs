@@ -6,7 +6,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::time::Duration as StdDuration;
 use tokio::sync::broadcast;
@@ -86,7 +86,8 @@ use crate::offers::{
 };
 use crate::policy::{
     authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
-    PolicyDecision, PolicyDecisionCorrelation, ProtectedAccessEvidence, ResourceKind, ResourceRef,
+    PolicyDecision, PolicyDecisionCorrelation, PolicyOutcome, ProtectedAccessEvidence,
+    ResourceKind, ResourceRef,
 };
 use crate::policy_audit::{
     list_policy_decisions, PolicyDecisionAuditQuery, PolicyDecisionAuditResponse,
@@ -103,6 +104,7 @@ use crate::reports::{
     IssueReportsResponse, SupportPacketApprovalRequest, SupportPacketDraftRequest,
     SupportPacketListResponse, SupportPacketReceiptListResponse, SupportPacketView,
 };
+use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
 
 const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
 const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
@@ -1876,19 +1878,39 @@ pub(crate) fn protected_daemon_route_decision(
     resource: ResourceRef,
     capability_id: Option<&str>,
 ) -> PolicyDecision {
+    let loopback = remote_addr.ip().is_loopback();
+    let token = policy
+        .access_token
+        .as_ref()
+        .is_some_and(|token| request_has_access_token(headers, token));
+    if !loopback && !token {
+        let rate_limit_key = protected_route_rate_limit_key(remote_addr.ip(), &resource);
+        let rate_limit = policy.rate_limiter.check(&rate_limit_key);
+        if !rate_limit.allowed {
+            return PolicyDecision {
+                outcome: PolicyOutcome::Denied,
+                actor: ActorContext::local_owner("http"),
+                action,
+                resource,
+                capability_id: capability_id.map(ToString::to_string),
+                reason: format!(
+                    "Protected daemon route rate limit exceeded. Retry after {} second(s).",
+                    rate_limit.retry_after_seconds.unwrap_or(1)
+                ),
+            };
+        }
+    }
     authorize_protected_daemon_action(
         ActorContext::local_owner("http"),
         action,
         resource,
         capability_id,
-        ProtectedAccessEvidence {
-            loopback: remote_addr.ip().is_loopback(),
-            token: policy
-                .access_token
-                .as_deref()
-                .is_some_and(|token| request_has_access_token(headers, token)),
-        },
+        ProtectedAccessEvidence { loopback, token },
     )
+}
+
+fn protected_route_rate_limit_key(ip: IpAddr, resource: &ResourceRef) -> String {
+    format!("{}|{}|{}", ip, resource.kind.as_str(), resource.id)
 }
 
 #[cfg(test)]
@@ -1912,16 +1934,16 @@ fn actor_id(decision: &PolicyDecision) -> Option<&str> {
     Some(decision.actor.kind.as_str())
 }
 
-fn request_has_access_token(headers: &HeaderMap, expected_token: &str) -> bool {
+fn request_has_access_token(headers: &HeaderMap, expected_token: &OrdoSecretString) -> bool {
     headers
         .get(DAEMON_ACCESS_TOKEN_HEADER)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|token| token == expected_token)
+        .is_some_and(|token| constant_time_secret_eq(token, expected_token))
         || headers
             .get("authorization")
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "))
-            .is_some_and(|token| token == expected_token)
+            .is_some_and(|token| constant_time_secret_eq(token, expected_token))
 }
 
 pub(crate) fn internal_error(error: anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
@@ -2165,6 +2187,94 @@ mod tests {
             &headers,
             socket_addr("192.168.1.10:4000")
         ));
+    }
+
+    #[test]
+    fn protected_daemon_routes_reject_wrong_token_without_leaking_secret() {
+        let policy = DaemonAccessPolicy::new(Some("super-secret-daemon-token".to_string()));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            DAEMON_ACCESS_TOKEN_HEADER,
+            "attacker-supplied-token".parse().unwrap(),
+        );
+
+        let decision = protected_daemon_route_decision(
+            &policy,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/providers"),
+            Some("providers.list"),
+        );
+
+        assert!(!decision.allowed());
+        let serialized = format!("{policy:?}\n{}", decision.metadata());
+        assert!(!serialized.contains("super-secret-daemon-token"));
+        assert!(!serialized.contains("attacker-supplied-token"));
+    }
+
+    #[test]
+    fn protected_daemon_routes_rate_limit_repeated_bad_non_loopback_attempts() {
+        let mut policy = DaemonAccessPolicy::new(None);
+        policy.rate_limiter = ProtectedRouteRateLimiter::new(2, 60);
+        let headers = HeaderMap::new();
+
+        for _ in 0..2 {
+            let decision = protected_daemon_route_decision(
+                &policy,
+                &headers,
+                socket_addr("192.168.1.10:4000"),
+                PolicyAction::Inspect,
+                ResourceRef::new(ResourceKind::DaemonRoute, "/providers"),
+                Some("providers.list"),
+            );
+            assert!(!decision.allowed());
+            assert!(decision.reason.contains("requires loopback"));
+        }
+        let blocked = protected_daemon_route_decision(
+            &policy,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/providers"),
+            Some("providers.list"),
+        );
+
+        assert!(!blocked.allowed());
+        assert!(blocked.reason.contains("rate limit exceeded"));
+        assert!(!blocked.reason.contains("192.168.1.10"));
+    }
+
+    #[test]
+    fn protected_daemon_route_limiter_does_not_block_valid_token() {
+        let mut policy = DaemonAccessPolicy::new(Some("super-secret-daemon-token".to_string()));
+        policy.rate_limiter = ProtectedRouteRateLimiter::new(1, 60);
+        let empty_headers = HeaderMap::new();
+        let mut token_headers = HeaderMap::new();
+        token_headers.insert(
+            DAEMON_ACCESS_TOKEN_HEADER,
+            "super-secret-daemon-token".parse().unwrap(),
+        );
+
+        let denied = protected_daemon_route_decision(
+            &policy,
+            &empty_headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/providers"),
+            Some("providers.list"),
+        );
+        assert!(!denied.allowed());
+        let allowed = protected_daemon_route_decision(
+            &policy,
+            &token_headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/providers"),
+            Some("providers.list"),
+        );
+
+        assert!(allowed.allowed());
     }
 
     #[test]

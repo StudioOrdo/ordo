@@ -83,6 +83,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "artifact_links",
     "artifact_deliverables",
     "surface_briefs",
+    "surface_work_items",
     "customer_feedback",
     "feedback_tags",
     "customer_reviews",
@@ -104,7 +105,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 29;
+pub const CURRENT_SCHEMA_VERSION: i64 = 30;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -203,10 +204,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29,
+                24, 25, 26, 27, 28, 29, 30,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 29);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 30);
     }
 
     #[test]
@@ -1004,6 +1005,32 @@ mod tests {
             &connection,
             "surface_briefs",
             "superseded_at"
+        ));
+        assert!(table_exists(&connection, "surface_work_items"));
+        assert!(column_exists(
+            &connection,
+            "surface_work_items",
+            "surface_kind"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_work_items",
+            "room_kind"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_work_items",
+            "evidence_refs_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_work_items",
+            "actions_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_work_items",
+            "visibility"
         ));
         assert!(table_exists(&connection, "customer_feedback"));
         assert!(column_exists(

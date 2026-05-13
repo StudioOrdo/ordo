@@ -371,6 +371,33 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &[],
         ),
         capability(
+            "surface.work_items.list",
+            "List Surface Work Items",
+            "Refresh and read the local CQRS-lite work item projection for product surfaces.",
+            "surface",
+            json!({
+                "type": "object",
+                "properties": {
+                    "viewer": { "type": "string" },
+                    "surfaceKind": { "type": "string" },
+                    "roomKind": { "type": "string" },
+                    "limit": { "type": "integer", "minimum": 0, "maximum": 500 }
+                },
+                "additionalProperties": false
+            }),
+            json!({
+                "type": "object",
+                "properties": {
+                    "items": { "type": "array" }
+                }
+            }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["surface.work_item"],
+        ),
+        capability(
             "connections.list",
             "List Connections",
             "Read durable connection records and status state.",

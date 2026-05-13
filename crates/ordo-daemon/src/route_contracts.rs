@@ -366,6 +366,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
     ),
     protected(
         HttpMethod::Get,
+        "/surface/work-items",
+        "/surface/work-items",
+        PolicyAction::Inspect,
+        "surface.work_items.list",
+    ),
+    protected(
+        HttpMethod::Get,
         "/reports/issues",
         "/reports/issues",
         PolicyAction::Inspect,

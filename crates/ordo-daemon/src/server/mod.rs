@@ -150,6 +150,7 @@ pub async fn serve(
         .route("/backups/create", post(create_backup_handler))
         .route("/restore/validate", post(validate_restore_handler))
         .route("/events", get(events_handler))
+        .route("/surface/work-items", get(surface_work_items_handler))
         .route("/corpus/sources", get(corpus_sources_handler))
         .route("/corpus/sources", post(corpus_source_create_handler))
         .route(

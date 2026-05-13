@@ -156,6 +156,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_local_account_sessions_schema",
         apply: add_local_account_sessions_schema,
     },
+    SchemaMigration {
+        version: 30,
+        name: "add_surface_work_item_projection_schema",
+        apply: add_surface_work_item_projection_schema,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -399,6 +404,45 @@ fn add_local_account_sessions_schema(connection: &Connection) -> Result<()> {
             ON local_account_sessions(actor_id);
         CREATE INDEX IF NOT EXISTS idx_local_account_sessions_expires
             ON local_account_sessions(expires_at);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_surface_work_item_projection_schema(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS surface_work_items (
+            id TEXT PRIMARY KEY,
+            surface_kind TEXT NOT NULL,
+            room_kind TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            object_kind TEXT NOT NULL,
+            object_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            status TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            actor_context_json TEXT NOT NULL DEFAULT '{}',
+            connection_context_json TEXT NOT NULL DEFAULT '{}',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            actions_json TEXT NOT NULL DEFAULT '[]',
+            visibility TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            projected_at TEXT NOT NULL,
+            UNIQUE(surface_kind, source_kind, source_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_surface_work_items_surface_room_priority
+            ON surface_work_items(surface_kind, room_kind, priority DESC, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_surface_work_items_source
+            ON surface_work_items(source_kind, source_id);
+        CREATE INDEX IF NOT EXISTS idx_surface_work_items_visibility
+            ON surface_work_items(visibility, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_surface_work_items_status
+            ON surface_work_items(status, updated_at DESC);
         "#,
     )?;
     Ok(())

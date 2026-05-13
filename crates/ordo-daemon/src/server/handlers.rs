@@ -105,6 +105,9 @@ use crate::reports::{
     SupportPacketListResponse, SupportPacketReceiptListResponse, SupportPacketView,
 };
 use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
+use crate::surface_work_items::{
+    list_surface_work_items, SurfaceWorkItemListResponse, SurfaceWorkItemQuery,
+};
 
 const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
 const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
@@ -1186,6 +1189,26 @@ pub(crate) async fn events_handler(
     Query(query): Query<EventReplayQuery>,
 ) -> Result<Json<EventReplayResponse>, (StatusCode, Json<ErrorResponse>)> {
     replay_events(&state.db_path, query.after, query.limit)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn surface_work_items_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<SurfaceWorkItemQuery>,
+) -> Result<Json<SurfaceWorkItemListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/surface/work-items"),
+        Some("surface.work_items.list"),
+    )?;
+    list_surface_work_items(&state.db_path, query)
         .map(Json)
         .map_err(internal_error)
 }
@@ -2856,6 +2879,49 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 8);
+    }
+
+    #[test]
+    fn surface_work_items_route_uses_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/surface/work-items"),
+            Some("surface.work_items.list"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/surface/work-items"),
+            Some("surface.work_items.list"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'surface.work_items.list'
+                   AND resource_id = '/surface/work-items'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
     }
 
     #[test]

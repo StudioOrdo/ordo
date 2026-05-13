@@ -1,3 +1,21 @@
+import {
+  buildStudioWorkSnapshot,
+  type StudioSurfaceRoom,
+  type StudioSurfaceWorkItem,
+  type StudioWorkSnapshotView,
+  type StudioWorkViewer,
+} from "@/lib/studio-work";
+
+export type {
+  StudioDeferredAction,
+  StudioRoomSummary,
+  StudioSurfaceRoom,
+  StudioSurfaceWorkItem,
+  StudioWorkItemView,
+  StudioWorkSnapshotView,
+  StudioWorkViewer,
+} from "@/lib/studio-work";
+
 export interface DaemonCheck {
   name: string;
   status: string;
@@ -323,6 +341,10 @@ interface OfferBuilderResponse {
   generatedAt: string;
 }
 
+interface SurfaceWorkItemsResponse {
+  items: StudioSurfaceWorkItem[];
+}
+
 interface EventReplayResponse {
   events: RealtimeEventSummary[];
   nextCursor: number | null;
@@ -350,6 +372,14 @@ export interface OfferBuilderSnapshot {
   createdAt: string;
   generatedAt: string | null;
   offers: OfferBuilderOffer[];
+  degradedReason: string | null;
+}
+
+export interface StudioWorkSnapshot extends StudioWorkSnapshotView {
+  daemonUrl: string;
+  createdAt: string;
+  viewer: StudioWorkViewer;
+  roomKind: StudioSurfaceRoom | null;
   degradedReason: string | null;
 }
 
@@ -489,6 +519,30 @@ export async function getOfferBuilderSnapshot(): Promise<OfferBuilderSnapshot> {
     generatedAt: builderResult.data?.generatedAt ?? null,
     offers: builderResult.data?.offers ?? [],
     degradedReason: builderResult.error,
+  };
+}
+
+export async function getStudioWorkSnapshot(viewer: StudioWorkViewer, roomKind?: StudioSurfaceRoom): Promise<StudioWorkSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const params = new URLSearchParams({
+    viewer,
+    surfaceKind: "studio",
+  });
+  if (roomKind) {
+    params.set("roomKind", roomKind);
+  }
+  params.set("limit", "100");
+  const workResult = await readEndpoint<SurfaceWorkItemsResponse>(baseUrl, `/surface/work-items?${params.toString()}`);
+  const workSnapshot = buildStudioWorkSnapshot(workResult.data?.items ?? []);
+
+  return {
+    ...workSnapshot,
+    daemonUrl: baseUrl,
+    createdAt,
+    viewer,
+    roomKind: roomKind ?? null,
+    degradedReason: workResult.error,
   };
 }
 

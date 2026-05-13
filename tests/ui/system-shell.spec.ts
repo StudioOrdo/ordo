@@ -109,6 +109,59 @@ test("Owner Offer Builder refuses member role before daemon read", async ({ page
   }
 });
 
+test("Studio shell renders durable runs and artifacts from surface work items", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/studio?role=studio", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Studio Production" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Job: studio.video.make");
+    await expect(page.locator("main")).toContainText("Candidate 30 second promo video");
+    await expect(page.locator("main")).toContainText("job:job_smoke_video");
+    await expect(page.locator("main")).toContainText("artifact:artifact_promo_smoke");
+    await expect(page.locator("main")).toContainText("Inspect job");
+    await expect(page.locator("main")).toContainText("Review artifact");
+    await expect(page.locator("main")).toContainText("Generate media unavailable");
+    await expect(page.locator("main")).toContainText("External publishing unavailable");
+    await expect(page.locator("main")).not.toContainText("rawPrompt");
+    await expect(page.locator("main")).not.toContainText("sk_live_hidden");
+    expect(daemon.state.requests).toContain("GET /surface/work-items?viewer=staff&surfaceKind=studio&limit=100");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Studio artifacts room renders artifact review state without publishing claims", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/studio/artifacts?role=studio", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { level: 2, name: "Artifacts" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Candidate 30 second promo video");
+    await expect(page.locator("main")).toContainText("candidate");
+    await expect(page.locator("main")).toContainText("Manual publication package");
+    await expect(page.locator("main")).toContainText("staged");
+    await expect(page.locator("main")).toContainText("Request revision unavailable");
+    await expect(page.locator("main")).toContainText("External publishing unavailable");
+    await expect(page.locator("main")).not.toContainText("YouTube analytics");
+    expect(daemon.state.requests).toContain("GET /surface/work-items?viewer=staff&surfaceKind=studio&roomKind=artifacts&limit=100");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Studio shell refuses member role before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/studio/factory-jobs?role=member");
+
+    await expect(page.locator("body")).not.toContainText("Job: studio.video.make");
+    expect(daemon.state.requests.some((request) => request.includes("/surface/work-items"))).toBe(false);
+  } finally {
+    await daemon.close();
+  }
+});
+
 test("System shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
   await page.goto(productContentUrl("/admin/system?role=owner", testInfo));
 
@@ -541,6 +594,15 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
     return jsonResponse(response, offerBuilder());
   }
 
+  if (method === "GET" && path.startsWith("/surface/work-items")) {
+    const url = new URL(path, "http://127.0.0.1");
+    if (url.searchParams.get("surfaceKind") === "studio") {
+      return jsonResponse(response, {
+        items: studioSurfaceWorkItems(url.searchParams.get("roomKind")),
+      });
+    }
+  }
+
   if (method === "GET" && path === "/logs?limit=100") {
     return jsonResponse(response, { logs: diagnosticLogs() });
   }
@@ -845,6 +907,106 @@ function offerBuilderReference(key: string, label: string, status: string, evide
     detail: `${label} is represented by durable daemon state.`,
     evidenceRefs: evidenceRef ? [evidenceRef] : [],
     blockedBy,
+  };
+}
+
+function studioSurfaceWorkItems(roomKind: string | null) {
+  const items = [
+    studioWorkItem({
+      id: "studio_run_video",
+      roomKind: "runs",
+      sourceKind: "job",
+      sourceId: "job_smoke_video",
+      objectKind: "job",
+      objectId: "job_smoke_video",
+      title: "Job: studio.video.make",
+      summary: "Job from conversation brief is running with durable progress evidence.",
+      status: "running",
+      evidenceRefs: ["job:job_smoke_video", "brief:brief_promo"],
+      actions: ["inspect_job"],
+    }),
+    studioWorkItem({
+      id: "studio_artifact_promo",
+      roomKind: "artifacts",
+      sourceKind: "artifact",
+      sourceId: "artifact_promo_smoke",
+      objectKind: "artifact",
+      objectId: "artifact_promo_smoke",
+      title: "Candidate 30 second promo video",
+      summary: "Candidate package needs review before any staged manual publication.",
+      status: "candidate",
+      evidenceRefs: ["artifact:artifact_promo_smoke", "job:job_smoke_video"],
+      actions: ["review_artifact"],
+    }),
+    studioWorkItem({
+      id: "studio_artifact_staged",
+      roomKind: "artifacts",
+      sourceKind: "artifact",
+      sourceId: "artifact_manual_publication_smoke",
+      objectKind: "artifact",
+      objectId: "artifact_manual_publication_smoke",
+      title: "Manual publication package",
+      summary: "Approved metadata is staged for owner download only.",
+      status: "staged",
+      evidenceRefs: ["artifact:artifact_manual_publication_smoke"],
+      actions: ["review_artifact"],
+    }),
+  ];
+
+  return roomKind ? items.filter((item) => item.roomKind === roomKind) : items;
+}
+
+function studioWorkItem({
+  id,
+  roomKind,
+  sourceKind,
+  sourceId,
+  objectKind,
+  objectId,
+  title,
+  summary,
+  status,
+  evidenceRefs,
+  actions,
+}: {
+  id: string;
+  roomKind: string;
+  sourceKind: string;
+  sourceId: string;
+  objectKind: string;
+  objectId: string;
+  title: string;
+  summary: string;
+  status: string;
+  evidenceRefs: string[];
+  actions: string[];
+}) {
+  return {
+    id,
+    surfaceKind: "studio",
+    roomKind,
+    sourceKind,
+    sourceId,
+    objectKind,
+    objectId,
+    title,
+    summary,
+    status,
+    priority: 70,
+    actorContext: {
+      actorId: "actor_studio_smoke",
+      rawPrompt: "rawPrompt should not render",
+    },
+    connectionContext: {
+      providerSecret: "sk_live_hidden",
+      staffRouting: "keith_internal",
+    },
+    evidenceRefs,
+    actions,
+    visibility: "staff",
+    createdAt: "2026-05-08T12:00:00.000Z",
+    updatedAt: "2026-05-08T12:00:02.000Z",
+    projectedAt: "2026-05-08T12:00:03.000Z",
   };
 }
 

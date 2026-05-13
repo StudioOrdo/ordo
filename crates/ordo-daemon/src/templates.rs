@@ -66,6 +66,7 @@ pub fn built_in_templates() -> Vec<ProcessTemplate> {
         backup_create_template(),
         restore_execute_template(),
         issue_report_prepare_template(),
+        promo_video_package_template(),
     ]
 }
 
@@ -471,6 +472,49 @@ fn issue_report_prepare_template() -> ProcessTemplate {
     }
 }
 
+fn promo_video_package_template() -> ProcessTemplate {
+    ProcessTemplate {
+        id: "studio.promo_video.package".to_string(),
+        capability_id: "studio.promo_video.package".to_string(),
+        kind: "studio.promo_video.package".to_string(),
+        name: "Stage Promo Video Package".to_string(),
+        version: 1,
+        description: "Create a deterministic staged package for a 10-30 second vertical promo without external publishing.".to_string(),
+        tasks: vec![
+            task(
+                "brief.validate",
+                "studio.promo_video.brief.validate",
+                "Validate promo brief and package boundaries",
+                &[],
+            ),
+            task(
+                "script.draft",
+                "studio.promo_video.script.draft",
+                "Draft deterministic short promo script",
+                &["brief.validate"],
+            ),
+            task(
+                "media.plan",
+                "studio.promo_video.media.plan",
+                "Plan prompt-only vertical media beats",
+                &["script.draft"],
+            ),
+            task(
+                "captions.prepare",
+                "studio.promo_video.captions.prepare",
+                "Prepare caption cues",
+                &["script.draft", "media.plan"],
+            ),
+            task(
+                "package.stage",
+                "studio.promo_video.package.stage",
+                "Stage local promo package artifact",
+                &["captions.prepare"],
+            ),
+        ],
+    }
+}
+
 pub fn assert_template_exists(template_id: &str) -> Result<()> {
     if find_builtin_template(template_id).is_none() {
         bail!("Unknown process template: {template_id}");
@@ -497,6 +541,7 @@ mod tests {
         assert!(template_ids.contains(&"backup.create".to_string()));
         assert!(template_ids.contains(&"restore.execute".to_string()));
         assert!(template_ids.contains(&"issue.report.prepare".to_string()));
+        assert!(template_ids.contains(&"studio.promo_video.package".to_string()));
     }
 
     #[test]

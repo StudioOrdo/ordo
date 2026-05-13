@@ -18,12 +18,14 @@ use crate::answer_drafts::{
 use crate::availability::{
     create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox_with_query,
     list_handoff_receipts, read_availability_state, read_handoff_inbox_item,
-    resolve_handoff_inbox_item, update_availability_schedule, update_handoff_inbox_item,
-    update_operator_presence, AvailabilityScheduleView, AvailabilityScheduleWriteRequest,
-    AvailabilityStateResponse, HandoffEligibilityRequest, HandoffEligibilityView,
-    HandoffInboxCreateRequest, HandoffInboxItemView, HandoffInboxListQuery,
-    HandoffInboxListResponse, HandoffInboxResolveRequest, HandoffInboxUpdateRequest,
-    HandoffReceiptListResponse, OperatorPresenceView, OperatorPresenceWriteRequest,
+    read_strategy_session_status, request_strategy_session_handoff, resolve_handoff_inbox_item,
+    update_availability_schedule, update_handoff_inbox_item, update_operator_presence,
+    AvailabilityScheduleView, AvailabilityScheduleWriteRequest, AvailabilityStateResponse,
+    HandoffEligibilityRequest, HandoffEligibilityView, HandoffInboxCreateRequest,
+    HandoffInboxItemView, HandoffInboxListQuery, HandoffInboxListResponse,
+    HandoffInboxResolveRequest, HandoffInboxUpdateRequest, HandoffReceiptListResponse,
+    OperatorPresenceView, OperatorPresenceWriteRequest, StrategySessionHandoffRequest,
+    StrategySessionHandoffResponse, StrategySessionStatusView,
 };
 use crate::backups::{
     create_backup, list_backup_restore_jobs, run_restore_preflight, BackupRestoreResponse,
@@ -70,6 +72,7 @@ use crate::feedback::{
     FeedbackRequestQuery, FeedbackRequestRespondRequest, FeedbackRequestReviewRequest,
     FeedbackRequestView,
 };
+use crate::growth_report::{growth_pilot_report, GrowthPilotReportResponse};
 use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
 use crate::install::{
     complete_local_install, list_provider_configs, read_install_state, update_provider_config,
@@ -102,6 +105,10 @@ use crate::policy::{
 use crate::policy_audit::{
     list_policy_decisions, PolicyDecisionAuditQuery, PolicyDecisionAuditResponse,
 };
+use crate::product_packs::{
+    disable_product_pack, install_product_pack, list_product_packs, read_product_pack,
+    ProductPackInstallRequest, ProductPackListResponse, ProductPackResponse,
+};
 use crate::public_surfaces::{
     public_about, public_asks, public_feed, public_offers, public_surfaces, AboutReadModel,
     AsksReadModel, FeedReadModel, OffersReadModel, PublicSurfacesResponse,
@@ -114,7 +121,16 @@ use crate::reports::{
     IssueReportsResponse, SupportPacketApprovalRequest, SupportPacketDraftRequest,
     SupportPacketListResponse, SupportPacketReceiptListResponse, SupportPacketView,
 };
+use crate::rewards::{
+    list_rewards, qualify_feedback_reward, qualify_referral_reward, transition_reward_event,
+    RewardEventTransitionRequest, RewardQualificationRequest, RewardQualificationResponse,
+    RewardQuery, RewardSummaryResponse,
+};
 use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
+use crate::studio_promos::{
+    create_promo_video_package, review_promo_video_package, PromoVideoPackageRequest,
+    PromoVideoPackageResponse, PromoVideoPackageReviewRequest, PromoVideoPackageReviewResponse,
+};
 use crate::surface_work_items::{
     list_surface_work_items, SurfaceWorkItemListResponse, SurfaceWorkItemQuery,
 };
@@ -1113,6 +1129,51 @@ pub(crate) async fn handoff_receipts_handler(
         .map_err(invalid_request_error)
 }
 
+pub(crate) async fn strategy_session_request_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<StrategySessionHandoffRequest>,
+) -> Result<Json<StrategySessionHandoffResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/strategy-sessions/request"),
+        Some("strategy_sessions.request"),
+    )?;
+    let (response, event) =
+        request_strategy_session_handoff(&state.db_path, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
+}
+
+pub(crate) async fn strategy_session_status_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+) -> Result<Json<StrategySessionStatusView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/strategy-sessions/{item_id}/status"),
+        ),
+        Some("strategy_sessions.status.read"),
+    )?;
+    read_strategy_session_status(&state.db_path, &item_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
 pub(crate) async fn feedback_requests_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -1204,6 +1265,127 @@ pub(crate) async fn feedback_request_review_handler(
             .map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
     Ok(Json(request))
+}
+
+pub(crate) async fn rewards_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<RewardQuery>,
+) -> Result<Json<RewardSummaryResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/rewards"),
+        Some("rewards.list"),
+    )?;
+    list_rewards(&state.db_path, query)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+pub(crate) async fn growth_pilot_report_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<GrowthPilotReportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/growth/pilot-report"),
+        Some("growth.pilot_report.read"),
+    )?;
+    growth_pilot_report(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn reward_referral_qualify_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(referral_id): AxumPath<String>,
+    Json(request): Json<RewardQualificationRequest>,
+) -> Result<Json<RewardQualificationResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/rewards/referrals/{referral_id}/qualify"),
+        ),
+        Some("rewards.qualify"),
+    )?;
+    let (response, event) =
+        qualify_referral_reward(&state.db_path, &referral_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
+}
+
+pub(crate) async fn reward_feedback_qualify_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(eligibility_id): AxumPath<String>,
+    Json(request): Json<RewardQualificationRequest>,
+) -> Result<Json<RewardQualificationResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/rewards/feedback/{eligibility_id}/qualify"),
+        ),
+        Some("rewards.qualify"),
+    )?;
+    let (response, event) = qualify_feedback_reward(
+        &state.db_path,
+        &eligibility_id,
+        request,
+        actor_id(&decision),
+    )
+    .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
+}
+
+pub(crate) async fn reward_event_transition_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(event_id): AxumPath<String>,
+    Json(request): Json<RewardEventTransitionRequest>,
+) -> Result<Json<RewardQualificationResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/rewards/events/{event_id}/status"),
+        ),
+        Some("rewards.update"),
+    )?;
+    let (response, event) =
+        transition_reward_event(&state.db_path, &event_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
 }
 
 pub(crate) async fn public_available_offers_handler(
@@ -1453,6 +1635,72 @@ pub(crate) async fn surface_work_items_handler(
     list_surface_work_items(&state.db_path, query)
         .map(Json)
         .map_err(internal_error)
+}
+
+pub(crate) async fn studio_promo_video_package_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<PromoVideoPackageRequest>,
+) -> Result<Json<PromoVideoPackageResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/studio/promo-video-packages"),
+        Some("studio.promo_video.package"),
+    )?;
+    let response = create_promo_video_package(&state.db_path, request, "http", actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "studio.promo_video.package.created",
+        json!({
+            "artifactId": response.package.artifact_id,
+            "jobId": response.package.job_id,
+            "publicationState": response.package.publication_state,
+            "externalPublishing": "not_performed",
+        }),
+    );
+    Ok(Json(response))
+}
+
+pub(crate) async fn studio_promo_video_package_review_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(artifact_id): AxumPath<String>,
+    Json(request): Json<PromoVideoPackageReviewRequest>,
+) -> Result<Json<PromoVideoPackageReviewResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/studio/promo-video-packages/{artifact_id}/review"),
+        ),
+        Some("studio.promo_video.review"),
+    )?;
+    let response =
+        review_promo_video_package(&state.db_path, &artifact_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "studio.promo_video.review.route_completed",
+        json!({
+            "artifactId": response.artifact_id,
+            "status": response.status,
+            "externalPublishing": "not_performed",
+        }),
+    );
+    Ok(Json(response))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1836,6 +2084,91 @@ pub(crate) async fn mcp_pack_disable_handler(
         }),
     );
     Ok(Json(response))
+}
+
+pub(crate) async fn product_packs_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<ProductPackListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/product-packs"),
+        Some("product_packs.list"),
+    )?;
+    list_product_packs(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn product_pack_read_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(pack_id): AxumPath<String>,
+) -> Result<Json<ProductPackResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/product-packs/{pack_id}"),
+        ),
+        Some("product_packs.list"),
+    )?;
+    read_product_pack(&state.db_path, &pack_id)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+pub(crate) async fn product_pack_install_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<ProductPackInstallRequest>,
+) -> Result<Json<ProductPackResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Validate,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/product-packs"),
+        Some("product_packs.write"),
+    )?;
+    install_product_pack(&state.db_path, request, "http", actor_id(&decision))
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+pub(crate) async fn product_pack_disable_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(pack_id): AxumPath<String>,
+) -> Result<Json<ProductPackResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/product-packs/{pack_id}/disable"),
+        ),
+        Some("product_packs.write"),
+    )?;
+    disable_product_pack(&state.db_path, &pack_id, "http", actor_id(&decision))
+        .map(Json)
+        .map_err(invalid_request_error)
 }
 
 pub(crate) async fn list_issue_reports_handler(
@@ -3137,6 +3470,10 @@ mod tests {
                 "/handoff/inbox/handoff_item_1/receipts",
                 "handoff.receipts.list",
             ),
+            (
+                "/strategy-sessions/handoff_item_1/status",
+                "strategy_sessions.status.read",
+            ),
         ] {
             let allowed = authorize_protected_daemon_route(
                 &policy,
@@ -3155,6 +3492,7 @@ mod tests {
             "/availability/presence",
             "/handoff/inbox/handoff_item_1",
             "/handoff/inbox/handoff_item_1/resolve",
+            "/strategy-sessions/request",
         ] {
             let allowed = authorize_protected_daemon_route(
                 &policy,
@@ -3169,6 +3507,8 @@ mod tests {
                 ResourceRef::new(ResourceKind::DaemonRoute, route),
                 Some(if route.starts_with("/availability") {
                     "availability.write"
+                } else if route.starts_with("/strategy-sessions") {
+                    "strategy_sessions.request"
                 } else {
                     "handoff.inbox.write"
                 }),
@@ -3182,13 +3522,14 @@ mod tests {
                 "SELECT COUNT(*) FROM policy_decisions
                  WHERE capability_id IN (
                     'handoff.inbox.write', 'availability.read', 'availability.write',
-                    'handoff.eligibility.evaluate', 'handoff.inbox.list', 'handoff.receipts.list'
+                    'handoff.eligibility.evaluate', 'handoff.inbox.list', 'handoff.receipts.list',
+                    'strategy_sessions.request', 'strategy_sessions.status.read'
                  )",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(audit_count, 10);
+        assert_eq!(audit_count, 12);
     }
 
     #[test]
@@ -3265,6 +3606,129 @@ mod tests {
     }
 
     #[test]
+    fn reward_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Approve,
+            ResourceRef::new(
+                ResourceKind::DaemonRoute,
+                "/rewards/referrals/referral_1/qualify",
+            ),
+            Some("rewards.qualify"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            ("/rewards", PolicyAction::Inspect, "rewards.list"),
+            (
+                "/rewards/referrals/referral_1/qualify",
+                PolicyAction::Approve,
+                "rewards.qualify",
+            ),
+            (
+                "/rewards/feedback/feedback_reward_eligibility_1/qualify",
+                PolicyAction::Approve,
+                "rewards.qualify",
+            ),
+            (
+                "/rewards/events/reward_event_1/status",
+                PolicyAction::Update,
+                "rewards.update",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(
+                allowed.is_ok(),
+                "{route} should be protected but usable locally"
+            );
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('rewards.list', 'rewards.qualify', 'rewards.update')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn growth_pilot_report_route_uses_protected_access_boundary() {
+        let contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/growth/pilot-report")
+            .expect("growth pilot report route contract");
+        assert_eq!(contract.sample_route, "/growth/pilot-report");
+        assert!(matches!(
+            contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Inspect,
+                capability_id: "growth.pilot_report.read",
+            }
+        ));
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/growth/pilot-report"),
+            Some("growth.pilot_report.read"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/growth/pilot-report"),
+            Some("growth.pilot_report.read"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'growth.pilot_report.read'
+                   AND resource_id = '/growth/pilot-report'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
+    }
+
+    #[test]
     fn surface_work_items_route_uses_protected_access_boundary() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
@@ -3305,6 +3769,64 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn studio_promo_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/promo-video-packages"),
+            Some("studio.promo_video.package"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            (
+                "/studio/promo-video-packages",
+                PolicyAction::Create,
+                "studio.promo_video.package",
+            ),
+            (
+                "/studio/promo-video-packages/artifact_1/review",
+                PolicyAction::Approve,
+                "studio.promo_video.review",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(
+                allowed.is_ok(),
+                "{route} should be protected but usable locally"
+            );
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('studio.promo_video.package', 'studio.promo_video.review')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 3);
     }
 
     #[test]
@@ -3588,6 +4110,71 @@ mod tests {
             .query_row(
                 "SELECT COUNT(*) FROM policy_decisions
                  WHERE capability_id IN ('mcp.packs.list', 'mcp.packs.write')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn product_pack_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Validate,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/product-packs"),
+            Some("product_packs.write"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            (
+                "/product-packs",
+                PolicyAction::Inspect,
+                "product_packs.list",
+            ),
+            (
+                "/product-packs/product_pack.nyc.promo_ops",
+                PolicyAction::Inspect,
+                "product_packs.list",
+            ),
+            (
+                "/product-packs",
+                PolicyAction::Validate,
+                "product_packs.write",
+            ),
+            (
+                "/product-packs/product_pack.nyc.promo_ops/disable",
+                PolicyAction::Update,
+                "product_packs.write",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok());
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('product_packs.list', 'product_packs.write')",
                 [],
                 |row| row.get(0),
             )

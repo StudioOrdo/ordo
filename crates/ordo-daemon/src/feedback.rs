@@ -1031,7 +1031,7 @@ pub fn review_feedback_request_in_connection(
                 "reviewId": review_id,
                 "decision": input.decision.as_str(),
                 "status": view.status.as_str(),
-                "rewardLedgerDeferred": true,
+                "rewardQualificationRequired": input.decision == FeedbackRequestReviewDecision::Accepted,
                 "evidenceRefs": input.evidence_refs,
             }),
         ),
@@ -1437,7 +1437,7 @@ fn record_reward_eligibility(
     let (state, reason) = match decision {
         FeedbackRequestReviewDecision::Accepted => (
             "pending_qualification",
-            "Feedback was accepted; reward grant is deferred until issue #248 adds the reward ledger.",
+            "Feedback was accepted; reward qualification is pending reward ledger review.",
         ),
         FeedbackRequestReviewDecision::Rejected => (
             "not_qualified",

@@ -191,6 +191,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_product_pack_manifest_spine",
         apply: add_product_pack_manifest_spine,
     },
+    SchemaMigration {
+        version: 37,
+        name: "add_artifact_patch_proposal_spine",
+        apply: add_artifact_patch_proposal_spine,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -2417,6 +2422,41 @@ fn add_artifact_deliverable_contract_schema(connection: &Connection) -> Result<(
             ON artifact_deliverables(status, updated_at DESC);
         "#,
     )?;
+    Ok(())
+}
+
+fn add_artifact_patch_proposal_spine(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS artifact_patch_proposals (
+            id TEXT PRIMARY KEY,
+            source_artifact_id TEXT NOT NULL,
+            source_version_id TEXT NOT NULL,
+            base_hash TEXT NOT NULL,
+            proposed_hash TEXT NOT NULL,
+            patch_text TEXT NOT NULL,
+            preview_json TEXT NOT NULL DEFAULT '{}',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            review_state TEXT NOT NULL,
+            accepted_version_id TEXT,
+            proposed_by_actor_id TEXT NOT NULL,
+            applied_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            applied_at TEXT,
+            FOREIGN KEY (source_artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE,
+            FOREIGN KEY (source_version_id) REFERENCES artifact_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (accepted_version_id) REFERENCES artifact_versions(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_artifact_patch_proposals_artifact
+            ON artifact_patch_proposals(source_artifact_id, review_state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_artifact_patch_proposals_version
+            ON artifact_patch_proposals(source_version_id, created_at DESC);
+        "#,
+    )?;
+
     Ok(())
 }
 

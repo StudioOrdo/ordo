@@ -219,6 +219,88 @@ test.describe("local appliance session scaffold", () => {
               occurredAt: "2026-05-12T12:00:04.000Z",
             });
           }
+          if (frame.type === "llm.run.request") {
+            const runId = frame.payload.runId;
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "ack",
+              type: "llm.run.request.ack",
+              clientId: frame.clientId,
+              conversationId: frame.conversationId,
+              durability: "ephemeral",
+              scope: "user",
+              payload: {
+                runId,
+                finalMessageId: "message_assistant_1",
+                providerId: "local_fake",
+                modelId: "fake-chat",
+              },
+              occurredAt: "2026-05-12T12:00:05.000Z",
+            });
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "dispatch",
+              type: "llm.text.delta",
+              clientId: frame.clientId,
+              conversationId: frame.conversationId,
+              durability: "ephemeral",
+              scope: "run",
+              payload: { runId, delta: "Drafting " },
+              occurredAt: "2026-05-12T12:00:06.000Z",
+            });
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "dispatch",
+              type: "llm.text.delta",
+              clientId: frame.clientId,
+              conversationId: frame.conversationId,
+              durability: "ephemeral",
+              scope: "run",
+              payload: { runId, delta: "answer" },
+              occurredAt: "2026-05-12T12:00:07.000Z",
+            });
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "dispatch",
+              type: "llm.text.completed",
+              conversationId: frame.conversationId,
+              sequence: 2,
+              cursor: 11,
+              durability: "durable",
+              scope: "conversation",
+              payload: { runId, messageId: "message_assistant_1", contentHash: "sha256:reply" },
+              occurredAt: "2026-05-12T12:00:08.000Z",
+            });
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "dispatch",
+              type: "llm.run.completed",
+              conversationId: frame.conversationId,
+              sequence: 3,
+              cursor: 12,
+              durability: "durable",
+              scope: "conversation",
+              payload: { runId, messageId: "message_assistant_1" },
+              occurredAt: "2026-05-12T12:00:09.000Z",
+            });
+            this.emitFrame({
+              schemaVersion: "conversation.gateway.v1",
+              op: "dispatch",
+              type: "message.created",
+              serverId: "conversation_member_1:4",
+              conversationId: frame.conversationId,
+              sequence: 4,
+              cursor: 13,
+              durability: "durable",
+              scope: "conversation",
+              payload: {
+                messageId: "message_assistant_1",
+                participantId: frame.payload.assistantParticipantId,
+                clientMessageId: `llm:${runId}:assistant`,
+              },
+              occurredAt: "2026-05-12T12:00:10.000Z",
+            });
+          }
         }
 
         close() {
@@ -277,9 +359,13 @@ test.describe("local appliance session scaffold", () => {
     const runState = page.getByLabel("Local chat run state");
     await expect(runState.getByText("Please save this test message.")).toBeVisible();
     await expect(runState.getByText("saved by /chat/ws")).toBeVisible();
+    await expect(runState.getByText("Drafting answer")).toBeVisible();
+    await expect(runState.getByText("deterministic reply saved")).toBeVisible();
     await expect(page.getByText("ava@example.com")).toHaveCount(0);
     await expect(page.getByText("local-only-pass")).toHaveCount(0);
     await expect(page.getByText("OPENAI_API_KEY")).toHaveCount(0);
+    await expect(page.getByText("sk-test-secret")).toHaveCount(0);
+    await expect(page.getByText("Client asked for a local deterministic reply.")).toHaveCount(0);
     await expect(page.getByText("prompt")).toHaveCount(0);
   });
 });

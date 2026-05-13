@@ -679,6 +679,34 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         PolicyAction::Update,
         "mcp.packs.write",
     ),
+    protected(
+        HttpMethod::Get,
+        "/product-packs",
+        "/product-packs",
+        PolicyAction::Inspect,
+        "product_packs.list",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/product-packs",
+        "/product-packs",
+        PolicyAction::Validate,
+        "product_packs.write",
+    ),
+    protected(
+        HttpMethod::Get,
+        "/product-packs/:pack_id",
+        "/product-packs/product_pack.nyc.promo_ops",
+        PolicyAction::Inspect,
+        "product_packs.list",
+    ),
+    protected(
+        HttpMethod::Put,
+        "/product-packs/:pack_id/disable",
+        "/product-packs/product_pack.nyc.promo_ops/disable",
+        PolicyAction::Update,
+        "product_packs.write",
+    ),
 ];
 
 pub fn protected_route_contracts() -> impl Iterator<Item = &'static DaemonRouteContract> {

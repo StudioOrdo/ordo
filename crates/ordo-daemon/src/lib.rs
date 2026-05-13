@@ -41,6 +41,7 @@ pub mod offers;
 pub mod policy;
 pub mod policy_audit;
 pub mod privacy_egress;
+pub mod product_packs;
 pub mod public_surfaces;
 pub mod reports;
 pub mod rewards;

@@ -1,11 +1,16 @@
 # Capability Catalog
 
-Status: Implemented seed with MCP policy tiers and local pack metadata
+Status: Implemented seed with MCP policy tiers, local MCP pack metadata, and product/workforce pack manifests
 
 The capability catalog is the source of truth for what Ordo can do.
 
 MCP is a projection of the catalog, not the spine of the product. Chat, UI,
 scheduler, process templates, and local daemon execution are also projections.
+
+Product/workforce packs are governed-work manifests over the same catalog.
+They may group capability bindings, job templates, request templates, artifact
+contracts, visibility metadata, limits, and Access/Growth metadata, but they do
+not execute pack code or grant hidden authority.
 
 ## Capability Definition
 
@@ -42,7 +47,13 @@ The Rust daemon owns the first durable catalog in SQLite:
   and timestamps;
 - `mcp_pack_tools` stores local pack tool identity, capability binding, schema,
   output contract, side effects, approval requirement, artifact expectations,
-  MCP export policy, export status, and disabled state.
+  MCP export policy, export status, and disabled state;
+- `product_packs` stores local product/workforce pack identity, status,
+  manifest JSON, validation facts, provenance, and timestamps;
+- `product_pack_versions` preserves accepted manifest versions and provenance;
+- `product_pack_bindings` stores typed capability, job-template,
+  request-template, and artifact-contract bindings plus visibility,
+  Access/Growth metadata, limits, and disabled state.
 
 The daemon exposes the catalog at `/capabilities` and through the CLI command
 `list-capabilities-json`.
@@ -53,6 +64,13 @@ The daemon exposes protected local MCP pack management routes at:
 - `POST /mcp/packs`
 - `GET /mcp/packs/:pack_id`
 - `PUT /mcp/packs/:pack_id/disable`
+
+The daemon exposes protected local product/workforce pack manifest routes at:
+
+- `GET /product-packs`
+- `POST /product-packs`
+- `GET /product-packs/:pack_id`
+- `PUT /product-packs/:pack_id/disable`
 
 ## Registry Rule
 
@@ -65,6 +83,12 @@ governed by catalog schema, permissions, and executor binding.
 Local MCP packs are metadata over existing capabilities. A pack manifest cannot
 introduce a new executor, shell command, hosted registry tool, remote code path,
 provider/model transport, or external egress path.
+
+Product/workforce packs follow the same boundary at the product layer: a pack
+installs governed work, not authority. Product pack manifests can bind to
+registered capabilities and built-in job templates, and can declare request and
+artifact contracts, but execution still flows through Ordo capability, policy,
+artifact, visibility, audit, Access, Growth, and projection boundaries.
 
 ## Catalog Seed
 

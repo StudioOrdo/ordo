@@ -1,8 +1,3 @@
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::fmt;
-use std::path::PathBuf;
 use crate::artifacts::*;
 use crate::attribution::*;
 use crate::business::*;
@@ -15,19 +10,25 @@ use crate::feedback::*;
 use crate::llm_gateway::*;
 use crate::offers::*;
 use crate::policy::*;
+use crate::secrets::{normalize_secret, OrdoSecretString};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fmt;
+use std::path::PathBuf;
 
+pub mod admin_staff;
+pub mod affiliate_referral;
+pub mod planning;
 pub mod qr_to_trial;
 pub mod review_return;
-pub mod affiliate_referral;
-pub mod admin_staff;
-pub mod planning;
 pub mod utils;
 
+pub use admin_staff::*;
+pub use affiliate_referral::*;
+pub use planning::*;
 pub use qr_to_trial::*;
 pub use review_return::*;
-pub use affiliate_referral::*;
-pub use admin_staff::*;
-pub use planning::*;
 pub(crate) use utils::*;
 
 pub const LIVE_EVAL_RUNNER_SCHEMA_VERSION: &str = "ordo.live_eval_runner.v1";
@@ -76,7 +77,7 @@ pub enum LiveJourneyCaseStatus {
     Blocked,
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveEvalConfig {
     pub provider_id: String,
@@ -87,7 +88,7 @@ pub struct LiveEvalConfig {
     pub budget_micros: u64,
     pub api_key_configured: bool,
     #[serde(skip, default)]
-    api_key: String,
+    api_key: OrdoSecretString,
 }
 
 impl fmt::Debug for LiveEvalConfig {
@@ -147,6 +148,7 @@ impl LiveEvalConfig {
         };
         let Some(api_key) = env_trimmed(values, "OPENAI_API_KEY")
             .or_else(|| env_trimmed(values, "API__OPENAI_API_KEY"))
+            .and_then(normalize_secret)
         else {
             return (
                 blocked("OPENAI_API_KEY or API__OPENAI_API_KEY is required for live LLM evals."),
@@ -465,15 +467,15 @@ pub struct LiveJourneyRunSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
-    use rusqlite::Connection;
     use crate::capabilities::seed_builtin_capabilities;
     use crate::eval_harness::{collect_evidence_snapshot, isolated_eval_connection};
     use crate::llm_gateway::OpenAiTransportResponse;
     use crate::schema::init_schema;
+    use rusqlite::Connection;
     use serde_json::{json, Value};
     use std::cell::RefCell;
     use std::fs;
+    use std::path::Path;
     use std::rc::Rc;
 
     #[derive(Clone)]
@@ -620,6 +622,8 @@ mod tests {
         let config = config.unwrap();
         assert!(!format!("{config:?}").contains("sk-live-secret-value"));
         assert!(format!("{config:?}").contains("[redacted]"));
+        assert!(!format!("{:?}", config.api_key).contains("sk-live-secret-value"));
+        assert!(format!("{:?}", config.api_key).contains("[REDACTED]"));
         let transport = CountingOpenAiTransport::new();
         let db_path = tempfile::NamedTempFile::new().unwrap();
         let connection = isolated_eval_connection().unwrap();

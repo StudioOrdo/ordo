@@ -2,8 +2,11 @@
 
 import { useEffect, useRef } from "react";
 
+import { type PublicEntryContext } from "@/lib/public-entry-context";
+
 interface OrdoChatPrototypeProps {
   mode: "guest" | "member";
+  entryContext?: PublicEntryContext;
 }
 
 const chatContext = [
@@ -46,9 +49,16 @@ const chatMessages = [
   },
 ] as const;
 
-export function OrdoChatPrototype({ mode }: OrdoChatPrototypeProps) {
+export function OrdoChatPrototype({ mode, entryContext }: OrdoChatPrototypeProps) {
   const isGuest = mode === "guest";
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const contextItems = entryContext?.entryPointSlug
+    ? [
+        { label: "Tracked entry", value: entryContext.entryPointSlug },
+        { label: "Visitor session", value: entryContext.visitorSessionId ? "handoff hint" : "pending" },
+        ...chatContext,
+      ]
+    : chatContext;
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -78,7 +88,7 @@ export function OrdoChatPrototype({ mode }: OrdoChatPrototypeProps) {
           <h1>Talk with Studio Ordo.</h1>
           <p>One relationship conversation for every path. Ordo answers first; Keith or staff can take over without making you manage channels.</p>
           <div className="ordo-chat-context" aria-label="Conversation context">
-            {chatContext.map((item) => (
+            {contextItems.map((item) => (
               <span key={item.label}>
                 <strong>{item.label}</strong>
                 {item.value}
@@ -94,7 +104,7 @@ export function OrdoChatPrototype({ mode }: OrdoChatPrototypeProps) {
             <h1>What should your business do next?</h1>
             <p>Ask whether the 30-day trial fits, sign up from the conversation, or request Keith while he is online.</p>
             <div className="ordo-chat-context" aria-label="Conversation context">
-              {chatContext.map((item) => (
+              {contextItems.map((item) => (
                 <span key={item.label}>
                   <strong>{item.label}</strong>
                   {item.value}

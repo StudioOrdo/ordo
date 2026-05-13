@@ -1,13 +1,14 @@
 use super::*;
+use crate::security::redaction;
 use anyhow::{ensure, Context, Result};
-use rusqlite::{Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
 use chrono::Duration;
 use chrono::{DateTime, Utc};
-use sha2::{Digest, Sha256};
+use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct DeterministicEvalClock {
@@ -824,7 +825,11 @@ pub(crate) fn redact_serializable<T: Serialize + for<'de> Deserialize<'de>>(
     Ok(())
 }
 
-pub(crate) fn redact_value(value: &mut Value, private_terms: &[String], summary: &mut EvalRedactionSummary) {
+pub(crate) fn redact_value(
+    value: &mut Value,
+    private_terms: &[String],
+    summary: &mut EvalRedactionSummary,
+) {
     match value {
         Value::String(text) => {
             let redacted = redact_text(text, private_terms, summary);
@@ -844,63 +849,14 @@ pub(crate) fn redact_value(value: &mut Value, private_terms: &[String], summary:
     }
 }
 
-pub(crate) fn redact_text(text: &str, private_terms: &[String], summary: &mut EvalRedactionSummary) -> String {
-    let mut output = Vec::new();
-    for token in text.split_whitespace() {
-        let trimmed = token.trim_matches(|character: char| {
-            character == ',' || character == '.' || character == ';' || character == ':'
-        });
-        let mut replacement = None;
-        if looks_like_email(trimmed) {
-            replacement = Some("[REDACTED:email]");
-        } else if looks_like_phone(trimmed) {
-            replacement = Some("[REDACTED:phone]");
-        } else if looks_like_secret(trimmed) {
-            replacement = Some("[REDACTED:secret]");
-        } else if private_terms
-            .iter()
-            .filter(|term| !term.trim().is_empty())
-            .any(|term| trimmed.eq_ignore_ascii_case(term.trim()))
-        {
-            replacement = Some("[REDACTED:private_term]");
-        }
-        if let Some(replacement) = replacement {
-            summary.redacted_value_count += 1;
-            output.push(replacement.to_string());
-        } else {
-            output.push(token.to_string());
-        }
-    }
-    output.join(" ")
-}
-
-pub(crate) fn looks_like_email(value: &str) -> bool {
-    let Some((local, domain)) = value.split_once('@') else {
-        return false;
-    };
-    !local.is_empty() && domain.contains('.') && !domain.ends_with('.')
-}
-
-pub(crate) fn looks_like_phone(value: &str) -> bool {
-    let digit_count = value
-        .chars()
-        .filter(|character| character.is_ascii_digit())
-        .count();
-    digit_count >= 10
-        && value
-            .chars()
-            .all(|character| character.is_ascii_digit() || "()+-. ".contains(character))
-}
-
-pub(crate) fn looks_like_secret(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    lower.starts_with("sk-")
-        || lower.starts_with("api_")
-        || lower.starts_with("pat_")
-        || lower.starts_with("ghp_")
-        || lower == "bearer"
-        || lower.starts_with("bearer_")
-        || lower.starts_with("bearer-")
+pub(crate) fn redact_text(
+    text: &str,
+    private_terms: &[String],
+    summary: &mut EvalRedactionSummary,
+) -> String {
+    let redacted = redaction::redact_eval_text(text, private_terms);
+    summary.redacted_value_count += redacted.redacted_count;
+    redacted.text
 }
 
 pub(crate) fn stable_json_hash(value: &Value) -> Result<String> {
@@ -980,4 +936,3 @@ pub fn isolated_eval_connection() -> Result<Connection> {
     )?;
     Ok(connection)
 }
-

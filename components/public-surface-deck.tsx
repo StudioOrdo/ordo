@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { OrdoFrame } from "@/components/ordo-frame";
 import { OrdoChatPrototype } from "@/components/ordo-chat-prototype";
+import { type PublicEntryContext } from "@/lib/public-entry-context";
 import {
   appSpaceLabel,
   defaultProductBrandSettings,
@@ -17,11 +18,17 @@ interface PublicSurfaceDeckProps {
   role: ProductRole;
   configuredHomeMode?: PublicHomeMode;
   surfaceMode?: PublicHomeMode;
+  entryContext?: PublicEntryContext;
 }
 
 export type PublicHomeMode = "story" | "chat";
 
-export function PublicSurfaceDeck({ role, configuredHomeMode = "story", surfaceMode = configuredHomeMode }: PublicSurfaceDeckProps) {
+export function PublicSurfaceDeck({
+  role,
+  configuredHomeMode = "story",
+  surfaceMode = configuredHomeMode,
+  entryContext,
+}: PublicSurfaceDeckProps) {
   const surfaces = surfaceMode === "chat" ? [surfaceDefinitions.chat] : [surfaceDefinitions.about, surfaceDefinitions.feed];
 
   return (
@@ -46,7 +53,7 @@ export function PublicSurfaceDeck({ role, configuredHomeMode = "story", surfaceM
           {surfaces.map((surface, index) => (
             <section key={surface.id} id={surface.id} className={`public-surface-slide public-surface-${surface.id}`} aria-label={surface.label}>
               <div className="surface-count">{String(index + 1).padStart(2, "0")} / {String(surfaces.length).padStart(2, "0")}</div>
-              {surface.id === "chat" ? <ChatSurfaceSlide role={role} /> : null}
+              {surface.id === "chat" ? <ChatSurfaceSlide role={role} entryContext={entryContext} /> : null}
               {surface.id === "about" ? <AboutSurfaceSlide role={role} /> : null}
               {surface.id === "feed" ? <FeedSurfaceSlide role={role} /> : null}
             </section>
@@ -139,7 +146,7 @@ function publicHref(path: string, role: ProductRole, configuredHomeMode: PublicH
   return roleHref(href, role);
 }
 
-function ChatSurfaceSlide({ role }: { role: ProductRole }) {
+function ChatSurfaceSlide({ role, entryContext }: { role: ProductRole; entryContext?: PublicEntryContext }) {
   return (
     <div className="chat-home-stage">
       <section className="chat-home-brief" aria-labelledby="chat-title">
@@ -169,7 +176,7 @@ function ChatSurfaceSlide({ role }: { role: ProductRole }) {
         </div>
       </section>
       <div className="chat-home-panel" aria-label="Relationship chat prototype">
-        <OrdoChatPrototype mode="guest" />
+        <OrdoChatPrototype mode="guest" entryContext={entryContext} />
       </div>
     </div>
   );
@@ -202,8 +209,26 @@ function AboutSurfaceSlide({ role }: { role: ProductRole }) {
 }
 
 function FeedSurfaceSlide({ role }: { role: ProductRole }) {
+  const trackedEntrySlug = process.env.NEXT_PUBLIC_ORDO_HOME_ENTRY_SLUG?.trim() || "nyc-pilot";
+
   return (
     <div className="feed-stage">
+      <article className="feed-tile">
+        <span className="eyebrow">Meetup QR</span>
+        <h2 id="tracked-entry">Open the tracked Studio Ordo entry.</h2>
+        <p>
+          Use the event QR path when meeting Studio Ordo in person. The entry starts a visitor session with public-safe context
+          so the conversation and offer path can remember where the relationship began.
+        </p>
+        <div className="feed-proof">
+          <span>Tracked entry</span>
+          <span>Visitor session</span>
+          <span>No scan reward</span>
+        </div>
+        <Link href={roleHref(`/e/${trackedEntrySlug}`, role)} className="secondary-action">
+          Open QR path
+        </Link>
+      </article>
       {feedItems.map((item) => (
         <article key={item.id} className="feed-tile">
           <span className="eyebrow">{item.kicker}</span>

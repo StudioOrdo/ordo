@@ -87,7 +87,15 @@ test.describe("product app-space navigation", () => {
       "affiliates",
       "reports",
     ]);
-    expect(appSpaceById("admin").items.map((item) => item.id)).toEqual(["health", "events", "access", "providers", "backup", "settings"]);
+    expect(appSpaceById("admin").items.map((item) => item.id)).toEqual([
+      "health",
+      "events",
+      "access",
+      "providers",
+      "hosted-trials",
+      "backup",
+      "settings",
+    ]);
   });
 
   test("role switch links preserve the current app route", () => {

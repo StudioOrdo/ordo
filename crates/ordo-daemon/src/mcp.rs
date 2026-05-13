@@ -9,7 +9,8 @@ use crate::backups::{
 use crate::briefs::{generate_system_brief, latest_system_brief};
 use crate::capabilities::{list_mcp_exported_capabilities, load_capabilities};
 use crate::health::{build_health_report, build_readiness_report};
-use crate::mcp_packs::{mcp_tool_is_enabled, validate_json_schema};
+use crate::json_contracts::{validate_json_schema_document, validate_json_value};
+use crate::mcp_packs::mcp_tool_is_enabled;
 use crate::policy::{
     authorize_mcp_capability, record_policy_decision, ActorContext, PolicyDecisionCorrelation,
     PolicyOutcome, LOCAL_OWNER_ACTOR_ID,
@@ -290,7 +291,7 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
             "MCP tool is disabled or blocked by pack metadata: {name}"
         )));
     }
-    validate_json_schema(&capability.input_schema, "inputSchema")
+    validate_json_schema_document(&capability.input_schema, "inputSchema")
         .map_err(|error| McpDispatchError::invalid_params(error.to_string()))?;
     let policy_decision =
         authorize_mcp_capability(&connection, ActorContext::mcp_client(), capability);
@@ -303,7 +304,12 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
     if policy_decision.outcome == PolicyOutcome::Denied {
         return Err(McpDispatchError::invalid_params(policy_decision.reason));
     }
-    validate_tool_arguments_against_schema(name, &arguments, &capability.input_schema)?;
+    validate_json_value(
+        &capability.input_schema,
+        &arguments,
+        &format!("{name} arguments"),
+    )
+    .map_err(|error| McpDispatchError::invalid_params(error.to_string()))?;
     drop(connection);
 
     let structured_content = match name {
@@ -350,110 +356,6 @@ fn call_tool(db_path: &Path, params: Option<Value>) -> McpDispatchResult<Value> 
         "ordoPolicy": policy_decision.metadata(),
         "isError": false,
     }))
-}
-
-fn validate_tool_arguments_against_schema(
-    tool_name: &str,
-    arguments: &Value,
-    schema: &Value,
-) -> McpDispatchResult<()> {
-    let schema_object = schema.as_object().ok_or_else(|| {
-        McpDispatchError::invalid_params(format!("{tool_name} input schema must be an object"))
-    })?;
-    if schema_object.get("type").and_then(Value::as_str) != Some("object") {
-        return Ok(());
-    }
-
-    let arguments_object = arguments.as_object().ok_or_else(|| {
-        McpDispatchError::invalid_params(format!("{tool_name} arguments must be an object"))
-    })?;
-
-    validate_required_properties(tool_name, arguments_object, schema_object)?;
-    validate_known_properties(tool_name, arguments_object, schema_object)?;
-    validate_property_types(tool_name, arguments_object, schema_object)?;
-    Ok(())
-}
-
-fn validate_required_properties(
-    tool_name: &str,
-    arguments: &Map<String, Value>,
-    schema: &Map<String, Value>,
-) -> McpDispatchResult<()> {
-    let Some(required) = schema.get("required").and_then(Value::as_array) else {
-        return Ok(());
-    };
-    for property in required {
-        let property = property.as_str().ok_or_else(|| {
-            McpDispatchError::invalid_params(format!(
-                "{tool_name} input schema required entries must be strings"
-            ))
-        })?;
-        if !arguments.contains_key(property) {
-            return Err(McpDispatchError::invalid_params(format!(
-                "{tool_name} arguments missing required property: {property}"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_known_properties(
-    tool_name: &str,
-    arguments: &Map<String, Value>,
-    schema: &Map<String, Value>,
-) -> McpDispatchResult<()> {
-    if schema.get("additionalProperties") != Some(&Value::Bool(false)) {
-        return Ok(());
-    }
-    let properties = schema
-        .get("properties")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    for property in arguments.keys() {
-        if !properties.contains_key(property) {
-            return Err(McpDispatchError::invalid_params(format!(
-                "{tool_name} arguments contain unsupported property: {property}"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_property_types(
-    tool_name: &str,
-    arguments: &Map<String, Value>,
-    schema: &Map<String, Value>,
-) -> McpDispatchResult<()> {
-    let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
-        return Ok(());
-    };
-    for (property, property_schema) in properties {
-        let Some(value) = arguments.get(property) else {
-            continue;
-        };
-        let Some(expected_type) = property_schema.get("type").and_then(Value::as_str) else {
-            continue;
-        };
-        if !json_value_matches_type(value, expected_type) {
-            return Err(McpDispatchError::invalid_params(format!(
-                "{tool_name} arguments property {property} must be {expected_type}"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn json_value_matches_type(value: &Value, expected_type: &str) -> bool {
-    match expected_type {
-        "array" => value.is_array(),
-        "boolean" => value.is_boolean(),
-        "integer" => value.as_i64().is_some(),
-        "number" => value.is_number(),
-        "object" => value.is_object(),
-        "string" => value.is_string(),
-        _ => true,
-    }
 }
 
 #[cfg(test)]
@@ -570,7 +472,7 @@ mod tests {
             ),
         );
 
-        assert_error(response, INVALID_PARAMS, "missing required property");
+        assert_error(response, INVALID_PARAMS, "confirmation");
         let connection = Connection::open(&db_path).unwrap();
         let count: i64 = connection
             .query_row(
@@ -661,7 +563,7 @@ mod tests {
             ),
         );
 
-        assert_error(response, INVALID_PARAMS, "unsupported property");
+        assert_error(response, INVALID_PARAMS, "Additional properties");
     }
 
     #[test]
@@ -678,7 +580,7 @@ mod tests {
             ),
         );
 
-        assert_error(response, INVALID_PARAMS, "missing required property");
+        assert_error(response, INVALID_PARAMS, "confirmation");
     }
 
     #[test]
@@ -696,7 +598,7 @@ mod tests {
             ),
         );
 
-        assert_error(response, INVALID_PARAMS, "backupId must be string");
+        assert_error(response, INVALID_PARAMS, "/backupId");
     }
 
     #[test]

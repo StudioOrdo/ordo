@@ -14,6 +14,9 @@ use crate::live_eval_runner::{
     ADMIN_STAFF_JOURNEY_SCHEMA_VERSION, AFFILIATE_REFERRAL_JOURNEY_SCHEMA_VERSION,
     QR_TO_TRIAL_JOURNEY_SCHEMA_VERSION, REVIEW_RETURN_JOURNEY_SCHEMA_VERSION,
 };
+use crate::security::{
+    artifact_boundary::resolve_existing_artifact_path, markdown::sanitize_markdown_links, redaction,
+};
 
 pub const LIVE_JOURNEY_REPORT_SCHEMA_VERSION: &str = "ordo.live_journey_report.v1";
 
@@ -259,7 +262,7 @@ pub fn generate_live_journey_report(
     write_json(&report_json_path, &report)?;
     fs::write(
         &report_markdown_path,
-        render_live_journey_report_markdown(&report),
+        sanitize_markdown_links(&render_live_journey_report_markdown(&report)),
     )
     .with_context(|| {
         format!(
@@ -424,7 +427,7 @@ fn record_qr_manifest(
     accumulator.persuasion.no_fake_scarcity_cases += 1;
     accumulator.persuasion.no_fake_review_or_metric_cases += 1;
     accumulator.persuasion.agency_preserving_cases += 1;
-    record_packet(value, accumulator)?;
+    record_packet(path, value, accumulator)?;
     Ok(())
 }
 
@@ -471,7 +474,7 @@ fn record_review_return_manifest(
         accumulator.review.retired_reviews += 1;
     }
     accumulator.persuasion.no_fake_review_or_metric_cases += 1;
-    record_packet(value, accumulator)?;
+    record_packet(path, value, accumulator)?;
     Ok(())
 }
 
@@ -524,7 +527,7 @@ fn record_affiliate_manifest(
     accumulator.persuasion.no_fake_urgency_cases += 1;
     accumulator.persuasion.no_fake_scarcity_cases += 1;
     accumulator.persuasion.no_fake_review_or_metric_cases += 1;
-    record_packet(value, accumulator)?;
+    record_packet(path, value, accumulator)?;
     Ok(())
 }
 
@@ -563,7 +566,7 @@ fn record_admin_staff_manifest(
     if bool_field(evidence, "affiliateDeniedAfterRevoke") {
         accumulator.handoff.affiliate_grants_revoked_and_denied += 1;
     }
-    record_packet(value, accumulator)?;
+    record_packet(path, value, accumulator)?;
     Ok(())
 }
 
@@ -619,18 +622,25 @@ fn record_persona(
     entry.case_ids.push(case_id.to_string());
 }
 
-fn record_packet(value: &Value, accumulator: &mut ReportAccumulator) -> Result<()> {
+fn record_packet(
+    journey_manifest_path: &Path,
+    value: &Value,
+    accumulator: &mut ReportAccumulator,
+) -> Result<()> {
     let Some(packet_path) = value.get("packetPath").and_then(Value::as_str) else {
         return Ok(());
     };
-    let packet_json =
-        fs::read_to_string(packet_path).with_context(|| format!("read packet {packet_path}"))?;
+    let artifact_boundary = journey_manifest_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let packet_path = resolve_existing_artifact_path(artifact_boundary, packet_path, "packetPath")?;
+    let packet_json = fs::read_to_string(&packet_path).context("read packet artifact")?;
     let packet = serde_json::from_str::<EvalArtifactPacket>(&packet_json)
-        .with_context(|| format!("parse packet {packet_path}"))?;
+        .context("parse packet artifact")?;
     accumulator
         .input_artifacts
         .push(LiveJourneyInputArtifactRef {
-            path: packet_path.to_string(),
+            path: packet_path.to_string_lossy().to_string(),
             artifact_kind: "packet".to_string(),
             schema_version: packet.schema_version.clone(),
             content_hash: stable_text_hash(&packet_json),
@@ -941,45 +951,7 @@ fn validate_report_value(report: &LiveJourneyReport, private_terms: &[String]) -
 }
 
 fn contains_sensitive_text(content: &str, private_terms: &[String]) -> bool {
-    let lower = content.to_ascii_lowercase();
-    private_terms
-        .iter()
-        .filter(|term| !term.trim().is_empty())
-        .any(|term| lower.contains(&term.to_ascii_lowercase()))
-        || lower.contains("project orchid")
-        || lower.contains("bearer ")
-        || lower.contains("sk-live")
-        || content.split_whitespace().any(|token| {
-            let trimmed = token.trim_matches(|character: char| {
-                matches!(
-                    character,
-                    '"' | '\'' | ',' | '.' | ';' | ':' | '{' | '}' | '[' | ']' | '(' | ')'
-                )
-            });
-            looks_like_email(trimmed) || looks_like_phone(trimmed) || looks_like_secret(trimmed)
-        })
-}
-
-fn looks_like_email(value: &str) -> bool {
-    let Some((local, domain)) = value.split_once('@') else {
-        return false;
-    };
-    !local.is_empty() && domain.contains('.') && !domain.ends_with('.')
-}
-
-fn looks_like_phone(value: &str) -> bool {
-    let digits = value
-        .chars()
-        .filter(|character| character.is_ascii_digit())
-        .count();
-    digits >= 10
-        && value
-            .chars()
-            .all(|character| character.is_ascii_digit() || "()+- .".contains(character))
-}
-
-fn looks_like_secret(value: &str) -> bool {
-    value.starts_with("sk-") || value.starts_with("gho_") || value.starts_with("ghp_")
+    redaction::contains_sensitive_text(content, private_terms)
 }
 
 fn category_slug(category: EvalFindingCategory) -> &'static str {
@@ -1030,6 +1002,7 @@ mod tests {
     };
     use crate::schema::init_schema;
     use rusqlite::Connection;
+    use serde_json::json;
 
     fn file_backed_eval_store() -> (tempfile::NamedTempFile, Connection) {
         let file = tempfile::NamedTempFile::new().unwrap();
@@ -1203,5 +1176,52 @@ mod tests {
         for forbidden in private_terms() {
             assert!(!encoded.contains(&forbidden));
         }
+    }
+
+    #[test]
+    fn report_generator_rejects_manifest_packet_path_escape() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manifest_dir = temp_dir.path().join("journey");
+        fs::create_dir(&manifest_dir).unwrap();
+        let outside_dir = temp_dir.path().join("outside");
+        fs::create_dir(&outside_dir).unwrap();
+        let outside_packet = outside_dir.join("packet.json");
+        fs::write(&outside_packet, "{}").unwrap();
+        let journey_manifest = manifest_dir.join("qr-journey.json");
+        fs::write(
+            &journey_manifest,
+            serde_json::to_string_pretty(&json!({
+                "schemaVersion": QR_TO_TRIAL_JOURNEY_SCHEMA_VERSION,
+                "guard": { "status": "completed" },
+                "providerMode": "deterministic",
+                "networkEnabled": false,
+                "evidence": {
+                    "personaId": "persona_1",
+                    "caseId": "case_1",
+                    "entryPointId": "entry_1",
+                    "visitorSessionId": "session_1",
+                    "conversationId": "conversation_1",
+                    "acceptanceId": "acceptance_1",
+                    "trialId": "trial_1",
+                    "outcomeIds": [],
+                    "attributionCount": 0
+                },
+                "packetPath": outside_packet.to_string_lossy()
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let error = generate_live_journey_report(LiveJourneyReportRequest {
+            journey_manifest_paths: vec![journey_manifest],
+            artifact_review_paths: Vec::new(),
+            output_dir: temp_dir.path().join("report"),
+            source_commit: "test".to_string(),
+            generated_at: "2026-05-13T00:00:00Z".to_string(),
+            private_terms: Vec::new(),
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("escapes artifact boundary"));
     }
 }

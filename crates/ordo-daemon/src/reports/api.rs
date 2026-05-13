@@ -1,15 +1,16 @@
+use super::jobs::*;
+use super::types::*;
+use crate::kernel::append_job_event;
+use crate::policy::*;
+use crate::schema::db::ConnectionExt;
+use crate::security::{markdown::sanitize_markdown_links, redaction};
 use anyhow::{bail, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
-use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
-use uuid::Uuid;
 use sha2::{Digest, Sha256};
-use crate::kernel::append_job_event;
-use super::types::*;
-use super::jobs::*;
-use crate::policy::*;
-use crate::schema::db::ConnectionExt;
+use std::path::Path;
+use uuid::Uuid;
 
 pub fn list_issue_reports(db_path: &Path) -> Result<IssueReportsResponse> {
     let connection = Connection::open(db_path)?;
@@ -74,7 +75,8 @@ pub fn export_issue_report(
     }
     let now = Utc::now().to_rfc3339();
     let export_id = format!("report_export_{}", Uuid::new_v4());
-    let content_hash = content_hash(&report.markdown_body);
+    let export_markdown = sanitize_markdown_links(&report.markdown_body);
+    let content_hash = content_hash(&export_markdown);
     connection.execute(
         "INSERT INTO issue_report_exports (
             id, report_id, export_format, content_hash, content_bytes, content_text,
@@ -85,8 +87,8 @@ pub fn export_issue_report(
             report_id,
             export_format,
             content_hash,
-            report.markdown_body.len() as i64,
-            &report.markdown_body,
+            export_markdown.len() as i64,
+            &export_markdown,
             actor_id,
             now,
         ],
@@ -261,14 +263,23 @@ pub(crate) fn actor_context_for_origin(origin: &str, actor_id: Option<&str>) -> 
     ActorContext::new(kind, origin, actor_id.map(ToString::to_string))
 }
 
-pub(crate) fn load_issue_report_summaries(connection: &Connection) -> Result<Vec<IssueReportSummary>> {
-    connection.query_many("SELECT id, job_id, status, severity, title, summary, source_route, created_at,
+pub(crate) fn load_issue_report_summaries(
+    connection: &Connection,
+) -> Result<Vec<IssueReportSummary>> {
+    connection.query_many(
+        "SELECT id, job_id, status, severity, title, summary, source_route, created_at,
                 updated_at, exported_at, submitted_at, external_url
          FROM issue_report_artifacts
-         ORDER BY updated_at DESC", [], issue_report_summary_from_row)
+         ORDER BY updated_at DESC",
+        [],
+        issue_report_summary_from_row,
+    )
 }
 
-pub(crate) fn load_issue_report(connection: &Connection, id: &str) -> Result<Option<IssueReportArtifact>> {
+pub(crate) fn load_issue_report(
+    connection: &Connection,
+    id: &str,
+) -> Result<Option<IssueReportArtifact>> {
     connection
         .query_row(
             "SELECT id, job_id, status, severity, title, summary, description, source_route,
@@ -282,11 +293,16 @@ pub(crate) fn load_issue_report(connection: &Connection, id: &str) -> Result<Opt
         .map_err(Into::into)
 }
 
-pub(crate) fn require_issue_report(connection: &Connection, id: &str) -> Result<IssueReportArtifact> {
+pub(crate) fn require_issue_report(
+    connection: &Connection,
+    id: &str,
+) -> Result<IssueReportArtifact> {
     load_issue_report(connection, id)?.ok_or_else(|| anyhow::anyhow!("Issue report not found"))
 }
 
-pub(crate) fn issue_report_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<IssueReportArtifact> {
+pub(crate) fn issue_report_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<IssueReportArtifact> {
     let diagnostics_json: String = row.get(9)?;
     let evidence_json: String = row.get(10)?;
     let redactions_json: String = row.get(11)?;
@@ -311,7 +327,9 @@ pub(crate) fn issue_report_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result
     })
 }
 
-pub(crate) fn issue_report_summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<IssueReportSummary> {
+pub(crate) fn issue_report_summary_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<IssueReportSummary> {
     Ok(IssueReportSummary {
         id: row.get(0)?,
         job_id: row.get(1)?,
@@ -357,9 +375,13 @@ pub(crate) fn load_issue_report_exports(
     connection: &Connection,
     report_id: &str,
 ) -> Result<Vec<IssueReportExportView>> {
-    connection.query_many("SELECT id, report_id, export_format, content_hash, content_bytes, content_text,
+    connection.query_many(
+        "SELECT id, report_id, export_format, content_hash, content_bytes, content_text,
                 created_by_actor_id, created_at
-         FROM issue_report_exports WHERE report_id = ?1 ORDER BY created_at DESC", [report_id], issue_report_export_from_row)
+         FROM issue_report_exports WHERE report_id = ?1 ORDER BY created_at DESC",
+        [report_id],
+        issue_report_export_from_row,
+    )
 }
 
 pub(crate) fn load_issue_report_export(
@@ -397,35 +419,47 @@ pub(crate) fn load_issue_report_status_events(
     connection: &Connection,
     report_id: &str,
 ) -> Result<Vec<IssueReportStatusEventView>> {
-    connection.query_many("SELECT id, report_id, from_status, to_status, reason, created_by_actor_id, created_at
-         FROM issue_report_status_events WHERE report_id = ?1 ORDER BY created_at DESC", [report_id], |row| {
-        Ok(IssueReportStatusEventView {
-            id: row.get(0)?,
-            report_id: row.get(1)?,
-            from_status: row.get(2)?,
-            to_status: row.get(3)?,
-            reason: row.get(4)?,
-            created_by_actor_id: row.get(5)?,
-            created_at: row.get(6)?,
-        })
-    })
+    connection.query_many(
+        "SELECT id, report_id, from_status, to_status, reason, created_by_actor_id, created_at
+         FROM issue_report_status_events WHERE report_id = ?1 ORDER BY created_at DESC",
+        [report_id],
+        |row| {
+            Ok(IssueReportStatusEventView {
+                id: row.get(0)?,
+                report_id: row.get(1)?,
+                from_status: row.get(2)?,
+                to_status: row.get(3)?,
+                reason: row.get(4)?,
+                created_by_actor_id: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        },
+    )
 }
 
 pub(crate) fn load_support_packets(connection: &Connection) -> Result<Vec<SupportPacketView>> {
-    connection.query_many("SELECT id, report_id, status, destination_kind, destination_id, destination_label,
+    connection.query_many(
+        "SELECT id, report_id, status, destination_kind, destination_id, destination_label,
                 payload_json, payload_hash, approval_required, approved_by_actor_id, approved_at,
                 created_by_actor_id, created_at, updated_at
-         FROM support_packets ORDER BY updated_at DESC", [], support_packet_from_row)
+         FROM support_packets ORDER BY updated_at DESC",
+        [],
+        support_packet_from_row,
+    )
 }
 
 pub(crate) fn load_support_packets_for_report(
     connection: &Connection,
     report_id: &str,
 ) -> Result<Vec<SupportPacketView>> {
-    connection.query_many("SELECT id, report_id, status, destination_kind, destination_id, destination_label,
+    connection.query_many(
+        "SELECT id, report_id, status, destination_kind, destination_id, destination_label,
                 payload_json, payload_hash, approval_required, approved_by_actor_id, approved_at,
                 created_by_actor_id, created_at, updated_at
-         FROM support_packets WHERE report_id = ?1 ORDER BY updated_at DESC", [report_id], support_packet_from_row)
+         FROM support_packets WHERE report_id = ?1 ORDER BY updated_at DESC",
+        [report_id],
+        support_packet_from_row,
+    )
 }
 
 pub(crate) fn load_support_packet(
@@ -445,12 +479,17 @@ pub(crate) fn load_support_packet(
         .map_err(Into::into)
 }
 
-pub(crate) fn require_support_packet(connection: &Connection, packet_id: &str) -> Result<SupportPacketView> {
+pub(crate) fn require_support_packet(
+    connection: &Connection,
+    packet_id: &str,
+) -> Result<SupportPacketView> {
     load_support_packet(connection, packet_id)?
         .ok_or_else(|| anyhow::anyhow!("Support packet not found"))
 }
 
-pub(crate) fn support_packet_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SupportPacketView> {
+pub(crate) fn support_packet_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<SupportPacketView> {
     let payload_json: String = row.get(6)?;
     let approval_required: i64 = row.get(8)?;
     Ok(SupportPacketView {
@@ -520,32 +559,7 @@ pub(crate) fn content_hash(content: &str) -> String {
 }
 
 pub(crate) fn redact_support_packet_markdown(markdown: &str) -> String {
-    markdown
-        .lines()
-        .map(|line| {
-            if contains_secret_indicator(line) {
-                "[redacted support packet line]".to_string()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-pub(crate) fn contains_secret_indicator(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    [
-        "api_key",
-        "apikey",
-        "token",
-        "password",
-        "secret",
-        "vault key",
-        "bearer ",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
+    sanitize_markdown_links(&redaction::redact_support_packet_markdown(markdown))
 }
 
 pub(crate) fn set_job_running(connection: &Connection, job_id: &str) -> Result<()> {
@@ -558,12 +572,21 @@ pub(crate) fn set_job_running(connection: &Connection, job_id: &str) -> Result<(
     Ok(())
 }
 
-pub(crate) fn run_task(connection: &Connection, job_id: &str, task_key: &str, output: Value) -> Result<()> {
+pub(crate) fn run_task(
+    connection: &Connection,
+    job_id: &str,
+    task_key: &str,
+    output: Value,
+) -> Result<()> {
     mark_task_running(connection, job_id, task_key)?;
     mark_task_succeeded(connection, job_id, task_key, output)
 }
 
-pub(crate) fn mark_task_running(connection: &Connection, job_id: &str, task_key: &str) -> Result<()> {
+pub(crate) fn mark_task_running(
+    connection: &Connection,
+    job_id: &str,
+    task_key: &str,
+) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     let status: String = connection.query_row(
         "SELECT status FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
@@ -641,7 +664,11 @@ pub(crate) fn update_completed_required_count(connection: &Connection, job_id: &
     Ok(())
 }
 
-pub(crate) fn mark_job_succeeded(connection: &Connection, job_id: &str, payload: Value) -> Result<()> {
+pub(crate) fn mark_job_succeeded(
+    connection: &Connection,
+    job_id: &str,
+    payload: Value,
+) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     connection.execute(
         "UPDATE jobs
@@ -853,7 +880,10 @@ mod tests {
                 severity: Some(IssueSeverity::High),
                 description: "Provider api_key = sk-live-secret should never leave.".to_string(),
                 expected_behavior: None,
-                actual_behavior: None,
+                actual_behavior: Some(
+                    "Unsafe link [bad](javascript:alert(1)) but safe link [ok](https://example.com)."
+                        .to_string(),
+                ),
                 steps: None,
                 source_route: None,
                 include_health_snapshot: Some(false),
@@ -884,6 +914,9 @@ mod tests {
         assert_eq!(packet.payload["externalDelivery"], false);
         let content = packet.payload["content"].as_str().unwrap();
         assert!(!content.contains("sk-live-secret"));
+        assert!(!content.contains("javascript:"));
+        assert!(content.contains("[bad](#unsafe-url-redacted)"));
+        assert!(content.contains("[ok](https://example.com)"));
         assert!(content.contains("[redacted support packet line]"));
 
         let receipts = list_support_packet_receipts(db.path(), &packet.id).unwrap();
@@ -920,4 +953,3 @@ mod tests {
         .is_err());
     }
 }
-

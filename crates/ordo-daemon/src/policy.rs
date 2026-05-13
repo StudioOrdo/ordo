@@ -86,6 +86,7 @@ impl ActorContext {
 pub enum ResourceKind {
     System,
     OwnerSystem,
+    HostedTrial,
     PrivateActor,
     DaemonRoute,
     Capability,
@@ -99,6 +100,7 @@ pub enum ResourceKind {
     CorpusItem,
     AnswerDraft,
     McpPack,
+    ProductPack,
     Connection,
     Conversation,
     ConversationMessage,
@@ -112,6 +114,7 @@ impl ResourceKind {
         match self {
             Self::System => "system",
             Self::OwnerSystem => "owner_system",
+            Self::HostedTrial => "hosted_trial",
             Self::PrivateActor => "private_actor",
             Self::DaemonRoute => "daemon_route",
             Self::Capability => "capability",
@@ -125,6 +128,7 @@ impl ResourceKind {
             Self::CorpusItem => "corpus_item",
             Self::AnswerDraft => "answer_draft",
             Self::McpPack => "mcp_pack",
+            Self::ProductPack => "product_pack",
             Self::Connection => "connection",
             Self::Conversation => "conversation",
             Self::ConversationMessage => "conversation_message",
@@ -156,6 +160,7 @@ impl ResourceRef {
 pub enum PolicyAction {
     Read,
     Inspect,
+    Use,
     Execute,
     Generate,
     Create,
@@ -172,6 +177,7 @@ impl PolicyAction {
         match self {
             Self::Read => "read",
             Self::Inspect => "inspect",
+            Self::Use => "use",
             Self::Execute => "execute",
             Self::Generate => "generate",
             Self::Create => "create",

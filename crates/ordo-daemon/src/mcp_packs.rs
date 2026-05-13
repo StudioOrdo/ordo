@@ -2,16 +2,17 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::capabilities::{load_capability, MCP_EXPORT_POLICY_DANGEROUS_NONE};
-use crate::schema::db::ConnectionExt;
+use crate::json_contracts::validate_json_schema_document;
 use crate::policy::{
     provenance_metadata, ActorContext, ActorKind, PolicyAction, ResourceClassification,
     ResourceKind, ResourceRef,
 };
+use crate::schema::db::ConnectionExt;
 
 const PACK_STATUS_ENABLED: &str = "enabled";
 const PACK_STATUS_DISABLED: &str = "disabled";
@@ -304,59 +305,7 @@ fn validate_pack_manifest(connection: &Connection, manifest: &McpPackManifest) -
 }
 
 pub fn validate_json_schema(schema: &Value, label: &str) -> Result<()> {
-    let object = schema
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("{label} must be a JSON object"))?;
-    let schema_type = object
-        .get("type")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("{label} requires a type"))?;
-    if !matches!(
-        schema_type,
-        "object" | "array" | "boolean" | "integer" | "number" | "string"
-    ) {
-        bail!("{label} has unsupported type: {schema_type}");
-    }
-    if let Some(required) = object.get("required") {
-        let required = required
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("{label} required must be an array"))?;
-        for entry in required {
-            if entry.as_str().is_none() {
-                bail!("{label} required entries must be strings");
-            }
-        }
-    }
-    if let Some(properties) = object.get("properties") {
-        let properties = properties
-            .as_object()
-            .ok_or_else(|| anyhow::anyhow!("{label} properties must be an object"))?;
-        validate_property_schemas(properties, label)?;
-    }
-    if let Some(additional) = object.get("additionalProperties") {
-        if !(additional.is_boolean() || additional.is_object()) {
-            bail!("{label} additionalProperties must be a boolean or object");
-        }
-    }
-    Ok(())
-}
-
-fn validate_property_schemas(properties: &Map<String, Value>, label: &str) -> Result<()> {
-    for (name, property_schema) in properties {
-        let object = property_schema
-            .as_object()
-            .ok_or_else(|| anyhow::anyhow!("{label} property {name} schema must be an object"))?;
-        let Some(schema_type) = object.get("type").and_then(Value::as_str) else {
-            continue;
-        };
-        if !matches!(
-            schema_type,
-            "object" | "array" | "boolean" | "integer" | "number" | "string"
-        ) {
-            bail!("{label} property {name} has unsupported type: {schema_type}");
-        }
-    }
-    Ok(())
+    validate_json_schema_document(schema, label)
 }
 
 fn validate_side_effects(side_effects: &[String]) -> Result<()> {
@@ -420,10 +369,14 @@ fn mcp_pack_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<McpPackRecord>
 }
 
 fn load_pack_tools(connection: &Connection, pack_id: &str) -> Result<Vec<McpPackToolView>> {
-    connection.query_many("SELECT id, pack_id, tool_name, capability_id, input_schema_json, output_contract_json,
+    connection.query_many(
+        "SELECT id, pack_id, tool_name, capability_id, input_schema_json, output_contract_json,
                 side_effects_json, approval_requirement, artifact_kinds_json, mcp_export_policy,
                 export_status, disabled_at, created_at, updated_at
-         FROM mcp_pack_tools WHERE pack_id = ?1 ORDER BY tool_name ASC", [pack_id], mcp_pack_tool_from_row)
+         FROM mcp_pack_tools WHERE pack_id = ?1 ORDER BY tool_name ASC",
+        [pack_id],
+        mcp_pack_tool_from_row,
+    )
 }
 
 fn mcp_pack_tool_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<McpPackToolView> {
@@ -553,7 +506,22 @@ mod tests {
         manifest.tools[0].input_schema = json!({ "type": "object", "required": [42] });
 
         let error = validate_pack_manifest(&connection, &manifest).unwrap_err();
-        assert!(error.to_string().contains("required entries"));
+        assert!(error.to_string().contains("not a valid JSON Schema"));
+        assert!(error.to_string().contains("/required/0"));
+    }
+
+    #[test]
+    fn rejects_manifest_schema_with_untrusted_ref() {
+        let connection = setup_connection();
+        let mut manifest = status_tool_manifest(&connection);
+        manifest.tools[0].input_schema = json!({
+            "$ref": "https://example.com/secret-schema.json"
+        });
+
+        let error = validate_pack_manifest(&connection, &manifest).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("unsupported $ref"));
+        assert!(!message.contains("example.com"));
     }
 
     #[test]

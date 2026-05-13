@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::events::{append_realtime_event, append_realtime_event_tx, system_event, RealtimeEvent};
+use crate::security::redaction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttributionCandidateTarget {
@@ -722,55 +723,11 @@ fn attribution_from_row(
 }
 
 fn sanitize_json(value: Value) -> Value {
-    match value {
-        Value::String(text) => Value::String(sanitize_text(&text)),
-        Value::Array(values) => Value::Array(values.into_iter().map(sanitize_json).collect()),
-        Value::Object(object) => Value::Object(
-            object
-                .into_iter()
-                .map(|(key, value)| (key, sanitize_json(value)))
-                .collect(),
-        ),
-        other => other,
-    }
+    redaction::sanitize_json_strings(value)
 }
 
 fn sanitize_text(text: &str) -> String {
-    let mut sanitized = Vec::new();
-    let mut skip_next_bearer = false;
-    for token in text.split_whitespace() {
-        if skip_next_bearer {
-            sanitized.push("[REDACTED_TOKEN]".to_string());
-            skip_next_bearer = false;
-            continue;
-        }
-        if token.eq_ignore_ascii_case("bearer") {
-            sanitized.push("Bearer".to_string());
-            skip_next_bearer = true;
-            continue;
-        }
-        let trimmed = token.trim_matches(|ch: char| {
-            !ch.is_alphanumeric() && ch != '@' && ch != '-' && ch != '_' && ch != '.'
-        });
-        if looks_like_email(trimmed) {
-            sanitized.push(token.replace(trimmed, "[REDACTED_EMAIL]"));
-        } else if looks_like_api_key(trimmed) {
-            sanitized.push(token.replace(trimmed, "[REDACTED_SECRET]"));
-        } else {
-            sanitized.push(token.to_string());
-        }
-    }
-    sanitized.join(" ")
-}
-
-fn looks_like_email(token: &str) -> bool {
-    token.contains('@') && token.contains('.') && token.len() >= 6
-}
-
-fn looks_like_api_key(token: &str) -> bool {
-    let lower = token.to_ascii_lowercase();
-    (lower.starts_with("sk-") || lower.starts_with("tok_") || lower.starts_with("key_"))
-        && token.len() >= 10
+    redaction::redact_public_text(text)
 }
 
 fn json_string_array(raw: String) -> Vec<String> {

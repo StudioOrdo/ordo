@@ -1,5 +1,6 @@
 import { ProductShell } from "@/components/product-shell";
 import { mobileStepFromSearchParams, railModeFromSearchParams, roleFromSearchParams, type SearchParams } from "@/lib/page-role";
+import { hasPublicEntryContext, publicEntryContextFromSearchParams } from "@/lib/public-entry-context";
 import { type ProductAppSpace, type ProductRole } from "@/lib/product-navigation";
 
 interface Props {
@@ -26,10 +27,37 @@ export async function ProductSurfacePage({ searchParams, appSpaceId = "site", it
   const role = await roleFromSearchParams(searchParams);
   const railMode = await railModeFromSearchParams(searchParams);
   const mobileStep = await mobileStepFromSearchParams(searchParams);
+  const params = searchParams ? await searchParams : {};
+  const entryContext = publicEntryContextFromSearchParams(params);
   const tools = accountTools?.(role) ?? [];
 
   return (
     <ProductShell role={role} appSpaceId={appSpaceId} currentItemId={itemId} railMode={railMode} mobileStep={mobileStep}>
+      {itemId === "offers" && hasPublicEntryContext(entryContext) ? (
+        <section className="surface-brief-panel" aria-label="Tracked entry context">
+          <div className="brief-heading-row">
+            <div>
+              <span className="eyebrow">Tracked entry context</span>
+              <h2 className="panel-title">This offer view has tracked entry context.</h2>
+            </div>
+            <span className="status-pill">Public-safe</span>
+          </div>
+          <p>
+            When this path comes from the QR landing page, Ordo can use the recorded visitor session after backend verification.
+            This page treats URL context as a handoff hint and does not grant rewards or access from a scan alone.
+          </p>
+          <div className="brief-grid">
+            <div className="brief-block">
+              <span>Entry</span>
+              <p>{entryContext.entryPointSlug ?? "Unknown public entry"}</p>
+            </div>
+            <div className="brief-block">
+              <span>Visitor session</span>
+              <p>{entryContext.visitorSessionId ? "Handoff hint present" : "Pending"}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
       {surfaceBrief ? <SurfaceBriefPanel brief={surfaceBrief} /> : null}
       <section className="brief-panel narrative-brief">
         <span className="eyebrow">{eyebrow}</span>

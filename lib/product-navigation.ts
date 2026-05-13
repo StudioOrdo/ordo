@@ -143,6 +143,7 @@ export const adminRailItems: readonly ProductNavItem[] = [
   streamRoomItem("admin", "events", "Events", "/admin/events", "Persisted event evidence."),
   streamRoomItem("admin", "access", "Access", "/admin/access", "Roles, grants, and trust boundaries."),
   streamRoomItem("admin", "providers", "Providers", "/admin/providers", "Model and integration configuration."),
+  streamRoomItem("admin", "hosted-trials", "Hosted Trials", "/admin/hosted-trials", "Hosted trial capacity, waitlist, backup, and reset guards."),
   streamRoomItem("admin", "backup", "Backups", "/admin/backup", "Backup and restore jobs."),
   streamRoomItem("admin", "settings", "Settings", "/admin/settings", "Appliance preferences."),
 ];

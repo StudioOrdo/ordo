@@ -40,6 +40,197 @@ test("System Brief renders daemon evidence and process provenance", async ({ pag
   }
 });
 
+test("Hosted Trials Systems room renders durable capacity and reset evidence", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/admin/hosted-trials?role=owner", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Hosted Trials" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("1 / 10 active");
+    await expect(page.locator("main")).toContainText("1 waiting");
+    await expect(page.locator("main")).toContainText("trial_smoke_active");
+    await expect(page.locator("main")).toContainText("trial_smoke_reset_ready");
+    await expect(page.locator("main")).toContainText("backup_smoke_1");
+    await expect(page.locator("main")).toContainText("ready_for_owner_review");
+    await expect(page.locator("main")).toContainText("converted_no_wipe");
+    await expect(page.locator("main")).toContainText("destructive wipe unavailable");
+    expect(daemon.state.requests).toContain("GET /hosted-trials/capacity");
+    expect(daemon.state.requests).toContain("GET /backups");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Hosted Trials Systems room refuses member role before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/admin/hosted-trials?role=member");
+
+    await expect(page.locator("body")).not.toContainText("trial_smoke_active");
+    await expect(page.locator("body")).not.toContainText("backup_smoke_1");
+    expect(daemon.state.requests).not.toContain("GET /hosted-trials/capacity");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Offer Builder renders durable offers and explicit deferrals", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/owner/offers?role=owner", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Offer Builder" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("OrdoStudio NYC Pilot");
+    await expect(page.locator("main")).toContainText("ready");
+    await expect(page.locator("main")).toContainText("30 days");
+    await expect(page.locator("main")).toContainText("Accepted-offer Access grant");
+    await expect(page.locator("main")).toContainText("Hosted trial capacity");
+    await expect(page.locator("main")).toContainText("Tracked QR entry point");
+    await expect(page.locator("main")).toContainText("Feedback/referral rewards");
+    await expect(page.locator("main")).toContainText("#248");
+    await expect(page.locator("main")).toContainText("Product/workforce packs");
+    await expect(page.locator("main")).not.toContainText("sk_live");
+    await expect(page.locator("main")).not.toContainText("rawPrompt");
+    expect(daemon.state.requests).toContain("GET /offer-builder");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Offer Builder refuses member role before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/owner/offers?role=member");
+
+    await expect(page.locator("body")).not.toContainText("OrdoStudio NYC Pilot");
+    expect(daemon.state.requests).not.toContain("GET /offer-builder");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Growth report renders daemon-backed pilot evidence", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    for (const role of ["owner", "admin"] as const) {
+      await page.goto(productContentUrl(`/owner/reports?role=${role}`, testInfo));
+
+      await expect(page.locator("main").getByRole("heading", { name: "Growth Pilot Report" })).toBeVisible();
+      await expect(page.locator("main").getByRole("heading", { name: "Owner Review Brief" })).toBeVisible();
+      await expect(page.locator("main")).toContainText("7 / 7 pilot loop checkpoint(s) have local report sections.");
+      await expect(page.locator("main")).toContainText("Tracked Entry And Sessions");
+      await expect(page.locator("main")).toContainText("Offers And Acceptances");
+      await expect(page.locator("main")).toContainText("Hosted Trials, Capacity, Backup, And Reset");
+      await expect(page.locator("main")).toContainText("Support Handoffs And Strategy Sessions");
+      await expect(page.locator("main")).toContainText("Feedback Requests And Review");
+      await expect(page.locator("main")).toContainText("Rewards, Ledger, Benefits, And Balances");
+      await expect(page.locator("main")).toContainText("Studio Promo Packages And Publication Evidence");
+      await expect(page.locator("main")).toContainText("Local report package export unavailable");
+      await expect(page.locator("main")).toContainText("Deterministic report-package export is not implemented");
+      await expect(page.locator("main")).toContainText("External publishing is deferred");
+      await expect(page.locator("main")).toContainText("Platform analytics are missing");
+      const visitorEvidence = page.locator("details.evidence-drilldown", { hasText: "Visitor session visitor_smoke_1" }).first();
+      await expect(visitorEvidence).toBeVisible();
+      await visitorEvidence.locator("summary").click();
+      await expect(visitorEvidence).toContainText("ordo://visitor_session/visitor_smoke_1");
+      await expect(page.locator("main")).toContainText("deferred");
+      await expect(page.locator("main")).toContainText("missing");
+      await expect(page.locator("main")).not.toContainText("sk_live");
+      await expect(page.locator("main")).not.toContainText("rawPrompt");
+    }
+    expect(daemon.state.requests.filter((request) => request === "GET /growth/pilot-report")).toHaveLength(2);
+    expect(daemon.state.requests).not.toContain("GET /reports/issues");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Growth report refuses non-owner roles before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    for (const role of ["anonymous", "member", "staff", "studio"] as const) {
+      await page.goto(role === "anonymous" ? "/owner/reports" : `/owner/reports?role=${role}`);
+
+      await expect(page.locator("body")).not.toContainText("Growth Pilot Report");
+      await expect(page.locator("body")).not.toContainText("visitor_smoke_1");
+    }
+    expect(daemon.state.requests).not.toContain("GET /growth/pilot-report");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Growth report shows daemon-degraded fallback state", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/owner/reports?role=owner", testInfo));
+
+  await expect(page.locator("main").getByRole("heading", { name: "Growth Pilot Report" })).toBeVisible();
+  await expect(page.locator("main")).toContainText("degraded");
+  await expect(page.locator("main")).toContainText("Growth report is degraded because the daemon snapshot is unavailable.");
+  await expect(page.locator("main")).toContainText("/growth/pilot-report");
+});
+
+test("Studio shell renders durable runs and artifacts from surface work items", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/studio?role=studio", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Studio Production" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Job: studio.video.make");
+    await expect(page.locator("main")).toContainText("Candidate 30 second promo video");
+    await expect(page.locator("main")).toContainText("job:job_smoke_video");
+    await expect(page.locator("main")).toContainText("artifact:artifact_promo_smoke");
+    await expect(page.locator("main")).toContainText("Inspect job");
+    await expect(page.locator("main")).toContainText("Review artifact");
+    await expect(page.locator("main")).toContainText("Generate media unavailable");
+    await expect(page.locator("main")).toContainText("External publishing unavailable");
+    await expect(page.locator("main")).not.toContainText("rawPrompt");
+    await expect(page.locator("main")).not.toContainText("sk_live_hidden");
+    expect(daemon.state.requests).toContain("GET /surface/work-items?viewer=staff&surfaceKind=studio&limit=100");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Studio artifacts room renders artifact review state without publishing claims", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/studio/artifacts?role=studio", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { level: 2, name: "Artifacts" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Candidate 30 second promo video");
+    await expect(page.locator("main")).toContainText("candidate");
+    await expect(page.locator("main")).toContainText("Manual publication package");
+    await expect(page.locator("main")).toContainText("staged");
+    await expect(page.locator("main")).toContainText("Request revision unavailable");
+    await expect(page.locator("main")).toContainText("External publishing unavailable");
+    await expect(page.locator("main")).not.toContainText("YouTube analytics");
+    expect(daemon.state.requests).toContain("GET /surface/work-items?viewer=staff&surfaceKind=studio&roomKind=artifacts&limit=100");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Studio shell refuses member role before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto("/studio/factory-jobs?role=member");
+
+    await expect(page.locator("body")).not.toContainText("Job: studio.video.make");
+    expect(daemon.state.requests.some((request) => request.includes("/surface/work-items"))).toBe(false);
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Studio shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/studio?role=studio", testInfo));
+
+  await expect(page.locator("main").getByRole("heading", { name: "Studio Production" })).toBeVisible();
+  await expect(page.locator("main")).toContainText("degraded");
+  await expect(page.locator("main")).toContainText("Studio snapshot is degraded because the daemon work-item read model is unavailable.");
+  await expect(page.locator("main")).toContainText("/surface/work-items?viewer=staff&surfaceKind=studio&limit=100");
+});
+
 test("System shell shows daemon-degraded fallback state", async ({ page }, testInfo) => {
   await page.goto(productContentUrl("/admin/system?role=owner", testInfo));
 
@@ -99,6 +290,22 @@ test("Backup And Restore renders persisted jobs and operator controls", async ({
     await expect(page.getByRole("button", { name: "Validate Restore" })).toBeEnabled();
     await expect(page.locator("main")).toContainText("backup_smoke_1");
     await expect(page.locator("main")).toContainText("/app/.data/backups/backup_smoke_1/manifest.json");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Admin backup room keeps backup and restore controls in Systems", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/admin/backup?role=owner", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Backup & Restore" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create Backup" })).toBeEnabled();
+    await expect(page.getByLabel("Backup ID")).toHaveValue("backup_smoke_1");
+    await expect(page.getByRole("button", { name: "Validate Restore" })).toBeEnabled();
+    await expect(page.locator("main")).toContainText("backup_smoke_1");
+    expect(daemon.state.requests).toContain("GET /backups");
   } finally {
     await daemon.close();
   }
@@ -357,6 +564,7 @@ test("System role can access appliance system rail without leaking it to clients
   await expect(systemNav).toBeVisible();
   await expect(systemNav.getByRole("link", { name: /Health/ })).toBeVisible();
   await expect(systemNav.getByRole("link", { name: /Events/ })).toBeVisible();
+  await expect(systemNav.getByRole("link", { name: /Hosted Trials/ })).toBeVisible();
   await expect(systemNav.getByRole("link", { name: /Backups/ })).toBeVisible();
   await expect(page.locator('.primary-link[data-shell-id="admin"]')).toHaveCount(0);
   await page.getByLabel("Open account and role menu").click();
@@ -445,6 +653,27 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
 
   if (method === "GET" && path === "/backups") {
     return jsonResponse(response, { jobs: backupJobs(state.backupCreated) });
+  }
+
+  if (method === "GET" && path === "/hosted-trials/capacity") {
+    return jsonResponse(response, hostedTrialCapacity());
+  }
+
+  if (method === "GET" && path === "/offer-builder") {
+    return jsonResponse(response, offerBuilder());
+  }
+
+  if (method === "GET" && path === "/growth/pilot-report") {
+    return jsonResponse(response, growthPilotReport());
+  }
+
+  if (method === "GET" && path.startsWith("/surface/work-items")) {
+    const url = new URL(path, "http://127.0.0.1");
+    if (url.searchParams.get("surfaceKind") === "studio") {
+      return jsonResponse(response, {
+        items: studioSurfaceWorkItems(url.searchParams.get("roomKind")),
+      });
+    }
   }
 
   if (method === "GET" && path === "/logs?limit=100") {
@@ -606,6 +835,400 @@ function systemBrief() {
       origin: "browser-smoke",
       status: "succeeded",
     },
+  };
+}
+
+function hostedTrialCapacity() {
+  return {
+    policies: [
+      {
+        id: "hosted_trial_capacity_policy_smoke",
+        offerId: "offer_smoke_1",
+        offerSlug: "nyc-pilot",
+        status: "active",
+        activeSlotLimit: 10,
+        activeSlotCount: 1,
+        waitlistCount: 1,
+        trialDays: 30,
+        backupBeforeWipeRequired: true,
+        resetGraceDays: 7,
+        metadata: { pilot: "nyc" },
+        createdAt: "2026-05-08T12:00:00.000Z",
+        updatedAt: "2026-05-08T12:00:00.000Z",
+      },
+    ],
+    slots: [
+      hostedTrialSlot("hosted_trial_slot_active", "trial_smoke_active", "active", "pending", "pending", {}, {}),
+      hostedTrialSlot(
+        "hosted_trial_slot_reset_ready",
+        "trial_smoke_reset_ready",
+        "expired",
+        "ready",
+        "ready_for_owner_review",
+        {
+          backupBeforeWipeRequired: true,
+          destructiveWipeAllowed: false,
+          reason: "backup_ready_owner_review_required",
+          requires: ["explicit_destructive_action"],
+        },
+        {
+          actorId: "actor_local_owner",
+          reason: "30-day trial expired after backup export.",
+          decidedAt: "2026-05-08T12:00:00.000Z",
+        },
+      ),
+      hostedTrialSlot("hosted_trial_slot_converted", "trial_smoke_converted", "converted", "retained", "converted_no_wipe", {}, {}),
+    ],
+    waitlist: [
+      {
+        id: "hosted_trial_waitlist_smoke",
+        policyId: "hosted_trial_capacity_policy_smoke",
+        acceptanceId: "acceptance_waitlist_smoke",
+        offerId: "offer_smoke_1",
+        offerSlug: "nyc-pilot",
+        visitorSessionId: "visitor_smoke_1",
+        subjectKind: "visitor_session",
+        subjectId: "visitor_smoke_1",
+        status: "waiting",
+        position: 1,
+        reason: "capacity_full",
+        receipt: { title: "Waitlisted" },
+        evidenceRefs: ["offer_acceptance:acceptance_waitlist_smoke"],
+        createdAt: "2026-05-08T12:00:00.000Z",
+        updatedAt: "2026-05-08T12:00:00.000Z",
+      },
+    ],
+  };
+}
+
+function offerBuilder() {
+  return {
+    generatedAt: "2026-05-08T12:00:00.000Z",
+    offers: [
+      {
+        offer: {
+          id: "offer_smoke_1",
+          slug: "nyc-pilot",
+          title: "OrdoStudio NYC Pilot",
+          summary: "30 days of experimental hosted OrdoStudio access.",
+          status: "available",
+          visibility: "public",
+          publicationState: "published",
+          trialDays: 30,
+          sourceKind: "offer_builder",
+          sourceRef: "nyc-pilot",
+          terms: {
+            termsVersion: "2026-05-13",
+            trialDays: 30,
+            experimentalHosting: true,
+            backupBeforeWipeRequired: true,
+            humanReviewRequired: true,
+          },
+          metadata: {},
+          createdByActorId: "actor_local_owner",
+          createdAt: "2026-05-08T12:00:00.000Z",
+          updatedAt: "2026-05-08T12:00:00.000Z",
+          publishedAt: "2026-05-08T12:00:00.000Z",
+          archivedAt: null,
+        },
+        publicPreview: {
+          id: "offer_smoke_1",
+          slug: "nyc-pilot",
+          title: "OrdoStudio NYC Pilot",
+          summary: "30 days of experimental hosted OrdoStudio access.",
+          trialDays: 30,
+          sourceKind: "offer_builder",
+          sourceRef: "nyc-pilot",
+          terms: {
+            trialDays: 30,
+            termsVersion: "2026-05-13",
+            experimentalHosting: true,
+            backupBeforeWipeRequired: true,
+            humanReviewRequired: true,
+            rewards: { status: "not_available_yet", blockedBy: "#248" },
+            packs: { status: "not_available_yet", blockedBy: "offer_pack_binding" },
+          },
+        },
+        validation: {
+          publishable: true,
+          state: "ready",
+          blockers: [],
+          warnings: [],
+          supportedReferences: [
+            offerBuilderReference("access_grant", "Accepted-offer Access grant", "available", "resource_grants"),
+            offerBuilderReference("hosted_trial_capacity", "Hosted trial capacity", "available", "hosted_trial_slots"),
+            offerBuilderReference("tracked_entry_point", "Tracked QR entry point", "available", "tracked_entry_point:entry_nyc"),
+            offerBuilderReference("support_handoff_cta", "Support handoff CTA", "available", "handoff_inbox_items"),
+          ],
+          deferredReferences: [
+            offerBuilderReference("reward_ledger", "Feedback/referral rewards", "not_available_yet", "", "#248"),
+            offerBuilderReference("product_workforce_packs", "Product/workforce packs", "not_available_yet", "", "offer_pack_binding"),
+            offerBuilderReference("external_platforms", "External publishing/payments/OAuth", "out_of_scope", "", "future_guarded_adapters"),
+          ],
+          evidenceRefs: ["offer:offer_smoke_1", "tracked_entry_point:entry_nyc"],
+        },
+      },
+    ],
+  };
+}
+
+function offerBuilderReference(key: string, label: string, status: string, evidenceRef: string, blockedBy: string | null = null) {
+  return {
+    key,
+    label,
+    status,
+    detail: `${label} is represented by durable daemon state.`,
+    evidenceRefs: evidenceRef ? [evidenceRef] : [],
+    blockedBy,
+  };
+}
+
+function growthPilotReport() {
+  return {
+    schemaVersion: "ordo.growth_pilot_report.v1",
+    generatedAt: "2026-05-13T18:00:00.000Z",
+    limitations: [
+      growthLimitation(
+        "external_publishing_deferred",
+        "External publishing is deferred",
+        "No TikTok, YouTube, OAuth, or platform publishing API is called by this report.",
+        "deferred",
+      ),
+      growthLimitation(
+        "platform_analytics_missing",
+        "Platform analytics are missing",
+        "No platform reach, watch-time, or conversion metric is reported unless future durable evidence exists.",
+        "missing",
+      ),
+    ],
+    sections: [
+      growthSection("tracked_entry", "Tracked Entry And Sessions", "measured", [
+        growthMetric("visitor_sessions", "Visitor sessions", 3, "sessions", "measured", [growthRef("visitor_session", "visitor_smoke_1", "Visitor session")]),
+        growthMetric("active_visitor_sessions", "Active visitor sessions", 1, "sessions", "measured"),
+      ], [
+        growthItem("visitor_session", "visitor_smoke_1", "Visitor session", "active", "measured", "2026-05-13T17:00:00.000Z"),
+      ]),
+      growthSection("offers", "Offers And Acceptances", "measured", [
+        growthMetric("offers", "Offers", 1, "offers", "measured", [growthRef("offer", "offer_smoke_1", "Offer")]),
+        growthMetric("offer_acceptances", "Offer acceptances", 1, "acceptances", "measured", [growthRef("offer_acceptance", "acceptance_smoke_1", "Offer acceptance")]),
+        growthMetric("individual_offer_view_events", "Individual offer view events", 0, "views", "missing"),
+      ], [
+        growthItem("offer_acceptance", "acceptance_smoke_1", "Offer acceptance", "accepted", "measured", "2026-05-13T16:55:00.000Z"),
+      ], [
+        growthLimitation("offer_view_events_missing", "Individual offer views are not tracked yet", "Per-offer view events are not durable yet.", "missing"),
+      ]),
+      growthSection("hosted_trials", "Hosted Trials, Capacity, Backup, And Reset", "measured", [
+        growthMetric("trials", "Hosted trials", 1, "trials", "measured", [growthRef("trial", "trial_smoke_active", "Hosted trial")]),
+        growthMetric("active_hosted_slots", "Active hosted trial slots", 1, "slots", "measured"),
+        growthMetric("waitlist_entries", "Hosted trial waitlist entries", 1, "entries", "measured", [growthRef("hosted_trial_waitlist_entry", "waitlist_smoke_1", "Hosted trial waitlist entry")]),
+      ], [
+        growthItem("trial", "trial_smoke_active", "Hosted trial", "started", "measured", "2026-05-13T16:50:00.000Z"),
+      ]),
+      growthSection("support_handoffs", "Support Handoffs And Strategy Sessions", "measured", [
+        growthMetric("handoff_items", "Support handoff items", 1, "items", "measured", [growthRef("handoff_inbox_item", "handoff_strategy_smoke", "Support handoff")]),
+        growthMetric("strategy_session_handoffs", "Strategy session handoffs", 1, "items", "measured"),
+      ], [
+        growthItem("handoff_inbox_item", "handoff_strategy_smoke", "Support handoff", "queued", "measured", "2026-05-13T16:45:00.000Z"),
+      ]),
+      growthSection("feedback", "Feedback Requests And Review", "measured", [
+        growthMetric("feedback_requests", "Feedback requests", 1, "requests", "measured", [growthRef("feedback_request", "feedback_request_smoke", "Feedback request")]),
+        growthMetric("accepted_feedback_reviews", "Accepted feedback reviews", 1, "reviews", "measured"),
+      ], [
+        growthItem("feedback_request", "feedback_request_smoke", "Feedback request", "reviewed", "measured", "2026-05-13T16:40:00.000Z"),
+      ]),
+      growthSection("rewards", "Rewards, Ledger, Benefits, And Balances", "measured", [
+        growthMetric("reward_events", "Reward events", 1, "events", "measured", [growthRef("reward_event", "reward_event_smoke", "Reward event")]),
+        growthMetric("benefit_grants", "Benefit grants", 1, "grants", "measured", [growthRef("benefit_grant", "benefit_grant_smoke", "Benefit grant")]),
+        growthMetric("public_leaderboard_rank", "Public leaderboard rank", 0, "ranks", "deferred"),
+      ], [
+        growthItem("reward_event", "reward_event_smoke", "Reward event", "granted", "measured", "2026-05-13T16:35:00.000Z"),
+      ], [
+        growthLimitation("leaderboard_deferred", "Leaderboard is deferred", "Reward evidence is available to Growth, but public leaderboards are out of scope.", "deferred"),
+      ]),
+      growthSection("studio_promos", "Studio Promo Packages And Publication Evidence", "measured", [
+        growthMetric("promo_video_packages", "Promo video packages", 1, "packages", "measured", [growthRef("artifact", "artifact_promo_smoke", "Promo package artifact")]),
+        growthMetric("staged_manual_packages", "Staged manual promo packages", 1, "packages", "manual"),
+        growthMetric("external_publications", "External platform publications", 0, "publications", "deferred"),
+        growthMetric("platform_performance_metrics", "Platform performance metrics", 0, "metrics", "missing"),
+      ], [
+        growthItem("artifact", "artifact_promo_smoke", "Promo package artifact", "staged_manual", "measured", "2026-05-13T16:30:00.000Z"),
+      ], [
+        growthLimitation("external_publication_deferred", "External publishing is deferred", "The promo workflow stages local artifacts only.", "deferred"),
+        growthLimitation("platform_analytics_missing", "Platform analytics are missing", "The report does not claim views, watch time, or conversions.", "missing"),
+      ]),
+    ],
+  };
+}
+
+function growthSection(key: string, title: string, sourceStatus: string, metrics: ReturnType<typeof growthMetric>[], recentItems: ReturnType<typeof growthItem>[], limitations: ReturnType<typeof growthLimitation>[] = []) {
+  const evidenceRefs = [
+    ...metrics.flatMap((metric) => metric.evidenceRefs),
+    ...recentItems.flatMap((item) => item.evidenceRefs),
+  ].filter((ref, index, refs) => refs.findIndex((candidate) => candidate.uri === ref.uri) === index);
+  return { key, title, sourceStatus, metrics, recentItems, evidenceRefs, limitations };
+}
+
+function growthMetric(key: string, label: string, value: number, unit: string, sourceStatus: string, evidenceRefs: ReturnType<typeof growthRef>[] = []) {
+  return { key, label, value, unit, sourceStatus, evidenceRefs };
+}
+
+function growthItem(sourceKind: string, sourceId: string, labelPrefix: string, status: string, sourceStatus: string, occurredAt: string) {
+  return {
+    sourceKind,
+    sourceId,
+    label: `${labelPrefix} ${sourceId}`,
+    status,
+    sourceStatus,
+    occurredAt,
+    evidenceRefs: [growthRef(sourceKind, sourceId, labelPrefix)],
+  };
+}
+
+function growthRef(sourceKind: string, sourceId: string, labelPrefix: string) {
+  return {
+    sourceKind,
+    sourceId,
+    label: `${labelPrefix} ${sourceId}`,
+    uri: `ordo://${sourceKind}/${sourceId}`,
+  };
+}
+
+function growthLimitation(key: string, label: string, detail: string, sourceStatus: string) {
+  return { key, label, detail, sourceStatus };
+}
+
+function studioSurfaceWorkItems(roomKind: string | null) {
+  const items = [
+    studioWorkItem({
+      id: "studio_run_video",
+      roomKind: "runs",
+      sourceKind: "job",
+      sourceId: "job_smoke_video",
+      objectKind: "job",
+      objectId: "job_smoke_video",
+      title: "Job: studio.video.make",
+      summary: "Job from conversation brief is running with durable progress evidence.",
+      status: "running",
+      evidenceRefs: ["job:job_smoke_video", "brief:brief_promo"],
+      actions: ["inspect_job"],
+    }),
+    studioWorkItem({
+      id: "studio_artifact_promo",
+      roomKind: "artifacts",
+      sourceKind: "artifact",
+      sourceId: "artifact_promo_smoke",
+      objectKind: "artifact",
+      objectId: "artifact_promo_smoke",
+      title: "Candidate 30 second promo video",
+      summary: "Candidate package needs review before any staged manual publication.",
+      status: "candidate",
+      evidenceRefs: ["artifact:artifact_promo_smoke", "job:job_smoke_video"],
+      actions: ["review_artifact"],
+    }),
+    studioWorkItem({
+      id: "studio_artifact_staged",
+      roomKind: "artifacts",
+      sourceKind: "artifact",
+      sourceId: "artifact_manual_publication_smoke",
+      objectKind: "artifact",
+      objectId: "artifact_manual_publication_smoke",
+      title: "Manual publication package",
+      summary: "Approved metadata is staged for owner download only.",
+      status: "staged",
+      evidenceRefs: ["artifact:artifact_manual_publication_smoke"],
+      actions: ["review_artifact"],
+    }),
+  ];
+
+  return roomKind ? items.filter((item) => item.roomKind === roomKind) : items;
+}
+
+function studioWorkItem({
+  id,
+  roomKind,
+  sourceKind,
+  sourceId,
+  objectKind,
+  objectId,
+  title,
+  summary,
+  status,
+  evidenceRefs,
+  actions,
+}: {
+  id: string;
+  roomKind: string;
+  sourceKind: string;
+  sourceId: string;
+  objectKind: string;
+  objectId: string;
+  title: string;
+  summary: string;
+  status: string;
+  evidenceRefs: string[];
+  actions: string[];
+}) {
+  return {
+    id,
+    surfaceKind: "studio",
+    roomKind,
+    sourceKind,
+    sourceId,
+    objectKind,
+    objectId,
+    title,
+    summary,
+    status,
+    priority: 70,
+    actorContext: {
+      actorId: "actor_studio_smoke",
+      rawPrompt: "rawPrompt should not render",
+    },
+    connectionContext: {
+      providerSecret: "sk_live_hidden",
+      staffRouting: "keith_internal",
+    },
+    evidenceRefs,
+    actions,
+    visibility: "staff",
+    createdAt: "2026-05-08T12:00:00.000Z",
+    updatedAt: "2026-05-08T12:00:02.000Z",
+    projectedAt: "2026-05-08T12:00:03.000Z",
+  };
+}
+
+function hostedTrialSlot(
+  id: string,
+  trialId: string,
+  status: string,
+  backupStatus: string,
+  resetState: string,
+  resetGuard: Record<string, unknown>,
+  ownerOverride: Record<string, unknown>,
+) {
+  return {
+    id,
+    policyId: "hosted_trial_capacity_policy_smoke",
+    trialId,
+    acceptanceId: `acceptance_${trialId}`,
+    offerId: "offer_smoke_1",
+    offerSlug: "nyc-pilot",
+    subjectKind: "visitor_session",
+    subjectId: `visitor_${trialId}`,
+    status,
+    allocatedAt: "2026-05-01T12:00:00.000Z",
+    expiresAt: "2026-05-31T12:00:00.000Z",
+    releasedAt: status === "active" ? null : "2026-06-01T12:00:00.000Z",
+    releaseReason: status === "active" ? null : status,
+    backupRequired: true,
+    backupStatus,
+    backupEvidenceRefs: resetState === "ready_for_owner_review" ? ["backup:backup_smoke_1"] : [],
+    resetEligibleAt: status === "active" ? null : "2026-06-07T12:00:00.000Z",
+    resetState,
+    resetGuard,
+    ownerOverride,
+    createdAt: "2026-05-01T12:00:00.000Z",
+    updatedAt: "2026-06-01T12:00:00.000Z",
   };
 }
 

@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
 pub(crate) fn resolve_existing_artifact_path(
@@ -38,6 +39,19 @@ pub(crate) fn resolve_artifact_output_path(
         .file_name()
         .ok_or_else(|| anyhow::anyhow!("{label} is missing a file name"))?;
     let path = parent.join(file_name);
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!("{label} cannot target a symlink")
+        }
+        Ok(_) => {
+            let canonical_path = path
+                .canonicalize()
+                .with_context(|| format!("{label} is not accessible"))?;
+            ensure_artifact_path_within(&canonical_path, &boundary, label)?;
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error).with_context(|| format!("{label} is not accessible")),
+    }
     ensure_artifact_path_within(&path, &boundary, label)?;
     Ok(path)
 }
@@ -153,6 +167,22 @@ mod tests {
         assert!(error.to_string().contains("contains parent traversal"));
     }
 
+    #[test]
+    fn resolves_existing_regular_output_path_inside_boundary() {
+        let boundary = tempfile::tempdir().unwrap();
+        let output = boundary.path().join("artifact.md");
+        fs::write(&output, "previous").unwrap();
+
+        let resolved =
+            resolve_artifact_output_path(boundary.path(), "artifact.md", "artifact output")
+                .unwrap();
+
+        assert_eq!(
+            resolved.canonicalize().unwrap(),
+            output.canonicalize().unwrap()
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn rejects_symlink_escape() {
@@ -169,5 +199,22 @@ mod tests {
                 .unwrap_err();
 
         assert!(error.to_string().contains("escapes artifact boundary"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_output_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let boundary = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_file = outside.path().join("secret.md");
+        fs::write(&outside_file, "secret").unwrap();
+        symlink(&outside_file, boundary.path().join("artifact.md")).unwrap();
+
+        let error = resolve_artifact_output_path(boundary.path(), "artifact.md", "artifact output")
+            .unwrap_err();
+
+        assert!(error.to_string().contains("cannot target a symlink"));
     }
 }

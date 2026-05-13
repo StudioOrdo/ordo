@@ -109,6 +109,57 @@ test("Owner Offer Builder refuses member role before daemon read", async ({ page
   }
 });
 
+test("Owner Growth report renders daemon-backed pilot evidence", async ({ page }, testInfo) => {
+  const daemon = await startMockDaemon();
+  try {
+    await page.goto(productContentUrl("/owner/reports?role=owner", testInfo));
+
+    await expect(page.locator("main").getByRole("heading", { name: "Growth Pilot Report" })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Tracked Entry And Sessions");
+    await expect(page.locator("main")).toContainText("Offers And Acceptances");
+    await expect(page.locator("main")).toContainText("Hosted Trials, Capacity, Backup, And Reset");
+    await expect(page.locator("main")).toContainText("Support Handoffs And Strategy Sessions");
+    await expect(page.locator("main")).toContainText("Feedback Requests And Review");
+    await expect(page.locator("main")).toContainText("Rewards, Ledger, Benefits, And Balances");
+    await expect(page.locator("main")).toContainText("Studio Promo Packages And Publication Evidence");
+    await expect(page.locator("main")).toContainText("External publishing is deferred");
+    await expect(page.locator("main")).toContainText("Platform analytics are missing");
+    await expect(page.locator("main")).toContainText("ordo://visitor_session/visitor_smoke_1");
+    await expect(page.locator("main")).toContainText("deferred");
+    await expect(page.locator("main")).toContainText("missing");
+    await expect(page.locator("main")).not.toContainText("sk_live");
+    await expect(page.locator("main")).not.toContainText("rawPrompt");
+    expect(daemon.state.requests).toContain("GET /growth/pilot-report");
+    expect(daemon.state.requests).not.toContain("GET /reports/issues");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Growth report refuses non-owner roles before daemon read", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    for (const role of ["anonymous", "member", "staff", "studio"] as const) {
+      await page.goto(role === "anonymous" ? "/owner/reports" : `/owner/reports?role=${role}`);
+
+      await expect(page.locator("body")).not.toContainText("Growth Pilot Report");
+      await expect(page.locator("body")).not.toContainText("visitor_smoke_1");
+    }
+    expect(daemon.state.requests).not.toContain("GET /growth/pilot-report");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Owner Growth report shows daemon-degraded fallback state", async ({ page }, testInfo) => {
+  await page.goto(productContentUrl("/owner/reports?role=owner", testInfo));
+
+  await expect(page.locator("main").getByRole("heading", { name: "Growth Pilot Report" })).toBeVisible();
+  await expect(page.locator("main")).toContainText("degraded");
+  await expect(page.locator("main")).toContainText("Growth report is degraded because the daemon snapshot is unavailable.");
+  await expect(page.locator("main")).toContainText("/growth/pilot-report");
+});
+
 test("Studio shell renders durable runs and artifacts from surface work items", async ({ page }, testInfo) => {
   const daemon = await startMockDaemon();
   try {
@@ -603,6 +654,10 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
     return jsonResponse(response, offerBuilder());
   }
 
+  if (method === "GET" && path === "/growth/pilot-report") {
+    return jsonResponse(response, growthPilotReport());
+  }
+
   if (method === "GET" && path.startsWith("/surface/work-items")) {
     const url = new URL(path, "http://127.0.0.1");
     if (url.searchParams.get("surfaceKind") === "studio") {
@@ -917,6 +972,120 @@ function offerBuilderReference(key: string, label: string, status: string, evide
     evidenceRefs: evidenceRef ? [evidenceRef] : [],
     blockedBy,
   };
+}
+
+function growthPilotReport() {
+  return {
+    schemaVersion: "ordo.growth_pilot_report.v1",
+    generatedAt: "2026-05-13T18:00:00.000Z",
+    limitations: [
+      growthLimitation(
+        "external_publishing_deferred",
+        "External publishing is deferred",
+        "No TikTok, YouTube, OAuth, or platform publishing API is called by this report.",
+        "deferred",
+      ),
+      growthLimitation(
+        "platform_analytics_missing",
+        "Platform analytics are missing",
+        "No platform reach, watch-time, or conversion metric is reported unless future durable evidence exists.",
+        "missing",
+      ),
+    ],
+    sections: [
+      growthSection("tracked_entry", "Tracked Entry And Sessions", "measured", [
+        growthMetric("visitor_sessions", "Visitor sessions", 3, "sessions", "measured", [growthRef("visitor_session", "visitor_smoke_1", "Visitor session")]),
+        growthMetric("active_visitor_sessions", "Active visitor sessions", 1, "sessions", "measured"),
+      ], [
+        growthItem("visitor_session", "visitor_smoke_1", "Visitor session", "active", "measured", "2026-05-13T17:00:00.000Z"),
+      ]),
+      growthSection("offers", "Offers And Acceptances", "measured", [
+        growthMetric("offers", "Offers", 1, "offers", "measured", [growthRef("offer", "offer_smoke_1", "Offer")]),
+        growthMetric("offer_acceptances", "Offer acceptances", 1, "acceptances", "measured", [growthRef("offer_acceptance", "acceptance_smoke_1", "Offer acceptance")]),
+        growthMetric("individual_offer_view_events", "Individual offer view events", 0, "views", "missing"),
+      ], [
+        growthItem("offer_acceptance", "acceptance_smoke_1", "Offer acceptance", "accepted", "measured", "2026-05-13T16:55:00.000Z"),
+      ], [
+        growthLimitation("offer_view_events_missing", "Individual offer views are not tracked yet", "Per-offer view events are not durable yet.", "missing"),
+      ]),
+      growthSection("hosted_trials", "Hosted Trials, Capacity, Backup, And Reset", "measured", [
+        growthMetric("trials", "Hosted trials", 1, "trials", "measured", [growthRef("trial", "trial_smoke_active", "Hosted trial")]),
+        growthMetric("active_hosted_slots", "Active hosted trial slots", 1, "slots", "measured"),
+        growthMetric("waitlist_entries", "Hosted trial waitlist entries", 1, "entries", "measured", [growthRef("hosted_trial_waitlist_entry", "waitlist_smoke_1", "Hosted trial waitlist entry")]),
+      ], [
+        growthItem("trial", "trial_smoke_active", "Hosted trial", "started", "measured", "2026-05-13T16:50:00.000Z"),
+      ]),
+      growthSection("support_handoffs", "Support Handoffs And Strategy Sessions", "measured", [
+        growthMetric("handoff_items", "Support handoff items", 1, "items", "measured", [growthRef("handoff_inbox_item", "handoff_strategy_smoke", "Support handoff")]),
+        growthMetric("strategy_session_handoffs", "Strategy session handoffs", 1, "items", "measured"),
+      ], [
+        growthItem("handoff_inbox_item", "handoff_strategy_smoke", "Support handoff", "queued", "measured", "2026-05-13T16:45:00.000Z"),
+      ]),
+      growthSection("feedback", "Feedback Requests And Review", "measured", [
+        growthMetric("feedback_requests", "Feedback requests", 1, "requests", "measured", [growthRef("feedback_request", "feedback_request_smoke", "Feedback request")]),
+        growthMetric("accepted_feedback_reviews", "Accepted feedback reviews", 1, "reviews", "measured"),
+      ], [
+        growthItem("feedback_request", "feedback_request_smoke", "Feedback request", "reviewed", "measured", "2026-05-13T16:40:00.000Z"),
+      ]),
+      growthSection("rewards", "Rewards, Ledger, Benefits, And Balances", "measured", [
+        growthMetric("reward_events", "Reward events", 1, "events", "measured", [growthRef("reward_event", "reward_event_smoke", "Reward event")]),
+        growthMetric("benefit_grants", "Benefit grants", 1, "grants", "measured", [growthRef("benefit_grant", "benefit_grant_smoke", "Benefit grant")]),
+        growthMetric("public_leaderboard_rank", "Public leaderboard rank", 0, "ranks", "deferred"),
+      ], [
+        growthItem("reward_event", "reward_event_smoke", "Reward event", "granted", "measured", "2026-05-13T16:35:00.000Z"),
+      ], [
+        growthLimitation("leaderboard_deferred", "Leaderboard is deferred", "Reward evidence is available to Growth, but public leaderboards are out of scope.", "deferred"),
+      ]),
+      growthSection("studio_promos", "Studio Promo Packages And Publication Evidence", "measured", [
+        growthMetric("promo_video_packages", "Promo video packages", 1, "packages", "measured", [growthRef("artifact", "artifact_promo_smoke", "Promo package artifact")]),
+        growthMetric("staged_manual_packages", "Staged manual promo packages", 1, "packages", "manual"),
+        growthMetric("external_publications", "External platform publications", 0, "publications", "deferred"),
+        growthMetric("platform_performance_metrics", "Platform performance metrics", 0, "metrics", "missing"),
+      ], [
+        growthItem("artifact", "artifact_promo_smoke", "Promo package artifact", "staged_manual", "measured", "2026-05-13T16:30:00.000Z"),
+      ], [
+        growthLimitation("external_publication_deferred", "External publishing is deferred", "The promo workflow stages local artifacts only.", "deferred"),
+        growthLimitation("platform_analytics_missing", "Platform analytics are missing", "The report does not claim views, watch time, or conversions.", "missing"),
+      ]),
+    ],
+  };
+}
+
+function growthSection(key: string, title: string, sourceStatus: string, metrics: ReturnType<typeof growthMetric>[], recentItems: ReturnType<typeof growthItem>[], limitations: ReturnType<typeof growthLimitation>[] = []) {
+  const evidenceRefs = [
+    ...metrics.flatMap((metric) => metric.evidenceRefs),
+    ...recentItems.flatMap((item) => item.evidenceRefs),
+  ].filter((ref, index, refs) => refs.findIndex((candidate) => candidate.uri === ref.uri) === index);
+  return { key, title, sourceStatus, metrics, recentItems, evidenceRefs, limitations };
+}
+
+function growthMetric(key: string, label: string, value: number, unit: string, sourceStatus: string, evidenceRefs: ReturnType<typeof growthRef>[] = []) {
+  return { key, label, value, unit, sourceStatus, evidenceRefs };
+}
+
+function growthItem(sourceKind: string, sourceId: string, labelPrefix: string, status: string, sourceStatus: string, occurredAt: string) {
+  return {
+    sourceKind,
+    sourceId,
+    label: `${labelPrefix} ${sourceId}`,
+    status,
+    sourceStatus,
+    occurredAt,
+    evidenceRefs: [growthRef(sourceKind, sourceId, labelPrefix)],
+  };
+}
+
+function growthRef(sourceKind: string, sourceId: string, labelPrefix: string) {
+  return {
+    sourceKind,
+    sourceId,
+    label: `${labelPrefix} ${sourceId}`,
+    uri: `ordo://${sourceKind}/${sourceId}`,
+  };
+}
+
+function growthLimitation(key: string, label: string, detail: string, sourceStatus: string) {
+  return { key, label, detail, sourceStatus };
 }
 
 function studioSurfaceWorkItems(roomKind: string | null) {

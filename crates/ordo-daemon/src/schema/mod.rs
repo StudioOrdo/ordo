@@ -94,6 +94,13 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "feedback_request_responses",
     "feedback_request_reviews",
     "feedback_reward_eligibility",
+    "reward_programs",
+    "reward_rules",
+    "reward_events",
+    "reward_ledger_entries",
+    "benefit_grants",
+    "benefit_balances",
+    "qualification_reviews",
     "referral_records",
     "business_outcomes",
     "business_outcome_attributions",
@@ -112,7 +119,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 34;
+pub const CURRENT_SCHEMA_VERSION: i64 = 35;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -211,10 +218,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 34);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 35);
     }
 
     #[test]

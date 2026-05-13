@@ -84,6 +84,7 @@ pub fn rebuild_surface_work_items(connection: &mut Connection) -> Result<usize> 
     projected += project_visitor_sessions(&transaction, &projected_at)?;
     projected += project_handoffs(&transaction, &projected_at)?;
     projected += project_feedback_requests(&transaction, &projected_at)?;
+    projected += project_rewards(&transaction, &projected_at)?;
     projected += project_jobs(&transaction, &projected_at)?;
     projected += project_artifacts(&transaction, &projected_at)?;
     projected += project_issue_reports(&transaction, &projected_at)?;
@@ -730,7 +731,7 @@ fn project_feedback_requests(transaction: &Transaction<'_>, projected_at: &str) 
                 object_id: id.clone(),
                 title: "Feedback reward eligibility".to_string(),
                 summary: format!(
-                    "Feedback reward eligibility is {state}; ledger grant remains deferred."
+                    "Feedback reward eligibility is {state}; reward ledger review is required before grant."
                 ),
                 status: state.clone(),
                 priority: feedback_reward_priority(&state),
@@ -739,7 +740,7 @@ fn project_feedback_requests(transaction: &Transaction<'_>, projected_at: &str) 
                     "requestId": request_id,
                     "responseId": response_id,
                     "reviewId": review_id,
-                    "rewardLedgerDeferred": true,
+                    "rewardQualificationRequired": state == "pending_qualification",
                 }),
                 connection_context: json!({}),
                 evidence_refs: append_source_ref(
@@ -755,6 +756,233 @@ fn project_feedback_requests(transaction: &Transaction<'_>, projected_at: &str) 
         )?;
         projected += 1;
         let _ = reason;
+    }
+    Ok(projected)
+}
+
+fn project_rewards(transaction: &Transaction<'_>, projected_at: &str) -> Result<usize> {
+    let mut projected = 0;
+    let mut events = transaction.prepare(
+        "SELECT id, program_id, rule_id, actor_id, connection_id, source_kind, source_id,
+                state, evidence_refs_json, created_at, updated_at
+         FROM reward_events",
+    )?;
+    let rows = events.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, String>(7)?,
+            row.get::<_, String>(8)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, String>(10)?,
+        ))
+    })?;
+    for row in rows {
+        let (
+            id,
+            program_id,
+            rule_id,
+            actor_id,
+            connection_id,
+            source_kind,
+            source_id,
+            state,
+            evidence_refs_json,
+            created_at,
+            updated_at,
+        ) = row?;
+        insert_item(
+            transaction,
+            projected_at,
+            SurfaceWorkItemInput {
+                surface_kind: "growth",
+                room_kind: "rewards",
+                source_kind: "reward_event",
+                source_id: id.clone(),
+                object_kind: "reward_event",
+                object_id: id.clone(),
+                title: "Reward event".to_string(),
+                summary: format!("Reward event is {state} for {source_kind}."),
+                status: state.clone(),
+                priority: reward_event_priority(&state),
+                actor_context: json!({
+                    "actorId": actor_id,
+                    "connectionId": connection_id,
+                    "programId": program_id,
+                    "ruleId": rule_id,
+                    "sourceKind": source_kind,
+                    "sourceId": source_id,
+                }),
+                connection_context: connection_id
+                    .as_deref()
+                    .map(|connection_id| json!({ "connectionId": connection_id }))
+                    .unwrap_or_else(|| json!({})),
+                evidence_refs: append_source_ref(
+                    parse_string_vec(&evidence_refs_json),
+                    Some("reward_event".to_string()),
+                    Some(id.clone()),
+                ),
+                actions: reward_growth_actions(&state),
+                visibility: "staff".to_string(),
+                created_at,
+                updated_at,
+            },
+        )?;
+        projected += 1;
+    }
+
+    let mut grants = transaction.prepare(
+        "SELECT id, event_id, actor_id, connection_id, trial_id, benefit_kind, amount,
+                unit, state, evidence_refs_json, created_at, updated_at
+         FROM benefit_grants",
+    )?;
+    let rows = grants.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, i64>(6)?,
+            row.get::<_, String>(7)?,
+            row.get::<_, String>(8)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, String>(10)?,
+            row.get::<_, String>(11)?,
+        ))
+    })?;
+    for row in rows {
+        let (
+            id,
+            event_id,
+            actor_id,
+            connection_id,
+            trial_id,
+            benefit_kind,
+            amount,
+            unit,
+            state,
+            evidence_refs_json,
+            created_at,
+            updated_at,
+        ) = row?;
+        let subject_context =
+            feedback_member_subject_context(actor_id.as_deref(), connection_id.as_deref());
+        if subject_context.is_null() {
+            continue;
+        }
+        insert_item(
+            transaction,
+            projected_at,
+            SurfaceWorkItemInput {
+                surface_kind: "member",
+                room_kind: "rewards",
+                source_kind: "benefit_grant",
+                source_id: id.clone(),
+                object_kind: "benefit_grant",
+                object_id: id.clone(),
+                title: "Reward benefit".to_string(),
+                summary: format!(
+                    "Reward benefit is {state}: {amount} {unit}(s) of {benefit_kind}."
+                ),
+                status: state.clone(),
+                priority: benefit_grant_priority(&state),
+                actor_context: subject_context,
+                connection_context: connection_id
+                    .as_deref()
+                    .map(|connection_id| json!({ "connectionId": connection_id }))
+                    .unwrap_or_else(|| json!({})),
+                evidence_refs: vec![
+                    format!("benefit_grant:{id}"),
+                    format!("reward_event:{event_id}"),
+                ],
+                actions: vec!["view_reward_status".to_string()],
+                visibility: "authenticated".to_string(),
+                created_at,
+                updated_at,
+            },
+        )?;
+        projected += 1;
+        let _ = (trial_id, evidence_refs_json);
+    }
+
+    let mut balances = transaction.prepare(
+        "SELECT id, program_id, actor_id, connection_id, benefit_kind, unit,
+                total_active, total_earned, total_reversed, cap_quantity, updated_at
+         FROM benefit_balances",
+    )?;
+    let rows = balances.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, i64>(6)?,
+            row.get::<_, i64>(7)?,
+            row.get::<_, i64>(8)?,
+            row.get::<_, i64>(9)?,
+            row.get::<_, String>(10)?,
+        ))
+    })?;
+    for row in rows {
+        let (
+            id,
+            program_id,
+            actor_id,
+            connection_id,
+            benefit_kind,
+            unit,
+            total_active,
+            total_earned,
+            total_reversed,
+            cap_quantity,
+            updated_at,
+        ) = row?;
+        let subject_context =
+            feedback_member_subject_context(actor_id.as_deref(), connection_id.as_deref());
+        if subject_context.is_null() {
+            continue;
+        }
+        insert_item(
+            transaction,
+            projected_at,
+            SurfaceWorkItemInput {
+                surface_kind: "member",
+                room_kind: "rewards",
+                source_kind: "benefit_balance",
+                source_id: id.clone(),
+                object_kind: "benefit_balance",
+                object_id: id.clone(),
+                title: "Reward balance".to_string(),
+                summary: format!(
+                    "{total_active} active {unit}(s) of {benefit_kind}; {total_earned} earned, {total_reversed} reversed, cap {cap_quantity}."
+                ),
+                status: if total_active > 0 { "active" } else { "empty" }.to_string(),
+                priority: if total_active > 0 { 55 } else { 25 },
+                actor_context: subject_context,
+                connection_context: connection_id
+                    .as_deref()
+                    .map(|connection_id| json!({ "connectionId": connection_id }))
+                    .unwrap_or_else(|| json!({})),
+                evidence_refs: vec![
+                    format!("benefit_balance:{id}"),
+                    format!("reward_program:{program_id}"),
+                ],
+                actions: vec!["view_reward_status".to_string()],
+                visibility: "authenticated".to_string(),
+                created_at: updated_at.clone(),
+                updated_at,
+            },
+        )?;
+        projected += 1;
     }
     Ok(projected)
 }
@@ -1144,7 +1372,9 @@ fn member_subject_scope_matches(query: &SurfaceWorkItemQuery, item: &SurfaceWork
     }
 
     match item.source_kind.as_str() {
-        "feedback_request" | "resource_grant" => subject_matches_query(query, &item.actor_context),
+        "feedback_request" | "resource_grant" | "benefit_grant" | "benefit_balance" => {
+            subject_matches_query(query, &item.actor_context)
+        }
         _ => true,
     }
 }
@@ -1265,6 +1495,40 @@ fn feedback_reward_priority(state: &str) -> i64 {
         "needs_follow_up" => 55,
         "not_qualified" => 15,
         _ => 35,
+    }
+}
+
+fn reward_event_priority(state: &str) -> i64 {
+    match state {
+        "granted" => 62,
+        "capped" => 72,
+        "reversed" | "expired" => 58,
+        "rejected" => 25,
+        _ => 35,
+    }
+}
+
+fn benefit_grant_priority(state: &str) -> i64 {
+    match state {
+        "active" => 65,
+        "expired" => 35,
+        "reversed" | "revoked" => 25,
+        _ => 45,
+    }
+}
+
+fn reward_growth_actions(state: &str) -> Vec<String> {
+    match state {
+        "granted" | "capped" => vec![
+            "inspect_reward_event".to_string(),
+            "review_reward_evidence".to_string(),
+            "reverse_reward".to_string(),
+        ],
+        "reversed" | "expired" | "rejected" => vec!["inspect_reward_event".to_string()],
+        _ => vec![
+            "inspect_reward_event".to_string(),
+            "review_reward_evidence".to_string(),
+        ],
     }
 }
 
@@ -1477,6 +1741,58 @@ mod tests {
         assert!(member_items
             .iter()
             .all(|item| matches!(item.visibility.as_str(), "public" | "authenticated")));
+    }
+
+    #[test]
+    fn reward_projections_split_growth_evidence_from_member_safe_benefits() {
+        let mut connection = setup_connection();
+        insert_reward_projection_fixture(&connection);
+        rebuild_surface_work_items(&mut connection).unwrap();
+
+        let growth_items = load_surface_work_items(
+            &connection,
+            SurfaceWorkItemQuery {
+                viewer: SurfaceWorkItemViewer::Staff,
+                surface_kind: Some("growth".to_string()),
+                room_kind: Some("rewards".to_string()),
+                ..SurfaceWorkItemQuery::default()
+            },
+        )
+        .unwrap()
+        .items;
+        assert!(growth_items
+            .iter()
+            .any(|item| item.source_kind == "reward_event"
+                && item.source_id == "reward_event_1"
+                && item
+                    .actions
+                    .iter()
+                    .any(|action| action == "review_reward_evidence")));
+
+        let member_items = load_surface_work_items(
+            &connection,
+            SurfaceWorkItemQuery {
+                viewer: SurfaceWorkItemViewer::Member,
+                surface_kind: Some("member".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                ..SurfaceWorkItemQuery::default()
+            },
+        )
+        .unwrap()
+        .items;
+        assert!(
+            member_items
+                .iter()
+                .any(|item| item.source_kind == "benefit_grant"
+                    && item.source_id == "benefit_grant_1")
+        );
+        assert!(member_items
+            .iter()
+            .any(|item| item.source_kind == "benefit_balance"
+                && item.source_id == "benefit_balance_1"));
+        let member_json = serde_json::to_string(&member_items).unwrap();
+        assert!(!member_json.contains("feedback_request_response_private"));
+        assert!(!member_json.contains("actor_staff"));
     }
 
     #[test]
@@ -1780,6 +2096,66 @@ mod tests {
                     'actor_member_2', 'allow', ?1, '{\"reason\":\"accepted_offer\"}'
                  )",
                 [NOW],
+            )
+            .unwrap();
+    }
+
+    fn insert_reward_projection_fixture(connection: &Connection) {
+        connection
+            .execute_batch(
+                r#"
+                INSERT INTO reward_programs (
+                    id, slug, name, status, visibility, terms_json, policy_json, created_at, updated_at
+                ) VALUES (
+                    'reward_program_1', 'pilot', 'Pilot Rewards', 'active', 'authenticated',
+                    '{}', '{}', '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z'
+                );
+                INSERT INTO reward_rules (
+                    id, program_id, trigger_kind, status, benefit_kind, benefit_quantity,
+                    benefit_unit, max_quantity_per_actor, qualification_policy_json, created_at, updated_at
+                ) VALUES (
+                    'reward_rule_1', 'reward_program_1', 'accepted_feedback', 'active',
+                    'hosted_trial_time', 3, 'day', 30, '{}',
+                    '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z'
+                );
+                INSERT INTO reward_events (
+                    id, program_id, rule_id, actor_id, connection_id, source_kind, source_id,
+                    state, idempotency_key, reason, evidence_refs_json, provenance_json,
+                    qualified_at, granted_at, created_at, updated_at
+                ) VALUES (
+                    'reward_event_1', 'reward_program_1', 'reward_rule_1', NULL, 'connection_1',
+                    'feedback_reward_eligibility', 'feedback_reward_eligibility_private',
+                    'granted', 'key_1', 'accepted feedback by actor_staff',
+                    '["feedback_request_response_private"]', '{}',
+                    '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z',
+                    '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z'
+                );
+                INSERT INTO reward_ledger_entries (
+                    id, event_id, program_id, rule_id, connection_id, entry_kind, amount,
+                    unit, benefit_grant_id, reason, evidence_refs_json, created_at
+                ) VALUES (
+                    'reward_ledger_entry_1', 'reward_event_1', 'reward_program_1',
+                    'reward_rule_1', 'connection_1', 'earn', 3, 'day', 'benefit_grant_1',
+                    'accepted feedback by actor_staff', '["feedback_request_response_private"]',
+                    '2026-05-13T10:00:00Z'
+                );
+                INSERT INTO benefit_grants (
+                    id, event_id, ledger_entry_id, connection_id, benefit_kind, amount, unit,
+                    state, starts_at, evidence_refs_json, metadata_json, created_at, updated_at
+                ) VALUES (
+                    'benefit_grant_1', 'reward_event_1', 'reward_ledger_entry_1',
+                    'connection_1', 'hosted_trial_time', 3, 'day', 'active',
+                    '2026-05-13T10:00:00Z', '["reward_event:reward_event_1"]', '{}',
+                    '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z'
+                );
+                INSERT INTO benefit_balances (
+                    id, program_id, connection_id, benefit_kind, unit, total_earned,
+                    total_active, total_reversed, cap_quantity, updated_at
+                ) VALUES (
+                    'benefit_balance_1', 'reward_program_1', 'connection_1',
+                    'hosted_trial_time', 'day', 3, 3, 0, 30, '2026-05-13T10:00:00Z'
+                );
+                "#,
             )
             .unwrap();
     }

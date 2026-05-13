@@ -530,6 +530,79 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["feedback_request_review", "feedback_reward_eligibility"],
         ),
         capability(
+            "rewards.list",
+            "List Rewards",
+            "Read reward programs, events, ledger entries, benefit grants, and balances through role-safe filters.",
+            "growth",
+            json!({
+                "type": "object",
+                "properties": {
+                    "viewer": {
+                        "type": "string",
+                        "enum": ["member", "growth", "owner", "system"]
+                    },
+                    "actorId": { "type": "string" },
+                    "connectionId": { "type": "string" },
+                    "limit": { "type": "integer", "minimum": 0, "maximum": 500 }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object", "properties": { "events": { "type": "array" }, "benefitBalances": { "type": "array" } } }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["reward_event", "reward_ledger_entry", "benefit_grant", "benefit_balance"],
+        ),
+        capability(
+            "rewards.qualify",
+            "Qualify Reward",
+            "Approve evidence-backed referral or feedback rewards and grant hosted-time benefits through Access.",
+            "growth",
+            json!({
+                "type": "object",
+                "required": ["trialId"],
+                "properties": {
+                    "trialId": { "type": "string" },
+                    "activationTrialId": { "type": "string" },
+                    "actorId": { "type": "string" },
+                    "connectionId": { "type": "string" },
+                    "evidenceRefs": { "type": "array", "items": { "type": "string" } },
+                    "reason": { "type": "string" },
+                    "idempotencyKey": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["reward_event", "reward_ledger_entry", "benefit_grant", "benefit_balance", "resource_grant"],
+        ),
+        capability(
+            "rewards.update",
+            "Update Reward Event",
+            "Record reward rejection, cap, expiration, or reversal decisions without cash payouts or public leaderboard effects.",
+            "growth",
+            json!({
+                "type": "object",
+                "required": ["state", "reason"],
+                "properties": {
+                    "state": { "type": "string", "enum": ["rejected", "expired", "capped", "reversed"] },
+                    "reason": { "type": "string" },
+                    "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object" }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["reward_event", "reward_ledger_entry", "benefit_grant", "benefit_balance", "resource_grant"],
+        ),
+        capability(
             "connections.list",
             "List Connections",
             "Read durable connection records and status state.",
@@ -1718,6 +1791,18 @@ fn side_effects_for_capability(id: &str, mcp_export_policy: &str) -> Vec<String>
             "writes_sqlite",
             "records_support_review",
             "records_reward_eligibility_without_grant",
+        ][..],
+        "rewards.qualify" => &[
+            "writes_sqlite",
+            "records_reward_event",
+            "appends_reward_ledger",
+            "grants_access_benefit",
+            "extends_hosted_trial_time",
+        ][..],
+        "rewards.update" => &[
+            "writes_sqlite",
+            "records_reward_review",
+            "may_reverse_access_benefit",
         ][..],
         "backup.create" => &["creates_job", "writes_sqlite", "writes_backup_archive"][..],
         "restore.preflight.validate" => &[

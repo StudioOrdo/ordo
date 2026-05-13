@@ -114,6 +114,11 @@ use crate::reports::{
     IssueReportsResponse, SupportPacketApprovalRequest, SupportPacketDraftRequest,
     SupportPacketListResponse, SupportPacketReceiptListResponse, SupportPacketView,
 };
+use crate::rewards::{
+    list_rewards, qualify_feedback_reward, qualify_referral_reward, transition_reward_event,
+    RewardEventTransitionRequest, RewardQualificationRequest, RewardQualificationResponse,
+    RewardQuery, RewardSummaryResponse,
+};
 use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
 use crate::surface_work_items::{
     list_surface_work_items, SurfaceWorkItemListResponse, SurfaceWorkItemQuery,
@@ -1204,6 +1209,108 @@ pub(crate) async fn feedback_request_review_handler(
             .map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
     Ok(Json(request))
+}
+
+pub(crate) async fn rewards_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<RewardQuery>,
+) -> Result<Json<RewardSummaryResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/rewards"),
+        Some("rewards.list"),
+    )?;
+    list_rewards(&state.db_path, query)
+        .map(Json)
+        .map_err(invalid_request_error)
+}
+
+pub(crate) async fn reward_referral_qualify_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(referral_id): AxumPath<String>,
+    Json(request): Json<RewardQualificationRequest>,
+) -> Result<Json<RewardQualificationResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/rewards/referrals/{referral_id}/qualify"),
+        ),
+        Some("rewards.qualify"),
+    )?;
+    let (response, event) =
+        qualify_referral_reward(&state.db_path, &referral_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
+}
+
+pub(crate) async fn reward_feedback_qualify_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(eligibility_id): AxumPath<String>,
+    Json(request): Json<RewardQualificationRequest>,
+) -> Result<Json<RewardQualificationResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/rewards/feedback/{eligibility_id}/qualify"),
+        ),
+        Some("rewards.qualify"),
+    )?;
+    let (response, event) = qualify_feedback_reward(
+        &state.db_path,
+        &eligibility_id,
+        request,
+        actor_id(&decision),
+    )
+    .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
+}
+
+pub(crate) async fn reward_event_transition_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(event_id): AxumPath<String>,
+    Json(request): Json<RewardEventTransitionRequest>,
+) -> Result<Json<RewardQualificationResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/rewards/events/{event_id}/status"),
+        ),
+        Some("rewards.update"),
+    )?;
+    let (response, event) =
+        transition_reward_event(&state.db_path, &event_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
 }
 
 pub(crate) async fn public_available_offers_handler(
@@ -3257,6 +3364,73 @@ mod tests {
                     'feedback.requests.respond',
                     'feedback.requests.review'
                  )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 5);
+    }
+
+    #[test]
+    fn reward_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Approve,
+            ResourceRef::new(
+                ResourceKind::DaemonRoute,
+                "/rewards/referrals/referral_1/qualify",
+            ),
+            Some("rewards.qualify"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            ("/rewards", PolicyAction::Inspect, "rewards.list"),
+            (
+                "/rewards/referrals/referral_1/qualify",
+                PolicyAction::Approve,
+                "rewards.qualify",
+            ),
+            (
+                "/rewards/feedback/feedback_reward_eligibility_1/qualify",
+                PolicyAction::Approve,
+                "rewards.qualify",
+            ),
+            (
+                "/rewards/events/reward_event_1/status",
+                PolicyAction::Update,
+                "rewards.update",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(
+                allowed.is_ok(),
+                "{route} should be protected but usable locally"
+            );
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('rewards.list', 'rewards.qualify', 'rewards.update')",
                 [],
                 |row| row.get(0),
             )

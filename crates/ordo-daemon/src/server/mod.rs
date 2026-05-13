@@ -154,6 +154,19 @@ pub async fn serve(
             "/feedback/requests/:request_id/review",
             post(feedback_request_review_handler),
         )
+        .route("/rewards", get(rewards_handler))
+        .route(
+            "/rewards/referrals/:referral_id/qualify",
+            post(reward_referral_qualify_handler),
+        )
+        .route(
+            "/rewards/feedback/:eligibility_id/qualify",
+            post(reward_feedback_qualify_handler),
+        )
+        .route(
+            "/rewards/events/:event_id/status",
+            put(reward_event_transition_handler),
+        )
         .route(
             "/public/available-offers",
             get(public_available_offers_handler),

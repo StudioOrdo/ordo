@@ -42,6 +42,7 @@ pub mod policy_audit;
 pub mod privacy_egress;
 pub mod public_surfaces;
 pub mod reports;
+pub mod rewards;
 pub mod route_contracts;
 pub mod scheduler;
 pub mod schema;

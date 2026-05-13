@@ -184,6 +184,18 @@ message -> replay-safe UI
 The smoke plan should include daemon-unavailable and reconnect/replay cases,
 plus manual instructions for guarded live-provider proof.
 
+Repeatable local evidence for the real daemon path lives in:
+
+```bash
+npm run smoke:chat:real
+```
+
+That command starts the Rust daemon with disposable SQLite state, starts Next
+pointed at the daemon, registers a local member session through the browser
+API, opens the member chat, sends one message through `/chat/ws`, and verifies
+the deterministic `local_fake` / `fake-chat` assistant reply without exposing
+raw credentials, prompt content, provider keys, or internal policy details.
+
 ## Validation Contract
 
 Default validation remains deterministic, local, and network-free.

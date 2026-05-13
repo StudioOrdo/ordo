@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "smoke:ui": "playwright test",
+    "smoke:chat:real": "node scripts/smoke-real-daemon-chat.mjs",
     "export": "node scripts/export-project.mjs",
     "typecheck": "next typegen && tsc --noEmit",
     "check": "npm run typecheck && npm run build"

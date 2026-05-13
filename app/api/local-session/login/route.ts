@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: localResult.error.message }, { status: 400 });
   }
 
-  const persisted = await persistWithDaemon("/local-sessions/login", body);
+  const persisted = await persistWithDaemon("/local-sessions/login", { ...body, mode: "login" });
   const session = persisted?.session ?? localResult.session;
   const cookie = persisted
     ? createCookieForDaemonSession(persisted.session)

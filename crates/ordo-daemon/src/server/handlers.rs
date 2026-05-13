@@ -57,8 +57,8 @@ use crate::diagnostics::{
 use crate::entry_points::{
     create_entry_point, create_visitor_session, list_entry_points, list_visitor_sessions,
     resolve_entry_point, update_entry_point, EntryPointListResponse, EntryPointWriteRequest,
-    PublicEntryPointView, TrackedEntryPointView, VisitorSessionCreateRequest,
-    VisitorSessionListResponse, VisitorSessionView,
+    PublicEntryPointView, PublicVisitorSessionView, TrackedEntryPointView,
+    VisitorSessionCreateRequest, VisitorSessionListResponse,
 };
 use crate::errors::{DaemonErrorCode, ErrorResponse};
 use crate::events::{
@@ -504,11 +504,11 @@ pub(crate) async fn public_entry_point_handler(
 pub(crate) async fn public_session_create_handler(
     State(state): State<AppState>,
     Json(request): Json<VisitorSessionCreateRequest>,
-) -> Result<Json<VisitorSessionView>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<PublicVisitorSessionView>, (StatusCode, Json<ErrorResponse>)> {
     let (session, event) =
         create_visitor_session(&state.db_path, request).map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
-    Ok(Json(session))
+    Ok(Json(session.into_public_view()))
 }
 
 pub(crate) async fn offers_handler(

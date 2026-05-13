@@ -1293,6 +1293,7 @@ mod tests {
             &db_path,
             VisitorSessionCreateRequest {
                 entry_point_slug: "partner-link".to_string(),
+                session_id: None,
                 user_agent: Some("Sensitive Browser".to_string()),
                 attribution: Some(json!({ "medium": "qr" })),
             },

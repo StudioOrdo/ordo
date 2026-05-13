@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use uuid::Uuid;
@@ -164,6 +164,18 @@ pub struct VisitorSessionView {
     pub ended_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicVisitorSessionView {
+    pub id: String,
+    pub entry_point_slug: String,
+    pub status: VisitorSessionStatus,
+    pub destination_surface: PublicDestinationSurface,
+    pub destination_id: Option<String>,
+    pub attribution: Value,
+    pub last_seen_at: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntryPointWriteRequest {
@@ -182,6 +194,7 @@ pub struct EntryPointWriteRequest {
 #[serde(rename_all = "camelCase")]
 pub struct VisitorSessionCreateRequest {
     pub entry_point_slug: String,
+    pub session_id: Option<String>,
     pub user_agent: Option<String>,
     pub attribution: Option<Value>,
 }
@@ -439,12 +452,68 @@ pub fn create_visitor_session(
     let record = find_entry_point_by_slug(&connection, &entry_point.slug)?
         .expect("entry point resolved before session creation");
     let transaction = connection.transaction()?;
-    let id = format!("visitor_session_{}", Uuid::new_v4());
     let now = Utc::now().to_rfc3339();
-    let attribution = merge_attribution(record.attribution.clone(), request.attribution);
-    let user_agent_hash = request
-        .user_agent
-        .and_then(|value| hash_optional_text(&value));
+    let user_agent_hash = request.user_agent.as_deref().and_then(hash_optional_text);
+    let additional_attribution = sanitize_public_attribution(request.attribution);
+
+    if let Some(session_id) = normalize_identifier(request.session_id, "Visitor session id")? {
+        let existing = find_visitor_session_by_id(&transaction, &session_id)?
+            .ok_or_else(|| anyhow::anyhow!("Visitor session was not found: {session_id}"))?;
+        if existing.status != VisitorSessionStatus::Active || existing.ended_at.is_some() {
+            bail!("Visitor session is not active.");
+        }
+        if existing.entry_point_id != record.id || existing.entry_point_slug != record.slug {
+            bail!("Visitor session does not belong to this entry point.");
+        }
+        let attribution = merge_attribution(existing.attribution, additional_attribution);
+        transaction.execute(
+            "UPDATE visitor_sessions
+             SET attribution_json = ?1,
+                 user_agent_hash = COALESCE(user_agent_hash, ?2),
+                 updated_at = ?3,
+                 last_seen_at = ?3
+             WHERE id = ?4",
+            params![attribution.to_string(), user_agent_hash, now, session_id],
+        )?;
+        append_visitor_session_event_tx(
+            &transaction,
+            &format!("visitor_session_event_{}", Uuid::new_v4()),
+            &session_id,
+            &record.id,
+            "visitor_session.resumed",
+            json!({
+                "sessionId": session_id,
+                "entryPointId": record.id,
+                "entryPointSlug": record.slug,
+                "destinationSurface": record.destination_surface.as_str(),
+                "destinationId": record.destination_id,
+            }),
+            &now,
+        )?;
+        let event = append_realtime_event_tx(
+            &transaction,
+            &system_event(
+                "visitor_session.resumed",
+                json!({
+                    "sessionId": session_id,
+                    "entryPointId": record.id,
+                    "entryPointSlug": record.slug,
+                    "destinationSurface": record.destination_surface.as_str(),
+                    "destinationId": record.destination_id,
+                }),
+            ),
+        )?;
+        transaction.commit()?;
+        let session =
+            find_visitor_session_by_id(&connection, &session_id)?.expect("visitor session updated");
+        return Ok((session.into_view(), event));
+    }
+
+    let id = format!("visitor_session_{}", Uuid::new_v4());
+    let attribution = merge_attribution(
+        sanitize_public_attribution(Some(record.attribution.clone())).unwrap_or_else(|| json!({})),
+        additional_attribution,
+    );
 
     transaction.execute(
         "INSERT INTO visitor_sessions (
@@ -762,6 +831,21 @@ impl VisitorSessionRecord {
     }
 }
 
+impl VisitorSessionView {
+    pub fn into_public_view(self) -> PublicVisitorSessionView {
+        PublicVisitorSessionView {
+            id: self.id,
+            entry_point_slug: self.entry_point_slug,
+            status: self.status,
+            destination_surface: self.destination_surface,
+            destination_id: self.destination_id,
+            attribution: sanitize_public_attribution(Some(self.attribution))
+                .unwrap_or_else(|| json!({})),
+            last_seen_at: self.last_seen_at,
+        }
+    }
+}
+
 fn public_path(slug: &str) -> String {
     format!("/public/e/{slug}")
 }
@@ -794,6 +878,83 @@ fn merge_attribution(base: Value, additional: Option<Value>) -> Value {
         }
         (base, _) => base,
     }
+}
+
+fn sanitize_public_attribution(value: Option<Value>) -> Option<Value> {
+    let Value::Object(source) = value? else {
+        return None;
+    };
+    let mut safe = Map::new();
+    for key in [
+        "campaign",
+        "medium",
+        "source",
+        "referrer",
+        "referralCode",
+        "offerSlug",
+        "utmSource",
+        "utmMedium",
+        "utmCampaign",
+        "utmTerm",
+        "utmContent",
+        "scanOccurredAt",
+        "localTime",
+        "timeZone",
+        "eventId",
+        "eventLabel",
+    ] {
+        if let Some(value) = source.get(key).and_then(public_string_value) {
+            safe.insert(key.to_string(), Value::String(value));
+        }
+    }
+    if let Some(location) = sanitize_public_location(source.get("location")) {
+        safe.insert("location".to_string(), location);
+    } else if let Some(location) = sanitize_public_location_fields(&source) {
+        safe.insert("location".to_string(), location);
+    }
+    (!safe.is_empty()).then_some(Value::Object(safe))
+}
+
+fn sanitize_public_location(value: Option<&Value>) -> Option<Value> {
+    let Some(Value::Object(source)) = value else {
+        return None;
+    };
+    sanitize_public_location_fields(source)
+}
+
+fn sanitize_public_location_fields(source: &Map<String, Value>) -> Option<Value> {
+    let mut safe = Map::new();
+    for (source_key, output_key) in [
+        ("locationLabel", "label"),
+        ("locationKind", "kind"),
+        ("locationSource", "source"),
+        ("label", "label"),
+        ("kind", "kind"),
+        ("source", "source"),
+        ("country", "country"),
+        ("region", "region"),
+        ("locality", "locality"),
+    ] {
+        if let Some(value) = source.get(source_key).and_then(public_string_value) {
+            safe.insert(output_key.to_string(), Value::String(value));
+        }
+    }
+    if let Some(Value::Bool(coarse)) = source.get("coarse") {
+        safe.insert("coarse".to_string(), Value::Bool(*coarse));
+    }
+    if let Some(precision) = source.get("precision").and_then(public_string_value) {
+        if matches!(precision.as_str(), "coarse" | "event" | "manual") {
+            safe.insert("precision".to_string(), Value::String(precision));
+        }
+    }
+    (!safe.is_empty()).then_some(Value::Object(safe))
+}
+
+fn public_string_value(value: &Value) -> Option<String> {
+    let Value::String(value) = value else {
+        return None;
+    };
+    normalize_optional_string(Some(value.clone())).filter(|value| value.len() <= 240)
 }
 
 fn hash_optional_text(value: &str) -> Option<String> {
@@ -950,6 +1111,7 @@ mod tests {
             &db_path,
             VisitorSessionCreateRequest {
                 entry_point_slug: "newsletter".to_string(),
+                session_id: None,
                 user_agent: Some("Test Browser".to_string()),
                 attribution: Some(json!({ "medium": "email" })),
             },
@@ -978,6 +1140,166 @@ mod tests {
             .unwrap();
         assert_eq!(visitor_event_count, 1);
         assert_eq!(realtime_event_count, 1);
+    }
+
+    #[test]
+    fn visitor_session_resume_reuses_session_and_records_safe_context() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        seed_public_about(&db_path);
+        create_entry_point(
+            &db_path,
+            EntryPointWriteRequest {
+                slug: "nyc-meetup".to_string(),
+                label: "NYC meetup QR".to_string(),
+                status: None,
+                source_kind: "qr".to_string(),
+                source_label: Some("NYC Founder Meetup".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: Some(json!({ "campaign": "nyc-pilot" })),
+                metadata: Some(json!({ "internalBatch": "owner-only" })),
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (started, _) = create_visitor_session(
+            &db_path,
+            VisitorSessionCreateRequest {
+                entry_point_slug: "nyc-meetup".to_string(),
+                session_id: None,
+                user_agent: Some("Test Browser".to_string()),
+                attribution: Some(json!({
+                    "medium": "qr",
+                    "rawPrompt": "do not store this",
+                    "location": {
+                        "label": "NYC Founder Meetup",
+                        "kind": "event",
+                        "latitude": 40.7128,
+                        "longitude": -74.0060,
+                        "address": "do not store this"
+                    }
+                })),
+            },
+        )
+        .unwrap();
+
+        let (resumed, event) = create_visitor_session(
+            &db_path,
+            VisitorSessionCreateRequest {
+                entry_point_slug: "nyc-meetup".to_string(),
+                session_id: Some(started.id.clone()),
+                user_agent: Some("Test Browser".to_string()),
+                attribution: Some(json!({
+                    "scanOccurredAt": "2026-05-13T11:00:00-04:00",
+                    "timeZone": "America/New_York",
+                    "location": {
+                        "label": "NYC Founder Meetup",
+                        "coarse": true,
+                        "lat": 40.7128,
+                        "lng": -74.0060
+                    },
+                    "providerSecret": "do not store this either"
+                })),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resumed.id, started.id);
+        assert_eq!(event.event_type, "visitor_session.resumed");
+        assert_eq!(resumed.attribution["campaign"], "nyc-pilot");
+        assert_eq!(resumed.attribution["medium"], "qr");
+        assert_eq!(
+            resumed.attribution["scanOccurredAt"],
+            "2026-05-13T11:00:00-04:00"
+        );
+        assert_eq!(resumed.attribution["timeZone"], "America/New_York");
+        assert_eq!(
+            resumed.attribution["location"]["label"],
+            "NYC Founder Meetup"
+        );
+        assert_eq!(resumed.attribution["location"]["coarse"], true);
+
+        let serialized = serde_json::to_string(&resumed.attribution).unwrap();
+        assert!(!serialized.contains("latitude"));
+        assert!(!serialized.contains("longitude"));
+        assert!(!serialized.contains("\"lat\""));
+        assert!(!serialized.contains("\"lng\""));
+        assert!(!serialized.contains("address"));
+        assert!(!serialized.contains("rawPrompt"));
+        assert!(!serialized.contains("providerSecret"));
+
+        let connection = Connection::open(&db_path).unwrap();
+        let session_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM visitor_sessions", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM visitor_session_events WHERE session_id = ?1",
+                [&started.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(session_count, 1);
+        assert_eq!(event_count, 2);
+    }
+
+    #[test]
+    fn visitor_session_rejects_archived_entry_points() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        seed_public_about(&db_path);
+        let (entry_point, _) = create_entry_point(
+            &db_path,
+            EntryPointWriteRequest {
+                slug: "closed-event".to_string(),
+                label: "Closed event".to_string(),
+                status: None,
+                source_kind: "qr".to_string(),
+                source_label: Some("Closed event".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        update_entry_point(
+            &db_path,
+            &entry_point.id,
+            EntryPointWriteRequest {
+                slug: "closed-event".to_string(),
+                label: "Closed event".to_string(),
+                status: Some(EntryPointStatus::Archived),
+                source_kind: "qr".to_string(),
+                source_label: Some("Closed event".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let result = create_visitor_session(
+            &db_path,
+            VisitorSessionCreateRequest {
+                entry_point_slug: "closed-event".to_string(),
+                session_id: None,
+                user_agent: None,
+                attribution: None,
+            },
+        );
+
+        assert!(result.unwrap_err().to_string().contains("not active"));
     }
 
     fn seed_public_about(db_path: &Path) {

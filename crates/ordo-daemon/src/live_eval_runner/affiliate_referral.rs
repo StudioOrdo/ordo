@@ -482,6 +482,7 @@ pub(crate) fn run_affiliate_referral_journey_step(
                 db_path,
                 VisitorSessionCreateRequest {
                     entry_point_slug: entry_point.slug.clone(),
+                    session_id: None,
                     user_agent: Some("Ordo affiliate referral eval mobile browser".to_string()),
                     attribution: Some(json!({
                         "personaId": state.persona.persona_id,
@@ -805,7 +806,9 @@ pub(crate) fn run_affiliate_referral_journey_step(
     Ok(())
 }
 
-pub(crate) fn ensure_affiliate_referral_evidence(evidence: &AffiliateReferralJourneyEvidence) -> Result<()> {
+pub(crate) fn ensure_affiliate_referral_evidence(
+    evidence: &AffiliateReferralJourneyEvidence,
+) -> Result<()> {
     ensure!(
         !evidence.affiliate_connection_id.is_empty(),
         "affiliate connection evidence missing"
@@ -863,4 +866,3 @@ pub(crate) fn persona_backed_affiliate_referral_message(persona: &EvalPersona) -
         persona.person_type
     )
 }
-

@@ -407,6 +407,7 @@ pub(crate) fn run_qr_to_trial_journey_step(
                 db_path,
                 VisitorSessionCreateRequest {
                     entry_point_slug: entry_point.slug.clone(),
+                    session_id: None,
                     user_agent: Some("Ordo live journey eval mobile browser".to_string()),
                     attribution: Some(json!({
                         "personaId": state.persona.persona_id,

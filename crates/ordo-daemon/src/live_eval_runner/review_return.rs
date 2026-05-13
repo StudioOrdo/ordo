@@ -3,8 +3,8 @@ use anyhow::{anyhow, ensure, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -446,6 +446,7 @@ pub(crate) fn run_review_return_journey_step(
                 db_path,
                 VisitorSessionCreateRequest {
                     entry_point_slug: return_entry.slug.clone(),
+                    session_id: None,
                     user_agent: Some("Ordo review return eval mobile browser".to_string()),
                     attribution: Some(json!({
                         "personaId": state.persona.persona_id,
@@ -722,4 +723,3 @@ pub(crate) fn stable_eval_content_hash(content: &str) -> String {
     hasher.update(content.as_bytes());
     format!("sha256:{:x}", hasher.finalize())
 }
-

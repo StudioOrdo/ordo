@@ -15,6 +15,16 @@ const DEFAULT_TRIAL_DAYS: i64 = 30;
 const OFFER_RECEIPT_SCHEMA_VERSION: &str = "ordo.offer_acceptance.receipt.v1";
 const HOSTED_TRIAL_RESOURCE_KIND: &str = "hosted_trial";
 const HOSTED_TRIAL_ACTION: &str = "use";
+const HOSTED_TRIAL_ACTIVE_SLOT_LIMIT: i64 = 10;
+const HOSTED_TRIAL_POLICY_STATUS_ACTIVE: &str = "active";
+const HOSTED_TRIAL_SLOT_STATUS_ACTIVE: &str = "active";
+const HOSTED_TRIAL_BACKUP_STATUS_REQUIRED: &str = "required";
+const HOSTED_TRIAL_BACKUP_STATUS_READY: &str = "ready";
+const HOSTED_TRIAL_RESET_BLOCKED_UNTIL_EXPIRATION: &str = "blocked_until_expiration";
+const HOSTED_TRIAL_RESET_BLOCKED_PENDING_BACKUP: &str = "blocked_pending_backup";
+const HOSTED_TRIAL_RESET_READY_FOR_OWNER_REVIEW: &str = "ready_for_owner_review";
+const HOSTED_TRIAL_WAITLIST_STATUS_WAITING: &str = "waiting";
+const HOSTED_TRIAL_WAITLIST_REASON_CAPACITY_FULL: &str = "capacity_full";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,12 +64,14 @@ impl TryFrom<&str> for OfferStatus {
 #[serde(rename_all = "snake_case")]
 pub enum AcceptanceStatus {
     Accepted,
+    Waitlisted,
 }
 
 impl AcceptanceStatus {
     fn as_str(self) -> &'static str {
         match self {
             Self::Accepted => "accepted",
+            Self::Waitlisted => "waitlisted",
         }
     }
 }
@@ -70,6 +82,7 @@ impl TryFrom<&str> for AcceptanceStatus {
     fn try_from(value: &str) -> Result<Self> {
         match value {
             "accepted" => Ok(Self::Accepted),
+            "waitlisted" => Ok(Self::Waitlisted),
             _ => bail!("Unsupported acceptance status: {value}"),
         }
     }
@@ -143,6 +156,79 @@ pub struct OfferAcceptanceResponse {
 #[serde(rename_all = "camelCase")]
 pub struct TrialListResponse {
     pub trials: Vec<TrialView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedTrialCapacityResponse {
+    pub policies: Vec<HostedTrialCapacityPolicyView>,
+    pub slots: Vec<HostedTrialSlotView>,
+    pub waitlist: Vec<HostedTrialWaitlistEntryView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedTrialCapacityPolicyView {
+    pub id: String,
+    pub offer_id: String,
+    pub offer_slug: String,
+    pub status: String,
+    pub active_slot_limit: i64,
+    pub active_slot_count: i64,
+    pub waitlist_count: i64,
+    pub trial_days: i64,
+    pub backup_before_wipe_required: bool,
+    pub reset_grace_days: i64,
+    pub metadata: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedTrialSlotView {
+    pub id: String,
+    pub policy_id: String,
+    pub trial_id: String,
+    pub acceptance_id: String,
+    pub offer_id: String,
+    pub offer_slug: String,
+    pub subject_kind: String,
+    pub subject_id: String,
+    pub status: String,
+    pub allocated_at: String,
+    pub expires_at: String,
+    pub released_at: Option<String>,
+    pub release_reason: Option<String>,
+    pub backup_required: bool,
+    pub backup_status: String,
+    pub backup_evidence_refs: Vec<String>,
+    pub reset_eligible_at: Option<String>,
+    pub reset_state: String,
+    pub reset_guard: Value,
+    pub owner_override: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedTrialWaitlistEntryView {
+    pub id: String,
+    pub policy_id: String,
+    pub acceptance_id: String,
+    pub offer_id: String,
+    pub offer_slug: String,
+    pub visitor_session_id: Option<String>,
+    pub subject_kind: String,
+    pub subject_id: String,
+    pub status: String,
+    pub position: i64,
+    pub reason: String,
+    pub receipt: Value,
+    pub evidence_refs: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -283,6 +369,25 @@ pub struct TrialTransitionRequest {
     pub decision_evidence: Option<Value>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedTrialResetRequest {
+    pub backup_evidence_refs: Vec<String>,
+    pub owner_decision: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedTrialResetPlanView {
+    pub trial_id: String,
+    pub slot_id: String,
+    pub backup_status: String,
+    pub backup_evidence_refs: Vec<String>,
+    pub reset_state: String,
+    pub reset_eligible_at: Option<String>,
+    pub owner_override: Value,
+}
+
 #[derive(Debug, Clone)]
 struct OfferRecord {
     id: String,
@@ -389,6 +494,68 @@ struct AccessSubject {
     local_session_id: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct HostedTrialCapacityPolicyRecord {
+    id: String,
+    offer_id: String,
+    offer_slug: String,
+    status: String,
+    active_slot_limit: i64,
+    active_slot_count: i64,
+    waitlist_count: i64,
+    trial_days: i64,
+    backup_before_wipe_required: bool,
+    reset_grace_days: i64,
+    metadata: Value,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct HostedTrialSlotRecord {
+    id: String,
+    policy_id: String,
+    trial_id: String,
+    acceptance_id: String,
+    offer_id: String,
+    offer_slug: String,
+    subject_kind: String,
+    subject_id: String,
+    status: String,
+    allocated_at: String,
+    expires_at: String,
+    released_at: Option<String>,
+    release_reason: Option<String>,
+    backup_required: bool,
+    backup_status: String,
+    backup_evidence_refs: Vec<String>,
+    reset_eligible_at: Option<String>,
+    reset_state: String,
+    reset_guard: Value,
+    owner_override: Value,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct HostedTrialWaitlistEntryRecord {
+    id: String,
+    policy_id: String,
+    acceptance_id: String,
+    offer_id: String,
+    offer_slug: String,
+    visitor_session_id: Option<String>,
+    subject_kind: String,
+    subject_id: String,
+    status: String,
+    position: i64,
+    reason: String,
+    receipt: Value,
+    evidence_refs: Vec<String>,
+    created_at: String,
+    updated_at: String,
+}
+
 pub fn list_offers(db_path: &Path) -> Result<OfferListResponse> {
     let connection = Connection::open(db_path)?;
     let mut statement = connection.prepare(
@@ -449,6 +616,60 @@ pub fn list_trials(db_path: &Path) -> Result<TrialListResponse> {
         .map(|row| row.map(TrialRecord::into_view))
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(TrialListResponse { trials })
+}
+
+pub fn list_hosted_trial_capacity(db_path: &Path) -> Result<HostedTrialCapacityResponse> {
+    let connection = Connection::open(db_path)?;
+    let now = Utc::now().to_rfc3339();
+    let mut policies_statement = connection.prepare(
+        "SELECT p.id, p.offer_id, p.offer_slug, p.status, p.active_slot_limit,
+                (SELECT COUNT(*)
+                 FROM hosted_trial_slots s
+                 WHERE s.policy_id = p.id AND s.status = 'active' AND s.expires_at > ?1),
+                (SELECT COUNT(*)
+                 FROM hosted_trial_waitlist_entries w
+                 WHERE w.policy_id = p.id AND w.status = 'waiting'),
+                p.trial_days, p.backup_before_wipe_required, p.reset_grace_days,
+                p.metadata_json, p.created_at, p.updated_at
+         FROM hosted_trial_capacity_policies p
+         ORDER BY p.updated_at DESC, p.id DESC",
+    )?;
+    let policies = policies_statement
+        .query_map([now.as_str()], hosted_trial_policy_from_row)?
+        .map(|row| row.map(HostedTrialCapacityPolicyRecord::into_view))
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut slots_statement = connection.prepare(
+        "SELECT id, policy_id, trial_id, acceptance_id, offer_id, offer_slug,
+                subject_kind, subject_id, status, allocated_at, expires_at, released_at,
+                release_reason, backup_required, backup_status, backup_evidence_json,
+                reset_eligible_at, reset_state, reset_guard_json, owner_override_json,
+                created_at, updated_at
+         FROM hosted_trial_slots
+         ORDER BY allocated_at ASC, id ASC",
+    )?;
+    let slots = slots_statement
+        .query_map([], hosted_trial_slot_from_row)?
+        .map(|row| row.map(HostedTrialSlotRecord::into_view))
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut waitlist_statement = connection.prepare(
+        "SELECT id, policy_id, acceptance_id, offer_id, offer_slug, visitor_session_id,
+                subject_kind, subject_id, status, position, reason, receipt_json,
+                evidence_refs_json, created_at, updated_at
+         FROM hosted_trial_waitlist_entries
+         ORDER BY position ASC, created_at ASC",
+    )?;
+    let waitlist = waitlist_statement
+        .query_map([], hosted_trial_waitlist_from_row)?
+        .map(|row| row.map(HostedTrialWaitlistEntryRecord::into_view))
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(HostedTrialCapacityResponse {
+        policies,
+        slots,
+        waitlist,
+    })
 }
 
 pub fn create_offer(
@@ -645,6 +866,16 @@ pub fn accept_public_offer(
         if let Some(existing) =
             find_acceptance_by_offer_and_idempotency(&connection, &offer.id, key)?
         {
+            if existing.status == AcceptanceStatus::Waitlisted {
+                let waitlist = find_waitlist_by_acceptance_id(&connection, &existing.id)?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Waitlisted offer is missing waitlist state.")
+                    })?;
+                bail!(
+                    "Hosted trial capacity is full; acceptance is already waitlisted at position {}.",
+                    waitlist.position
+                );
+            }
             let trial = find_trial_by_acceptance_id(&connection, &existing.id)?
                 .ok_or_else(|| anyhow::anyhow!("Accepted offer is missing trial state."))?;
             let access_grant_id = existing
@@ -705,6 +936,90 @@ pub fn accept_public_offer(
         visitor_session_id.as_deref(),
         &now_text,
     )?;
+    let capacity_policy = ensure_hosted_trial_capacity_policy_tx(&transaction, &offer, &now_text)?;
+    let active_slot_count =
+        active_hosted_trial_slot_count_tx(&transaction, &capacity_policy.id, &now_text)?;
+    if active_slot_count >= capacity_policy.active_slot_limit {
+        let waitlist_id = format!("hosted_trial_waitlist_{}", Uuid::new_v4());
+        let position = next_waitlist_position_tx(&transaction, &capacity_policy.id)?;
+        let receipt_json = hosted_trial_waitlist_receipt(
+            &offer,
+            &acceptance_id,
+            &waitlist_id,
+            position,
+            capacity_policy.active_slot_limit,
+        );
+        transaction.execute(
+            "INSERT INTO offer_acceptances (
+                id, offer_id, offer_slug, offer_title, visitor_session_id, entry_point_id,
+                entry_point_slug, attribution_json, acceptance_context_json, idempotency_key,
+                access_grant_id, receipt_json, status,
+                accepted_at, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11, ?12, ?13, ?13, ?13)",
+            params![
+                acceptance_id,
+                offer.id,
+                offer.slug,
+                offer.title,
+                visitor_session_id,
+                entry_point_id,
+                entry_point_slug,
+                attribution.to_string(),
+                acceptance_context.to_string(),
+                idempotency_key.as_deref(),
+                receipt_json.to_string(),
+                AcceptanceStatus::Waitlisted.as_str(),
+                now_text,
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO hosted_trial_waitlist_entries (
+                id, policy_id, acceptance_id, offer_id, offer_slug, visitor_session_id,
+                subject_kind, subject_id, status, position, reason, receipt_json,
+                evidence_refs_json, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+            params![
+                waitlist_id,
+                capacity_policy.id,
+                acceptance_id,
+                offer.id,
+                offer.slug,
+                visitor_session_id,
+                subject.subject_kind,
+                subject.subject_id,
+                HOSTED_TRIAL_WAITLIST_STATUS_WAITING,
+                position,
+                HOSTED_TRIAL_WAITLIST_REASON_CAPACITY_FULL,
+                receipt_json.to_string(),
+                json!([
+                    format!("offer:{}", offer.id),
+                    format!("offer_acceptance:{acceptance_id}"),
+                    format!("hosted_trial_waitlist:{waitlist_id}")
+                ])
+                .to_string(),
+                now_text,
+            ],
+        )?;
+        append_realtime_event_tx(
+            &transaction,
+            &system_event(
+                "offer.waitlisted",
+                json!({
+                    "acceptanceId": acceptance_id,
+                    "waitlistEntryId": waitlist_id,
+                    "offerId": offer.id,
+                    "offerSlug": offer.slug,
+                    "position": position,
+                    "reason": HOSTED_TRIAL_WAITLIST_REASON_CAPACITY_FULL,
+                }),
+            ),
+        )?;
+        transaction.commit()?;
+        bail!(
+            "Hosted trial capacity is full; the acceptance was added to the waitlist at position {position}."
+        );
+    }
+    let slot_id = format!("hosted_trial_slot_{}", Uuid::new_v4());
     let receipt = offer_acceptance_receipt(
         &offer,
         &trial_id,
@@ -712,6 +1027,7 @@ pub fn accept_public_offer(
         &trial_ends_at,
         &access_grant_id,
         &acceptance_id,
+        Some(&slot_id),
     );
     let receipt_json = serde_json::to_value(&receipt)?;
 
@@ -732,7 +1048,7 @@ pub fn accept_public_offer(
             entry_point_slug,
             attribution.to_string(),
             acceptance_context.to_string(),
-            idempotency_key,
+            idempotency_key.as_deref(),
             access_grant_id,
             receipt_json.to_string(),
             AcceptanceStatus::Accepted.as_str(),
@@ -756,11 +1072,45 @@ pub fn accept_public_offer(
             trial_ends_at,
             json!({
                 "accessGrantId": access_grant_id,
+                "hostedTrialSlotId": slot_id,
+                "capacityPolicyId": capacity_policy.id,
                 "grantKind": "accepted_offer",
                 "hostedTrial": {
                     "experimental": true,
-                    "backupBeforeWipeRequired": true
+                    "backupBeforeWipeRequired": true,
+                    "backupStatus": HOSTED_TRIAL_BACKUP_STATUS_REQUIRED,
+                    "resetState": HOSTED_TRIAL_RESET_BLOCKED_UNTIL_EXPIRATION
                 }
+            })
+            .to_string(),
+        ],
+    )?;
+    transaction.execute(
+        "INSERT INTO hosted_trial_slots (
+            id, policy_id, trial_id, acceptance_id, offer_id, offer_slug, subject_kind,
+            subject_id, status, allocated_at, expires_at, released_at, release_reason,
+            backup_required, backup_status, backup_evidence_json, reset_eligible_at,
+            reset_state, reset_guard_json, owner_override_json, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, NULL, 1, ?12, '[]', ?11, ?13, ?14, '{}', ?10, ?10)",
+        params![
+            slot_id,
+            capacity_policy.id,
+            trial_id,
+            acceptance_id,
+            offer.id,
+            offer.slug,
+            subject.subject_kind,
+            subject.subject_id,
+            HOSTED_TRIAL_SLOT_STATUS_ACTIVE,
+            now_text,
+            trial_ends_at,
+            HOSTED_TRIAL_BACKUP_STATUS_REQUIRED,
+            HOSTED_TRIAL_RESET_BLOCKED_UNTIL_EXPIRATION,
+            json!({
+                "backupBeforeWipeRequired": true,
+                "destructiveWipeAllowed": false,
+                "reason": "trial_active",
+                "requires": ["trial_expired_or_voided", "backup_export_evidence", "owner_review"]
             })
             .to_string(),
         ],
@@ -785,6 +1135,8 @@ pub fn accept_public_offer(
                 "offerSlug": offer.slug,
                 "acceptanceId": acceptance_id,
                 "trialId": trial_id,
+                "hostedTrialSlotId": slot_id,
+                "capacityPolicyId": capacity_policy.id,
                 "visitorSessionId": visitor_session_id,
                 "entryPointId": entry_point_id,
                 "entryPointSlug": entry_point_slug,
@@ -792,7 +1144,8 @@ pub fn accept_public_offer(
                 "receipt": receipt_json,
                 "experimentalHosting": true,
                 "backupBeforeWipeRequired": true,
-                "capacityPolicyDeferredTo": "#246",
+                "backupStatus": HOSTED_TRIAL_BACKUP_STATUS_REQUIRED,
+                "resetState": HOSTED_TRIAL_RESET_BLOCKED_UNTIL_EXPIRATION,
             })
             .to_string(),
         ],
@@ -806,6 +1159,8 @@ pub fn accept_public_offer(
             "trialId": trial_id,
             "acceptanceId": acceptance_id,
             "accessGrantId": access_grant_id,
+            "hostedTrialSlotId": slot_id,
+            "capacityPolicyId": capacity_policy.id,
             "offerId": offer.id,
             "offerSlug": offer.slug,
             "visitorSessionId": visitor_session_id,
@@ -832,6 +1187,8 @@ pub fn accept_public_offer(
                 "acceptanceId": acceptance_id,
                 "trialId": trial_id,
                 "accessGrantId": access_grant_id,
+                "hostedTrialSlotId": slot_id,
+                "capacityPolicyId": capacity_policy.id,
                 "offerId": offer.id,
                 "offerSlug": offer.slug,
                 "visitorSessionId": visitor_session_id,
@@ -873,25 +1230,25 @@ pub fn transition_trial(
         request.status,
         TrialStatus::Converted,
         &now,
-        existing.converted_at,
+        existing.converted_at.clone(),
     );
     let voided_at = timestamp_for_transition(
         request.status,
         TrialStatus::Voided,
         &now,
-        existing.voided_at,
+        existing.voided_at.clone(),
     );
     let expired_at = timestamp_for_transition(
         request.status,
         TrialStatus::Expired,
         &now,
-        existing.expired_at,
+        existing.expired_at.clone(),
     );
     let follow_up_needed_at = timestamp_for_transition(
         request.status,
         TrialStatus::FollowUpNeeded,
         &now,
-        existing.follow_up_needed_at,
+        existing.follow_up_needed_at.clone(),
     );
 
     transaction.execute(
@@ -914,6 +1271,13 @@ pub fn transition_trial(
             now,
             trial_id,
         ],
+    )?;
+    update_hosted_trial_slot_for_transition_tx(
+        &transaction,
+        &existing,
+        request.status,
+        &decision_evidence,
+        &now,
     )?;
     append_trial_event_tx(
         &transaction,
@@ -946,6 +1310,86 @@ pub fn transition_trial(
     transaction.commit()?;
     let trial = find_trial_by_id(&connection, trial_id)?.expect("trial just updated");
     Ok((trial.into_view(), event))
+}
+
+pub fn request_hosted_trial_reset(
+    db_path: &Path,
+    trial_id: &str,
+    request: HostedTrialResetRequest,
+) -> Result<(HostedTrialResetPlanView, RealtimeEvent)> {
+    let trial_id = require_identifier(trial_id, "Trial id")?;
+    let evidence_refs = normalize_evidence_refs(request.backup_evidence_refs)?;
+    if evidence_refs.is_empty() {
+        bail!("Hosted trial reset/wipe requires backup/export evidence.");
+    }
+    let owner_decision = request.owner_decision.unwrap_or_else(|| json!({}));
+    let mut connection = Connection::open(db_path)?;
+    let transaction = connection.transaction()?;
+    let trial = find_trial_by_id(&transaction, &trial_id)?
+        .ok_or_else(|| anyhow::anyhow!("Trial was not found: {trial_id}"))?;
+    let slot = find_hosted_trial_slot_by_trial_id(&transaction, &trial_id)?
+        .ok_or_else(|| anyhow::anyhow!("Hosted trial slot was not found for trial: {trial_id}"))?;
+    if trial.status == TrialStatus::Started || slot.status == HOSTED_TRIAL_SLOT_STATUS_ACTIVE {
+        bail!(
+            "Hosted trial reset/wipe is blocked until the trial is expired, voided, or converted."
+        );
+    }
+    let now = Utc::now().to_rfc3339();
+    transaction.execute(
+        "UPDATE hosted_trial_slots
+         SET backup_status = ?1,
+             backup_evidence_json = ?2,
+             reset_state = ?3,
+             reset_guard_json = ?4,
+             owner_override_json = ?5,
+             updated_at = ?6
+         WHERE trial_id = ?7",
+        params![
+            HOSTED_TRIAL_BACKUP_STATUS_READY,
+            serde_json::to_string(&evidence_refs)?,
+            HOSTED_TRIAL_RESET_READY_FOR_OWNER_REVIEW,
+            json!({
+                "backupBeforeWipeRequired": true,
+                "destructiveWipeAllowed": false,
+                "reason": "backup_ready_owner_review_required",
+                "requires": ["explicit_destructive_action"]
+            })
+            .to_string(),
+            owner_decision.to_string(),
+            now,
+            trial_id,
+        ],
+    )?;
+    append_trial_event_tx(
+        &transaction,
+        &trial_id,
+        &trial.acceptance_id,
+        "trial.reset.ready",
+        json!({
+            "trialId": trial_id,
+            "acceptanceId": trial.acceptance_id,
+            "slotId": slot.id,
+            "backupEvidenceRefs": evidence_refs,
+            "resetState": HOSTED_TRIAL_RESET_READY_FOR_OWNER_REVIEW,
+        }),
+        &now,
+    )?;
+    let event = append_realtime_event_tx(
+        &transaction,
+        &system_event(
+            "trial.reset.ready",
+            json!({
+                "trialId": trial_id,
+                "acceptanceId": trial.acceptance_id,
+                "slotId": slot.id,
+                "resetState": HOSTED_TRIAL_RESET_READY_FOR_OWNER_REVIEW,
+            }),
+        ),
+    )?;
+    transaction.commit()?;
+    let slot = find_hosted_trial_slot_by_trial_id(&connection, &trial_id)?
+        .expect("hosted trial slot just updated");
+    Ok((slot.into_reset_plan(), event))
 }
 
 fn explicit_public_offers(db_path: &Path) -> Result<Vec<PublicOfferRecord>> {
@@ -1101,6 +1545,147 @@ fn find_access_grant_by_id(
             access_grant_from_row,
         )
         .optional()
+}
+
+fn find_waitlist_by_acceptance_id(
+    connection: &Connection,
+    acceptance_id: &str,
+) -> rusqlite::Result<Option<HostedTrialWaitlistEntryRecord>> {
+    connection
+        .query_row(
+            "SELECT id, policy_id, acceptance_id, offer_id, offer_slug, visitor_session_id,
+                    subject_kind, subject_id, status, position, reason, receipt_json,
+                    evidence_refs_json, created_at, updated_at
+             FROM hosted_trial_waitlist_entries
+             WHERE acceptance_id = ?1",
+            [acceptance_id],
+            hosted_trial_waitlist_from_row,
+        )
+        .optional()
+}
+
+fn find_hosted_trial_slot_by_trial_id(
+    connection: &Connection,
+    trial_id: &str,
+) -> rusqlite::Result<Option<HostedTrialSlotRecord>> {
+    connection
+        .query_row(
+            "SELECT id, policy_id, trial_id, acceptance_id, offer_id, offer_slug,
+                    subject_kind, subject_id, status, allocated_at, expires_at, released_at,
+                    release_reason, backup_required, backup_status, backup_evidence_json,
+                    reset_eligible_at, reset_state, reset_guard_json, owner_override_json,
+                    created_at, updated_at
+             FROM hosted_trial_slots
+             WHERE trial_id = ?1",
+            [trial_id],
+            hosted_trial_slot_from_row,
+        )
+        .optional()
+}
+
+fn ensure_hosted_trial_capacity_policy_tx(
+    transaction: &Transaction<'_>,
+    offer: &PublicOfferRecord,
+    now: &str,
+) -> Result<HostedTrialCapacityPolicyRecord> {
+    if let Some(existing) = find_hosted_trial_capacity_policy_by_offer_id(transaction, &offer.id)? {
+        transaction.execute(
+            "UPDATE hosted_trial_capacity_policies
+             SET offer_slug = ?1,
+                 trial_days = ?2,
+                 active_slot_limit = ?3,
+                 backup_before_wipe_required = 1,
+                 updated_at = ?4
+             WHERE id = ?5",
+            params![
+                offer.slug,
+                offer.trial_days,
+                HOSTED_TRIAL_ACTIVE_SLOT_LIMIT,
+                now,
+                existing.id,
+            ],
+        )?;
+        return Ok(
+            find_hosted_trial_capacity_policy_by_offer_id(transaction, &offer.id)?
+                .expect("hosted trial capacity policy just updated"),
+        );
+    }
+
+    let id = format!("hosted_trial_capacity_policy_{}", Uuid::new_v4());
+    transaction.execute(
+        "INSERT INTO hosted_trial_capacity_policies (
+            id, offer_id, offer_slug, status, active_slot_limit, trial_days,
+            backup_before_wipe_required, reset_grace_days, metadata_json, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 0, ?7, ?8, ?8)",
+        params![
+            id,
+            offer.id,
+            offer.slug,
+            HOSTED_TRIAL_POLICY_STATUS_ACTIVE,
+            HOSTED_TRIAL_ACTIVE_SLOT_LIMIT,
+            offer.trial_days,
+            json!({
+                "source": "public_offer_acceptance",
+                "experimentalHosting": true,
+                "rewardExtensionsDeferredTo": "#248"
+            })
+            .to_string(),
+            now,
+        ],
+    )?;
+    Ok(
+        find_hosted_trial_capacity_policy_by_offer_id(transaction, &offer.id)?
+            .expect("hosted trial capacity policy just inserted"),
+    )
+}
+
+fn find_hosted_trial_capacity_policy_by_offer_id(
+    connection: &Connection,
+    offer_id: &str,
+) -> rusqlite::Result<Option<HostedTrialCapacityPolicyRecord>> {
+    let now = Utc::now().to_rfc3339();
+    connection
+        .query_row(
+            "SELECT p.id, p.offer_id, p.offer_slug, p.status, p.active_slot_limit,
+                    (SELECT COUNT(*)
+                     FROM hosted_trial_slots s
+                     WHERE s.policy_id = p.id AND s.status = 'active' AND s.expires_at > ?1),
+                    (SELECT COUNT(*)
+                     FROM hosted_trial_waitlist_entries w
+                     WHERE w.policy_id = p.id AND w.status = 'waiting'),
+                    p.trial_days, p.backup_before_wipe_required, p.reset_grace_days,
+                    p.metadata_json, p.created_at, p.updated_at
+             FROM hosted_trial_capacity_policies p
+             WHERE p.offer_id = ?2",
+            params![now, offer_id],
+            hosted_trial_policy_from_row,
+        )
+        .optional()
+}
+
+fn active_hosted_trial_slot_count_tx(
+    transaction: &Transaction<'_>,
+    policy_id: &str,
+    now: &str,
+) -> Result<i64> {
+    Ok(transaction.query_row(
+        "SELECT COUNT(*)
+         FROM hosted_trial_slots
+         WHERE policy_id = ?1 AND status = 'active' AND expires_at > ?2",
+        params![policy_id, now],
+        |row| row.get(0),
+    )?)
+}
+
+fn next_waitlist_position_tx(transaction: &Transaction<'_>, policy_id: &str) -> Result<i64> {
+    let max_position: Option<i64> = transaction.query_row(
+        "SELECT MAX(position)
+         FROM hosted_trial_waitlist_entries
+         WHERE policy_id = ?1",
+        [policy_id],
+        |row| row.get(0),
+    )?;
+    Ok(max_position.unwrap_or(0) + 1)
 }
 
 fn find_visitor_session_context(
@@ -1271,6 +1856,84 @@ fn trial_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrialRecord> {
     })
 }
 
+fn hosted_trial_policy_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<HostedTrialCapacityPolicyRecord> {
+    let metadata_json: String = row.get(10)?;
+    let backup_required: i64 = row.get(8)?;
+    Ok(HostedTrialCapacityPolicyRecord {
+        id: row.get(0)?,
+        offer_id: row.get(1)?,
+        offer_slug: row.get(2)?,
+        status: row.get(3)?,
+        active_slot_limit: row.get(4)?,
+        active_slot_count: row.get(5)?,
+        waitlist_count: row.get(6)?,
+        trial_days: row.get(7)?,
+        backup_before_wipe_required: backup_required != 0,
+        reset_grace_days: row.get(9)?,
+        metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|_| json!({})),
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
+    })
+}
+
+fn hosted_trial_slot_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<HostedTrialSlotRecord> {
+    let backup_required: i64 = row.get(13)?;
+    let backup_evidence_json: String = row.get(15)?;
+    let reset_guard_json: String = row.get(18)?;
+    let owner_override_json: String = row.get(19)?;
+    Ok(HostedTrialSlotRecord {
+        id: row.get(0)?,
+        policy_id: row.get(1)?,
+        trial_id: row.get(2)?,
+        acceptance_id: row.get(3)?,
+        offer_id: row.get(4)?,
+        offer_slug: row.get(5)?,
+        subject_kind: row.get(6)?,
+        subject_id: row.get(7)?,
+        status: row.get(8)?,
+        allocated_at: row.get(9)?,
+        expires_at: row.get(10)?,
+        released_at: row.get(11)?,
+        release_reason: row.get(12)?,
+        backup_required: backup_required != 0,
+        backup_status: row.get(14)?,
+        backup_evidence_refs: serde_json::from_str(&backup_evidence_json)
+            .unwrap_or_else(|_| Vec::new()),
+        reset_eligible_at: row.get(16)?,
+        reset_state: row.get(17)?,
+        reset_guard: serde_json::from_str(&reset_guard_json).unwrap_or_else(|_| json!({})),
+        owner_override: serde_json::from_str(&owner_override_json).unwrap_or_else(|_| json!({})),
+        created_at: row.get(20)?,
+        updated_at: row.get(21)?,
+    })
+}
+
+fn hosted_trial_waitlist_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<HostedTrialWaitlistEntryRecord> {
+    let receipt_json: String = row.get(11)?;
+    let evidence_refs_json: String = row.get(12)?;
+    Ok(HostedTrialWaitlistEntryRecord {
+        id: row.get(0)?,
+        policy_id: row.get(1)?,
+        acceptance_id: row.get(2)?,
+        offer_id: row.get(3)?,
+        offer_slug: row.get(4)?,
+        visitor_session_id: row.get(5)?,
+        subject_kind: row.get(6)?,
+        subject_id: row.get(7)?,
+        status: row.get(8)?,
+        position: row.get(9)?,
+        reason: row.get(10)?,
+        receipt: serde_json::from_str(&receipt_json).unwrap_or_else(|_| json!({})),
+        evidence_refs: serde_json::from_str(&evidence_refs_json).unwrap_or_else(|_| Vec::new()),
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
+    })
+}
+
 fn public_offer_from_surface_item(item: &PublicSurfaceItem) -> PublicOfferRecord {
     PublicOfferRecord {
         id: format!("public_surface_offer_{}", item.item_id),
@@ -1413,6 +2076,89 @@ impl TrialRecord {
     }
 }
 
+impl HostedTrialCapacityPolicyRecord {
+    fn into_view(self) -> HostedTrialCapacityPolicyView {
+        HostedTrialCapacityPolicyView {
+            id: self.id,
+            offer_id: self.offer_id,
+            offer_slug: self.offer_slug,
+            status: self.status,
+            active_slot_limit: self.active_slot_limit,
+            active_slot_count: self.active_slot_count,
+            waitlist_count: self.waitlist_count,
+            trial_days: self.trial_days,
+            backup_before_wipe_required: self.backup_before_wipe_required,
+            reset_grace_days: self.reset_grace_days,
+            metadata: self.metadata,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
+
+impl HostedTrialSlotRecord {
+    fn into_view(self) -> HostedTrialSlotView {
+        HostedTrialSlotView {
+            id: self.id,
+            policy_id: self.policy_id,
+            trial_id: self.trial_id,
+            acceptance_id: self.acceptance_id,
+            offer_id: self.offer_id,
+            offer_slug: self.offer_slug,
+            subject_kind: self.subject_kind,
+            subject_id: self.subject_id,
+            status: self.status,
+            allocated_at: self.allocated_at,
+            expires_at: self.expires_at,
+            released_at: self.released_at,
+            release_reason: self.release_reason,
+            backup_required: self.backup_required,
+            backup_status: self.backup_status,
+            backup_evidence_refs: self.backup_evidence_refs,
+            reset_eligible_at: self.reset_eligible_at,
+            reset_state: self.reset_state,
+            reset_guard: self.reset_guard,
+            owner_override: self.owner_override,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+
+    fn into_reset_plan(self) -> HostedTrialResetPlanView {
+        HostedTrialResetPlanView {
+            trial_id: self.trial_id,
+            slot_id: self.id,
+            backup_status: self.backup_status,
+            backup_evidence_refs: self.backup_evidence_refs,
+            reset_state: self.reset_state,
+            reset_eligible_at: self.reset_eligible_at,
+            owner_override: self.owner_override,
+        }
+    }
+}
+
+impl HostedTrialWaitlistEntryRecord {
+    fn into_view(self) -> HostedTrialWaitlistEntryView {
+        HostedTrialWaitlistEntryView {
+            id: self.id,
+            policy_id: self.policy_id,
+            acceptance_id: self.acceptance_id,
+            offer_id: self.offer_id,
+            offer_slug: self.offer_slug,
+            visitor_session_id: self.visitor_session_id,
+            subject_kind: self.subject_kind,
+            subject_id: self.subject_id,
+            status: self.status,
+            position: self.position,
+            reason: self.reason,
+            receipt: self.receipt,
+            evidence_refs: self.evidence_refs,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
+
 fn acceptance_idempotency_key(
     explicit_key: Option<&str>,
     local_session: Option<&LocalSessionContext>,
@@ -1495,7 +2241,18 @@ fn offer_acceptance_receipt(
     trial_ends_at: &str,
     access_grant_id: &str,
     acceptance_id: &str,
+    hosted_trial_slot_id: Option<&str>,
 ) -> OfferAcceptanceReceipt {
+    let mut evidence_refs = vec![
+        format!("offer:{}", offer.id),
+        format!("offer_acceptance:{acceptance_id}"),
+        format!("trial:{trial_id}"),
+        format!("resource_grant:{access_grant_id}"),
+    ];
+    if let Some(slot_id) = hosted_trial_slot_id {
+        evidence_refs.push(format!("hosted_trial_slot:{slot_id}"));
+    }
+
     OfferAcceptanceReceipt {
         schema_version: OFFER_RECEIPT_SCHEMA_VERSION.to_string(),
         status: "accepted".to_string(),
@@ -1513,17 +2270,112 @@ fn offer_acceptance_receipt(
                 .to_string(),
         ],
         support: "You can request support or a strategy handoff from Ordo; human attention remains policy-gated.".to_string(),
-        evidence_refs: vec![
+        evidence_refs,
+    }
+}
+
+fn hosted_trial_waitlist_receipt(
+    offer: &PublicOfferRecord,
+    acceptance_id: &str,
+    waitlist_id: &str,
+    position: i64,
+    active_slot_limit: i64,
+) -> Value {
+    json!({
+        "schemaVersion": OFFER_RECEIPT_SCHEMA_VERSION,
+        "status": "waitlisted",
+        "offerSlug": offer.slug,
+        "waitlistEntryId": waitlist_id,
+        "waitlistPosition": position,
+        "activeSlotLimit": active_slot_limit,
+        "expectations": [
+            "The hosted pilot is currently at capacity.",
+            "No hosted-trial Access has been granted yet.",
+            "Ordo recorded your request without creating an unsupported active trial.",
+            "Rewards and extensions are governed separately and do not bypass capacity."
+        ],
+        "support": "Ordo can explain your waitlist status; human attention remains policy-gated.",
+        "evidenceRefs": [
             format!("offer:{}", offer.id),
             format!("offer_acceptance:{acceptance_id}"),
-            format!("trial:{trial_id}"),
-            format!("resource_grant:{access_grant_id}"),
-        ],
-    }
+            format!("hosted_trial_waitlist:{waitlist_id}")
+        ]
+    })
 }
 
 fn receipt_from_value(value: Value) -> Result<OfferAcceptanceReceipt> {
     serde_json::from_value(value).map_err(Into::into)
+}
+
+fn update_hosted_trial_slot_for_transition_tx(
+    transaction: &Transaction<'_>,
+    trial: &TrialRecord,
+    status: TrialStatus,
+    decision_evidence: &Value,
+    now: &str,
+) -> Result<()> {
+    let Some(slot) = find_hosted_trial_slot_by_trial_id(transaction, &trial.id)? else {
+        return Ok(());
+    };
+
+    match status {
+        TrialStatus::Converted | TrialStatus::Voided | TrialStatus::Expired => {
+            let reset_state = match status {
+                TrialStatus::Converted => "converted_no_wipe",
+                TrialStatus::Voided | TrialStatus::Expired => {
+                    HOSTED_TRIAL_RESET_BLOCKED_PENDING_BACKUP
+                }
+                TrialStatus::Started | TrialStatus::FollowUpNeeded => unreachable!(),
+            };
+            transaction.execute(
+                "UPDATE hosted_trial_slots
+                 SET status = ?1,
+                     released_at = COALESCE(released_at, ?2),
+                     release_reason = COALESCE(release_reason, ?1),
+                     reset_state = ?3,
+                     reset_guard_json = ?4,
+                     owner_override_json = ?5,
+                     updated_at = ?2
+                 WHERE id = ?6",
+                params![
+                    status.as_str(),
+                    now,
+                    reset_state,
+                    json!({
+                        "backupBeforeWipeRequired": true,
+                        "destructiveWipeAllowed": false,
+                        "reason": reset_state,
+                        "requires": ["backup_export_evidence", "owner_review"]
+                    })
+                    .to_string(),
+                    decision_evidence.to_string(),
+                    slot.id,
+                ],
+            )?;
+            transaction.execute(
+                "UPDATE resource_grants
+                 SET expires_at = ?1
+                 WHERE resource_kind = ?2 AND resource_id = ?3 AND action = ?4",
+                params![
+                    now,
+                    HOSTED_TRIAL_RESOURCE_KIND,
+                    trial.id,
+                    HOSTED_TRIAL_ACTION,
+                ],
+            )?;
+        }
+        TrialStatus::FollowUpNeeded => {
+            transaction.execute(
+                "UPDATE hosted_trial_slots
+                 SET owner_override_json = ?1,
+                     updated_at = ?2
+                 WHERE id = ?3",
+                params![decision_evidence.to_string(), now, slot.id],
+            )?;
+        }
+        TrialStatus::Started => {}
+    }
+    Ok(())
 }
 
 fn timestamp_for_transition(
@@ -1588,6 +2440,26 @@ fn require_idempotency_key(value: &str) -> Result<String> {
 fn require_text(value: &str, label: &str) -> Result<String> {
     normalize_optional_string(Some(value.to_string()))
         .ok_or_else(|| anyhow::anyhow!("{label} is required."))
+}
+
+fn normalize_evidence_refs(values: Vec<String>) -> Result<Vec<String>> {
+    let mut normalized = Vec::new();
+    for value in values {
+        let value = normalize_optional_string(Some(value))
+            .ok_or_else(|| anyhow::anyhow!("Backup evidence ref cannot be empty."))?;
+        if value.len() > 240
+            || !value.chars().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, '_' | '-' | '.' | ':' | '/' | '#')
+            })
+        {
+            bail!("Backup evidence ref must be a stable evidence reference.");
+        }
+        if !normalized.contains(&value) {
+            normalized.push(value);
+        }
+    }
+    Ok(normalized)
 }
 
 fn normalize_optional_string(value: Option<String>) -> Option<String> {
@@ -2012,6 +2884,227 @@ mod tests {
         assert!(converted.converted_at.is_some());
         assert_eq!(converted.decision_evidence["reason"], "paid");
         assert_eq!(event.event_type, "trial.converted");
+    }
+
+    #[test]
+    fn hosted_trial_capacity_allocates_ten_and_waitlists_eleventh() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (offer, _) = create_offer(
+            &db_path,
+            public_offer_request("capacity-pack"),
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        for index in 0..10 {
+            let (acceptance, trial, access_grant, receipt, _) = accept_public_offer(
+                &db_path,
+                &offer.slug,
+                OfferAcceptanceCreateRequest {
+                    visitor_session_id: None,
+                    local_session_id: None,
+                    idempotency_key: Some(format!("capacity-active-{index}")),
+                    attribution: None,
+                    acceptance_context: None,
+                },
+            )
+            .unwrap();
+            assert_eq!(acceptance.status, AcceptanceStatus::Accepted);
+            assert_eq!(
+                acceptance.access_grant_id.as_deref(),
+                Some(access_grant.id.as_str())
+            );
+            assert_eq!(receipt.status, "accepted");
+            assert_eq!(trial.status, TrialStatus::Started);
+        }
+
+        let capacity = list_hosted_trial_capacity(&db_path).unwrap();
+        let policy = capacity
+            .policies
+            .iter()
+            .find(|policy| policy.offer_slug == "capacity-pack")
+            .unwrap();
+        assert_eq!(policy.active_slot_limit, 10);
+        assert_eq!(policy.active_slot_count, 10);
+        assert_eq!(policy.waitlist_count, 0);
+        assert_eq!(capacity.slots.len(), 10);
+        assert!(capacity.slots.iter().all(|slot| {
+            slot.status == "active"
+                && slot.backup_required
+                && slot.backup_status == "required"
+                && slot.reset_state == "blocked_until_expiration"
+        }));
+
+        let waitlist_request = OfferAcceptanceCreateRequest {
+            visitor_session_id: None,
+            local_session_id: None,
+            idempotency_key: Some("capacity-waitlist-11".to_string()),
+            attribution: None,
+            acceptance_context: Some(json!({ "note": "please hold a spot" })),
+        };
+        let first_waitlist = accept_public_offer(&db_path, &offer.slug, waitlist_request.clone())
+            .unwrap_err()
+            .to_string();
+        let second_waitlist = accept_public_offer(&db_path, &offer.slug, waitlist_request)
+            .unwrap_err()
+            .to_string();
+        assert!(first_waitlist.contains("capacity is full"));
+        assert!(second_waitlist.contains("already waitlisted"));
+
+        let capacity = list_hosted_trial_capacity(&db_path).unwrap();
+        let policy = capacity
+            .policies
+            .iter()
+            .find(|policy| policy.offer_slug == "capacity-pack")
+            .unwrap();
+        assert_eq!(policy.active_slot_count, 10);
+        assert_eq!(policy.waitlist_count, 1);
+        assert_eq!(capacity.waitlist.len(), 1);
+        assert_eq!(capacity.waitlist[0].position, 1);
+        assert_eq!(capacity.waitlist[0].status, "waiting");
+        assert_eq!(capacity.waitlist[0].reason, "capacity_full");
+
+        let connection = Connection::open(&db_path).unwrap();
+        let waitlisted_acceptance_id: String = connection
+            .query_row(
+                "SELECT id FROM offer_acceptances WHERE idempotency_key = 'capacity-waitlist-11'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let waitlisted_status: String = connection
+            .query_row(
+                "SELECT status FROM offer_acceptances WHERE id = ?1",
+                [waitlisted_acceptance_id.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let waitlisted_trials: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM trials WHERE acceptance_id = ?1",
+                [waitlisted_acceptance_id.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let waitlisted_grants: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM resource_grants
+                 WHERE metadata_json LIKE ?1",
+                [format!("%{}%", waitlisted_acceptance_id)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(waitlisted_status, "waitlisted");
+        assert_eq!(waitlisted_trials, 0);
+        assert_eq!(waitlisted_grants, 0);
+    }
+
+    #[test]
+    fn expired_trial_releases_capacity_and_reset_requires_backup_evidence() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (offer, _) = create_offer(
+            &db_path,
+            public_offer_request("lifecycle-pack"),
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let mut first_trial_id = String::new();
+        for index in 0..10 {
+            let (_, trial, _, _, _) = accept_public_offer(
+                &db_path,
+                &offer.slug,
+                OfferAcceptanceCreateRequest {
+                    visitor_session_id: None,
+                    local_session_id: None,
+                    idempotency_key: Some(format!("lifecycle-active-{index}")),
+                    attribution: None,
+                    acceptance_context: None,
+                },
+            )
+            .unwrap();
+            if index == 0 {
+                first_trial_id = trial.id;
+            }
+        }
+
+        let (expired, _) = transition_trial(
+            &db_path,
+            &first_trial_id,
+            TrialTransitionRequest {
+                status: TrialStatus::Expired,
+                decision_evidence: Some(json!({ "reason": "window_elapsed" })),
+            },
+        )
+        .unwrap();
+        assert_eq!(expired.status, TrialStatus::Expired);
+
+        let capacity = list_hosted_trial_capacity(&db_path).unwrap();
+        let expired_slot = capacity
+            .slots
+            .iter()
+            .find(|slot| slot.trial_id == first_trial_id)
+            .unwrap();
+        assert_eq!(expired_slot.status, "expired");
+        assert_eq!(expired_slot.backup_status, "required");
+        assert_eq!(expired_slot.reset_state, "blocked_pending_backup");
+        assert_eq!(expired_slot.release_reason.as_deref(), Some("expired"));
+
+        let blocked = request_hosted_trial_reset(
+            &db_path,
+            &first_trial_id,
+            HostedTrialResetRequest {
+                backup_evidence_refs: vec![],
+                owner_decision: Some(json!({ "actorId": LOCAL_OWNER_ACTOR_ID })),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(blocked.contains("backup/export evidence"));
+
+        let (plan, event) = request_hosted_trial_reset(
+            &db_path,
+            &first_trial_id,
+            HostedTrialResetRequest {
+                backup_evidence_refs: vec!["backup:export_1".to_string()],
+                owner_decision: Some(json!({
+                    "actorId": LOCAL_OWNER_ACTOR_ID,
+                    "reason": "operator reviewed backup before reset"
+                })),
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.backup_status, "ready");
+        assert_eq!(plan.reset_state, "ready_for_owner_review");
+        assert_eq!(plan.backup_evidence_refs, vec!["backup:export_1"]);
+        assert_eq!(event.event_type, "trial.reset.ready");
+
+        let (_, new_trial, _, _, _) = accept_public_offer(
+            &db_path,
+            &offer.slug,
+            OfferAcceptanceCreateRequest {
+                visitor_session_id: None,
+                local_session_id: None,
+                idempotency_key: Some("lifecycle-after-expiry".to_string()),
+                attribution: None,
+                acceptance_context: None,
+            },
+        )
+        .unwrap();
+        assert_ne!(new_trial.id, first_trial_id);
+
+        let capacity = list_hosted_trial_capacity(&db_path).unwrap();
+        let policy = capacity
+            .policies
+            .iter()
+            .find(|policy| policy.offer_slug == "lifecycle-pack")
+            .unwrap();
+        assert_eq!(policy.active_slot_count, 10);
+        assert_eq!(policy.waitlist_count, 0);
     }
 
     #[test]

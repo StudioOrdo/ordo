@@ -171,6 +171,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_offer_acceptance_access_receipts",
         apply: add_offer_acceptance_access_receipts,
     },
+    SchemaMigration {
+        version: 33,
+        name: "add_hosted_trial_capacity_lifecycle",
+        apply: add_hosted_trial_capacity_lifecycle,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -529,6 +534,91 @@ fn add_offer_acceptance_access_receipts(connection: &Connection) -> Result<()> {
             WHERE idempotency_key IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_offer_acceptances_access_grant
             ON offer_acceptances(access_grant_id);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_hosted_trial_capacity_lifecycle(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS hosted_trial_capacity_policies (
+            id TEXT PRIMARY KEY,
+            offer_id TEXT NOT NULL,
+            offer_slug TEXT NOT NULL,
+            status TEXT NOT NULL,
+            active_slot_limit INTEGER NOT NULL,
+            trial_days INTEGER NOT NULL,
+            backup_before_wipe_required INTEGER NOT NULL DEFAULT 1,
+            reset_grace_days INTEGER NOT NULL DEFAULT 0,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(offer_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hosted_trial_capacity_policies_slug
+            ON hosted_trial_capacity_policies(offer_slug, status);
+
+        CREATE TABLE IF NOT EXISTS hosted_trial_slots (
+            id TEXT PRIMARY KEY,
+            policy_id TEXT NOT NULL,
+            trial_id TEXT NOT NULL UNIQUE,
+            acceptance_id TEXT NOT NULL UNIQUE,
+            offer_id TEXT NOT NULL,
+            offer_slug TEXT NOT NULL,
+            subject_kind TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            allocated_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            released_at TEXT,
+            release_reason TEXT,
+            backup_required INTEGER NOT NULL DEFAULT 1,
+            backup_status TEXT NOT NULL DEFAULT 'required',
+            backup_evidence_json TEXT NOT NULL DEFAULT '[]',
+            reset_eligible_at TEXT,
+            reset_state TEXT NOT NULL DEFAULT 'blocked_until_expiration',
+            reset_guard_json TEXT NOT NULL DEFAULT '{}',
+            owner_override_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (policy_id) REFERENCES hosted_trial_capacity_policies(id) ON DELETE CASCADE,
+            FOREIGN KEY (trial_id) REFERENCES trials(id) ON DELETE CASCADE,
+            FOREIGN KEY (acceptance_id) REFERENCES offer_acceptances(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hosted_trial_slots_policy_status
+            ON hosted_trial_slots(policy_id, status, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_hosted_trial_slots_subject
+            ON hosted_trial_slots(subject_kind, subject_id, status);
+        CREATE INDEX IF NOT EXISTS idx_hosted_trial_slots_reset
+            ON hosted_trial_slots(reset_state, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hosted_trial_waitlist_entries (
+            id TEXT PRIMARY KEY,
+            policy_id TEXT NOT NULL,
+            acceptance_id TEXT NOT NULL UNIQUE,
+            offer_id TEXT NOT NULL,
+            offer_slug TEXT NOT NULL,
+            visitor_session_id TEXT,
+            subject_kind TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            receipt_json TEXT NOT NULL DEFAULT '{}',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (policy_id) REFERENCES hosted_trial_capacity_policies(id) ON DELETE CASCADE,
+            FOREIGN KEY (acceptance_id) REFERENCES offer_acceptances(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hosted_trial_waitlist_policy_status
+            ON hosted_trial_waitlist_entries(policy_id, status, position);
+        CREATE INDEX IF NOT EXISTS idx_hosted_trial_waitlist_offer
+            ON hosted_trial_waitlist_entries(offer_id, status, position);
         "#,
     )?;
     Ok(())

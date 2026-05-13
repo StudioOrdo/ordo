@@ -46,6 +46,9 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "offer_acceptances",
     "trials",
     "trial_events",
+    "hosted_trial_capacity_policies",
+    "hosted_trial_slots",
+    "hosted_trial_waitlist_entries",
     "connections",
     "connection_grants",
     "connection_events",
@@ -105,7 +108,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 32;
+pub const CURRENT_SCHEMA_VERSION: i64 = 33;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -204,10 +207,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 32);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 33);
     }
 
     #[test]
@@ -661,6 +664,51 @@ mod tests {
         ));
         assert!(table_exists(&connection, "trial_events"));
         assert!(column_exists(&connection, "trial_events", "event_type"));
+    }
+
+    #[test]
+    fn hosted_trial_capacity_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "hosted_trial_capacity_policies"));
+        assert!(column_exists(
+            &connection,
+            "hosted_trial_capacity_policies",
+            "active_slot_limit"
+        ));
+        assert!(column_exists(
+            &connection,
+            "hosted_trial_capacity_policies",
+            "backup_before_wipe_required"
+        ));
+        assert!(table_exists(&connection, "hosted_trial_slots"));
+        assert!(column_exists(
+            &connection,
+            "hosted_trial_slots",
+            "backup_status"
+        ));
+        assert!(column_exists(
+            &connection,
+            "hosted_trial_slots",
+            "reset_state"
+        ));
+        assert!(column_exists(
+            &connection,
+            "hosted_trial_slots",
+            "reset_guard_json"
+        ));
+        assert!(table_exists(&connection, "hosted_trial_waitlist_entries"));
+        assert!(column_exists(
+            &connection,
+            "hosted_trial_waitlist_entries",
+            "position"
+        ));
+        assert!(column_exists(
+            &connection,
+            "hosted_trial_waitlist_entries",
+            "receipt_json"
+        ));
     }
 
     #[test]

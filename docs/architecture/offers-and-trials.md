@@ -1,6 +1,6 @@
 # Offers And Trial Lifecycle
 
-Status: backend foundation plus Offer Builder baseline implemented
+Status: backend foundation plus Offer Builder and reward-reference baseline implemented
 
 This slice turns public interest into durable commercial state without adding UI,
 payments, affiliate payouts, analytics dashboards, external egress, mediated
@@ -48,10 +48,10 @@ adapter.
 - durable offer config;
 - safe public preview for published public offers;
 - supported references backed by current primitives: accepted-offer Access
-  grants, hosted-trial capacity/waitlist lifecycle, tracked entry points, and
-  policy-gated Support handoff CTA state;
-- explicit deferrals for reward ledger/benefit grants, product/workforce pack
-  offer bindings, external publishing, payments, and OAuth.
+  grants, hosted-trial capacity/waitlist lifecycle, tracked entry points,
+  active reward programs, and policy-gated Support handoff CTA state;
+- explicit deferrals for product/workforce pack offer bindings, external
+  publishing, payments, and OAuth.
 
 `POST /offer-builder` creates or updates the pilot offer through the same
 durable `offers` table and blocks publication when the request tries to save
@@ -60,8 +60,9 @@ secret-bearing claims as active offer behavior.
 
 The baseline can publish the 30-day OrdoStudio pilot offer only when terms are
 public-safe and disclose experimental hosting, human review, and backup/export
-before reset or wipe. Feedback/referral hosted-time rewards remain unavailable
-until the reward ledger and benefit-grant work lands.
+before reset or wipe. Feedback/referral hosted-time rewards can be referenced
+only through an active reward program backed by reward ledger and benefit-grant
+state.
 
 ## Public Offer Boundary
 
@@ -106,6 +107,5 @@ events.
 - No cookie-heavy tracking.
 - No RAG or mediated chat.
 - No external notifications or egress.
-- No reward ledger or hosted-time benefit grants until the dedicated rewards
-  slice lands.
+- No reward grant without reward ledger and benefit-grant evidence.
 - No product/workforce pack binding or arbitrary pack execution.

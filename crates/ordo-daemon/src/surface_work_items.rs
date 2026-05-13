@@ -127,8 +127,10 @@ fn surface_work_item_for_viewer(
     if matches!(
         viewer,
         SurfaceWorkItemViewer::Public | SurfaceWorkItemViewer::Member
-    ) && item.source_kind == "feedback_request"
-    {
+    ) && matches!(
+        item.source_kind.as_str(),
+        "feedback_request" | "benefit_grant" | "benefit_balance"
+    ) {
         item.actor_context = json!({});
         item.connection_context = json!({});
     }
@@ -1793,6 +1795,7 @@ mod tests {
         let member_json = serde_json::to_string(&member_items).unwrap();
         assert!(!member_json.contains("feedback_request_response_private"));
         assert!(!member_json.contains("actor_staff"));
+        assert!(!member_json.contains("connection_1"));
     }
 
     #[test]

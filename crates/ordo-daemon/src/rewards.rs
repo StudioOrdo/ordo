@@ -719,7 +719,7 @@ fn referral_qualification_context(
         rule,
         source_kind: "referral_record".to_string(),
         source_id: referral_id,
-        actor_id: request.actor_id,
+        actor_id: None,
         connection_id: Some(referrer_connection_id),
         trial: benefit_trial,
         requested_amount: amount,
@@ -1521,13 +1521,15 @@ fn current_active_total(
 ) -> Result<i64> {
     connection
         .query_row(
-            "SELECT COALESCE(total_active, 0)
-             FROM benefit_balances
-             WHERE program_id = ?1
-               AND (?2 IS NULL OR actor_id = ?2)
-               AND (?3 IS NULL OR connection_id = ?3)
-               AND benefit_kind = ?4
-               AND unit = ?5",
+            "SELECT COALESCE(SUM(g.amount), 0)
+             FROM benefit_grants g
+             JOIN reward_events e ON e.id = g.event_id
+             WHERE e.program_id = ?1
+               AND (?2 IS NULL OR g.actor_id = ?2)
+               AND (?3 IS NULL OR g.connection_id = ?3)
+               AND g.benefit_kind = ?4
+               AND g.unit = ?5
+               AND g.state = 'active'",
             params![
                 context.rule.program_id,
                 context.actor_id,
@@ -1537,8 +1539,6 @@ fn current_active_total(
             ],
             |row| row.get(0),
         )
-        .optional()
-        .map(|value| value.unwrap_or(0))
         .map_err(Into::into)
 }
 
@@ -2389,6 +2389,51 @@ mod tests {
             .unwrap();
     }
 
+    fn insert_existing_active_reward_at_cap(connection: &Connection) {
+        connection
+            .execute_batch(
+                r#"
+                INSERT INTO reward_events (
+                    id, program_id, rule_id, connection_id, source_kind, source_id, state,
+                    idempotency_key, reason, evidence_refs_json, provenance_json,
+                    qualified_at, granted_at, created_at, updated_at
+                ) VALUES (
+                    'reward_event_existing_cap', 'reward_program_ordostudio_nyc_pilot',
+                    'reward_rule_ordostudio_referral_trial_activation', 'connection_referrer',
+                    'referral_record', 'referral_existing_cap', 'granted',
+                    'existing_cap_key', 'Existing capped rewards.',
+                    '["reward_event:existing_cap"]', '{"generator":"test"}',
+                    '2026-05-13T00:00:00Z', '2026-05-13T00:00:00Z',
+                    '2026-05-13T00:00:00Z', '2026-05-13T00:00:00Z'
+                );
+                INSERT INTO reward_ledger_entries (
+                    id, event_id, program_id, rule_id, connection_id, entry_kind, amount,
+                    unit, benefit_grant_id, reason, evidence_refs_json, created_at
+                ) VALUES (
+                    'reward_ledger_entry_existing_cap', 'reward_event_existing_cap',
+                    'reward_program_ordostudio_nyc_pilot',
+                    'reward_rule_ordostudio_referral_trial_activation', 'connection_referrer',
+                    'earn', 30, 'day', 'benefit_grant_existing_cap',
+                    'Existing capped rewards.', '["reward_event:existing_cap"]',
+                    '2026-05-13T00:00:00Z'
+                );
+                INSERT INTO benefit_grants (
+                    id, event_id, ledger_entry_id, connection_id, access_grant_id, trial_id,
+                    benefit_kind, amount, unit, state, starts_at, expires_at,
+                    evidence_refs_json, metadata_json, created_at, updated_at
+                ) VALUES (
+                    'benefit_grant_existing_cap', 'reward_event_existing_cap',
+                    'reward_ledger_entry_existing_cap', 'connection_referrer',
+                    'resource_grant_benefit', 'trial_benefit', 'hosted_trial_time',
+                    30, 'day', 'active', '2026-05-13T00:00:00Z',
+                    '2026-06-12T00:00:00Z', '["reward_event:existing_cap"]',
+                    '{}', '2026-05-13T00:00:00Z', '2026-05-13T00:00:00Z'
+                );
+                "#,
+            )
+            .unwrap();
+    }
+
     #[test]
     fn qualified_referral_grants_hosted_days_through_access_and_is_idempotent() {
         let (_temp_dir, db_path) = setup_db();
@@ -2551,56 +2596,7 @@ mod tests {
         let (_temp_dir, db_path) = setup_db();
         let connection = Connection::open(&db_path).unwrap();
         assert!(reward_program_is_active(&connection, PILOT_REWARD_PROGRAM_ID).unwrap());
-        connection
-            .execute_batch(
-                r#"
-                INSERT INTO reward_events (
-                    id, program_id, rule_id, connection_id, source_kind, source_id, state,
-                    idempotency_key, reason, evidence_refs_json, provenance_json,
-                    qualified_at, granted_at, created_at, updated_at
-                ) VALUES (
-                    'reward_event_existing_cap', 'reward_program_ordostudio_nyc_pilot',
-                    'reward_rule_ordostudio_referral_trial_activation', 'connection_referrer',
-                    'referral_record', 'referral_existing_cap', 'granted',
-                    'existing_cap_key', 'Existing capped rewards.',
-                    '["reward_event:existing_cap"]', '{"generator":"test"}',
-                    '2026-05-13T00:00:00Z', '2026-05-13T00:00:00Z',
-                    '2026-05-13T00:00:00Z', '2026-05-13T00:00:00Z'
-                );
-                INSERT INTO reward_ledger_entries (
-                    id, event_id, program_id, rule_id, connection_id, entry_kind, amount,
-                    unit, benefit_grant_id, reason, evidence_refs_json, created_at
-                ) VALUES (
-                    'reward_ledger_entry_existing_cap', 'reward_event_existing_cap',
-                    'reward_program_ordostudio_nyc_pilot',
-                    'reward_rule_ordostudio_referral_trial_activation', 'connection_referrer',
-                    'earn', 30, 'day', 'benefit_grant_existing_cap',
-                    'Existing capped rewards.', '["reward_event:existing_cap"]',
-                    '2026-05-13T00:00:00Z'
-                );
-                INSERT INTO benefit_grants (
-                    id, event_id, ledger_entry_id, connection_id, access_grant_id, trial_id,
-                    benefit_kind, amount, unit, state, starts_at, expires_at,
-                    evidence_refs_json, metadata_json, created_at, updated_at
-                ) VALUES (
-                    'benefit_grant_existing_cap', 'reward_event_existing_cap',
-                    'reward_ledger_entry_existing_cap', 'connection_referrer',
-                    'resource_grant_benefit', 'trial_benefit', 'hosted_trial_time',
-                    30, 'day', 'active', '2026-05-13T00:00:00Z',
-                    '2026-06-12T00:00:00Z', '["reward_event:existing_cap"]',
-                    '{}', '2026-05-13T00:00:00Z', '2026-05-13T00:00:00Z'
-                );
-                INSERT INTO benefit_balances (
-                    id, program_id, connection_id, benefit_kind, unit, total_earned,
-                    total_active, total_reversed, cap_quantity, updated_at
-                ) VALUES (
-                    'benefit_balance_existing_cap', 'reward_program_ordostudio_nyc_pilot',
-                    'connection_referrer', 'hosted_trial_time', 'day', 30, 30, 0, 30,
-                    '2026-05-13T00:00:00Z'
-                );
-                "#,
-            )
-            .unwrap();
+        insert_existing_active_reward_at_cap(&connection);
         let trial_ends_before: String = connection
             .query_row(
                 "SELECT trial_ends_at FROM trials WHERE id = 'trial_benefit'",
@@ -2655,6 +2651,63 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ledger_amount, HOSTED_DAYS_CAP);
+    }
+
+    #[test]
+    fn referral_cap_is_connection_scoped_when_request_supplies_actor() {
+        let (_temp_dir, db_path) = setup_db();
+        let connection = Connection::open(&db_path).unwrap();
+        assert!(reward_program_is_active(&connection, PILOT_REWARD_PROGRAM_ID).unwrap());
+        insert_existing_active_reward_at_cap(&connection);
+        let trial_ends_before: String = connection
+            .query_row(
+                "SELECT trial_ends_at FROM trials WHERE id = 'trial_benefit'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(connection);
+
+        let (response, event) = qualify_referral_reward(
+            &db_path,
+            "referral_1",
+            RewardQualificationRequest {
+                trial_id: Some("trial_benefit".to_string()),
+                activation_trial_id: Some("trial_activation".to_string()),
+                actor_id: Some("actor_untrusted_request_body".to_string()),
+                connection_id: Some("connection_referrer".to_string()),
+                ..RewardQualificationRequest::default()
+            },
+            Some("actor_local_owner"),
+        )
+        .unwrap();
+
+        assert_eq!(event.event_type, "reward.capped");
+        assert_eq!(response.event.state, "capped");
+        assert!(response.event.actor_id.is_none());
+        assert!(response.ledger_entry.is_none());
+        assert!(response.benefit_grant.is_none());
+        assert_eq!(
+            response.benefit_balance.as_ref().unwrap().total_active,
+            HOSTED_DAYS_CAP
+        );
+        let connection = Connection::open(&db_path).unwrap();
+        let trial_ends_after: String = connection
+            .query_row(
+                "SELECT trial_ends_at FROM trials WHERE id = 'trial_benefit'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(trial_ends_after, trial_ends_before);
+        let leaked_actor_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM reward_events WHERE actor_id = 'actor_untrusted_request_body'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(leaked_actor_count, 0);
     }
 
     #[test]

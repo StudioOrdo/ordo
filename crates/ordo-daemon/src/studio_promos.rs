@@ -250,21 +250,33 @@ pub(crate) fn review_promo_video_package_with_connection(
 ) -> Result<PromoVideoPackageReviewResponse> {
     let (decision_status, review_state) = normalize_review_decision(&request.decision)?;
     ensure_promo_artifact(connection, artifact_id)?;
+    let deliverable_status = deliverable_status_for_review(decision_status);
+    let content_hash = record_promo_review_version(
+        connection,
+        artifact_id,
+        review_state,
+        actor_id,
+        request.reason.as_deref(),
+    )?;
     let now = Utc::now().to_rfc3339();
     connection.execute(
-        "UPDATE artifacts SET status = ?1, updated_at = ?2 WHERE id = ?3",
-        params![decision_status, now, artifact_id],
+        "UPDATE artifacts
+         SET status = ?1, content_hash = ?2, health_status = ?3, updated_at = ?4
+         WHERE id = ?5",
+        params![
+            decision_status,
+            content_hash,
+            deliverable_status,
+            now,
+            artifact_id
+        ],
     )?;
     connection.execute(
         "UPDATE artifact_deliverables
          SET status = ?1, summary = ?2, updated_at = ?3, published_at = NULL
          WHERE artifact_id = ?4",
         params![
-            if decision_status == "approved" {
-                "staged_manual_approved"
-            } else {
-                "revision_requested"
-            },
+            deliverable_status,
             if decision_status == "approved" {
                 "Owner approved the local staged promo package for manual export."
             } else {
@@ -726,6 +738,57 @@ fn build_publication_metadata(
     }
 }
 
+fn record_promo_review_version(
+    connection: &Connection,
+    artifact_id: &str,
+    review_state: &str,
+    actor_id: Option<&str>,
+    reason: Option<&str>,
+) -> Result<String> {
+    let latest = connection
+        .query_row(
+            "SELECT storage_uri, metadata_json
+             FROM artifact_versions
+             WHERE artifact_id = ?1
+             ORDER BY version DESC
+             LIMIT 1",
+            [artifact_id],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((storage_uri, metadata_json)) = latest else {
+        bail!("promo video package artifact has no durable version");
+    };
+    let mut metadata: Value = serde_json::from_str(&metadata_json)?;
+    let package_value = metadata
+        .get("package")
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("promo video package metadata is missing package"))?;
+    let mut document: PromoVideoPackageDocument = serde_json::from_value(package_value)?;
+    document.review.state = review_state.to_string();
+    let package_value = serde_json::to_value(&document)?;
+    let content_hash = content_hash(&package_value)?;
+    metadata["package"] = package_value;
+    metadata["reviewState"] = json!(review_state);
+    metadata["publicationState"] = json!("staged_manual");
+    metadata["externalPublishing"] = json!("not_configured");
+    metadata["platformAnalytics"] = json!("not_available");
+    metadata["lastReview"] = json!({
+        "state": review_state,
+        "actorId": actor_id,
+        "reasonLength": reason.unwrap_or("").trim().len(),
+        "externalPublishing": "not_performed",
+    });
+    add_artifact_version(
+        connection,
+        artifact_id,
+        &content_hash,
+        storage_uri.as_deref(),
+        metadata,
+    )?;
+    Ok(content_hash)
+}
+
 fn ensure_promo_artifact(connection: &Connection, artifact_id: &str) -> Result<()> {
     let artifact_kind: Option<String> = connection
         .query_row(
@@ -748,6 +811,14 @@ fn normalize_review_decision(decision: &str) -> Result<(&'static str, &'static s
             Ok(("revision_requested", "revision_requested"))
         }
         _ => bail!("unsupported promo review decision"),
+    }
+}
+
+fn deliverable_status_for_review(decision_status: &str) -> &'static str {
+    if decision_status == "approved" {
+        "staged_manual_approved"
+    } else {
+        "revision_requested"
     }
 }
 
@@ -979,18 +1050,43 @@ mod tests {
 
         assert_eq!(review.status, "revision_requested");
         let connection = Connection::open(&db_path).unwrap();
-        let artifact_status: String = connection
-            .query_row(
-                "SELECT status FROM artifacts WHERE id = ?1",
-                [&response.package.artifact_id],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let (artifact_status, artifact_hash, artifact_health): (String, String, String) =
+            connection
+                .query_row(
+                    "SELECT status, content_hash, health_status FROM artifacts WHERE id = ?1",
+                    [&response.package.artifact_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
         assert_eq!(artifact_status, "revision_requested");
+        assert_eq!(artifact_health, "revision_requested");
         let deliverables =
             list_deliverables_for_artifact(&connection, &response.package.artifact_id).unwrap();
         assert_eq!(deliverables[0].status, "revision_requested");
         assert!(deliverables[0].published_at.is_none());
+        let (version, version_hash, metadata): (i64, String, String) = connection
+            .query_row(
+                "SELECT version, content_hash, metadata_json
+                 FROM artifact_versions
+                 WHERE artifact_id = ?1
+                 ORDER BY version DESC
+                 LIMIT 1",
+                [&response.package.artifact_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(version, 2);
+        assert_eq!(artifact_hash, version_hash);
+        assert!(!metadata.contains("Tone needs to be calmer"));
+        let metadata: Value = serde_json::from_str(&metadata).unwrap();
+        assert_eq!(metadata["reviewState"], "revision_requested");
+        assert_eq!(metadata["publicationState"], "staged_manual");
+        assert_eq!(metadata["package"]["review"]["state"], "revision_requested");
+        assert_eq!(metadata["lastReview"]["state"], "revision_requested");
+        assert_eq!(
+            metadata["lastReview"]["externalPublishing"],
+            "not_performed"
+        );
         let reviewed_events: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM realtime_events WHERE event_type = 'studio.promo_video.reviewed'",

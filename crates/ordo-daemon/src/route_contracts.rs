@@ -484,6 +484,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "surface.work_items.list",
     ),
     protected(
+        HttpMethod::Post,
+        "/studio/promo-video-packages",
+        "/studio/promo-video-packages",
+        PolicyAction::Create,
+        "studio.promo_video.package",
+    ),
+    protected(
+        HttpMethod::Put,
+        "/studio/promo-video-packages/:artifact_id/review",
+        "/studio/promo-video-packages/artifact_1/review",
+        PolicyAction::Approve,
+        "studio.promo_video.review",
+    ),
+    protected(
         HttpMethod::Get,
         "/reports/issues",
         "/reports/issues",

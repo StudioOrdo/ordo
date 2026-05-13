@@ -200,6 +200,14 @@ pub async fn serve(
         .route("/restore/validate", post(validate_restore_handler))
         .route("/events", get(events_handler))
         .route("/surface/work-items", get(surface_work_items_handler))
+        .route(
+            "/studio/promo-video-packages",
+            post(studio_promo_video_package_create_handler),
+        )
+        .route(
+            "/studio/promo-video-packages/:artifact_id/review",
+            put(studio_promo_video_package_review_handler),
+        )
         .route("/corpus/sources", get(corpus_sources_handler))
         .route("/corpus/sources", post(corpus_source_create_handler))
         .route(

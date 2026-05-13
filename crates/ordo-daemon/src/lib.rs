@@ -49,6 +49,7 @@ pub mod schema;
 pub mod secrets;
 pub mod security;
 pub mod server;
+pub mod studio_promos;
 pub mod surface_briefs;
 pub mod surface_work_items;
 pub mod templates;

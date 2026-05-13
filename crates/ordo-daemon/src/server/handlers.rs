@@ -122,6 +122,10 @@ use crate::rewards::{
     RewardQuery, RewardSummaryResponse,
 };
 use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
+use crate::studio_promos::{
+    create_promo_video_package, review_promo_video_package, PromoVideoPackageRequest,
+    PromoVideoPackageResponse, PromoVideoPackageReviewRequest, PromoVideoPackageReviewResponse,
+};
 use crate::surface_work_items::{
     list_surface_work_items, SurfaceWorkItemListResponse, SurfaceWorkItemQuery,
 };
@@ -1607,6 +1611,72 @@ pub(crate) async fn surface_work_items_handler(
     list_surface_work_items(&state.db_path, query)
         .map(Json)
         .map_err(internal_error)
+}
+
+pub(crate) async fn studio_promo_video_package_create_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<PromoVideoPackageRequest>,
+) -> Result<Json<PromoVideoPackageResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/studio/promo-video-packages"),
+        Some("studio.promo_video.package"),
+    )?;
+    let response = create_promo_video_package(&state.db_path, request, "http", actor_id(&decision))
+        .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "studio.promo_video.package.created",
+        json!({
+            "artifactId": response.package.artifact_id,
+            "jobId": response.package.job_id,
+            "publicationState": response.package.publication_state,
+            "externalPublishing": "not_performed",
+        }),
+    );
+    Ok(Json(response))
+}
+
+pub(crate) async fn studio_promo_video_package_review_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(artifact_id): AxumPath<String>,
+    Json(request): Json<PromoVideoPackageReviewRequest>,
+) -> Result<Json<PromoVideoPackageReviewResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/studio/promo-video-packages/{artifact_id}/review"),
+        ),
+        Some("studio.promo_video.review"),
+    )?;
+    let response =
+        review_promo_video_package(&state.db_path, &artifact_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "studio.promo_video.review.route_completed",
+        json!({
+            "artifactId": response.artifact_id,
+            "status": response.status,
+            "externalPublishing": "not_performed",
+        }),
+    );
+    Ok(Json(response))
 }
 
 #[derive(Debug, Deserialize)]
@@ -3534,6 +3604,64 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn studio_promo_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/promo-video-packages"),
+            Some("studio.promo_video.package"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            (
+                "/studio/promo-video-packages",
+                PolicyAction::Create,
+                "studio.promo_video.package",
+            ),
+            (
+                "/studio/promo-video-packages/artifact_1/review",
+                PolicyAction::Approve,
+                "studio.promo_video.review",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(
+                allowed.is_ok(),
+                "{route} should be protected but usable locally"
+            );
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('studio.promo_video.package', 'studio.promo_video.review')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 3);
     }
 
     #[test]

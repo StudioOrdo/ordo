@@ -22,6 +22,7 @@ use crate::conversations::{
     ConversationMutationActor, ConversationPresenceUpdateRequest, ConversationService,
     HandoffStatus, ReactionAction,
 };
+use crate::llm_gateway::{DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, PromptSlot};
 use crate::policy::{ActorContext, ActorKind};
 
 const DEFAULT_REPLAY_LIMIT: usize = 100;
@@ -30,8 +31,8 @@ const MAX_TEXT_FRAME_BYTES: usize = 64 * 1024;
 const COMMAND_RATE_LIMIT: usize = 30;
 const COMMAND_RATE_WINDOW_SECONDS: i64 = 60;
 
-use super::types::*;
 use super::api::*;
+use super::types::*;
 
 pub(crate) fn identify(
     session: &mut ConversationGatewaySession,
@@ -117,7 +118,9 @@ pub(crate) fn replay(
     })
 }
 
-pub(crate) fn heartbeat(envelope: ConversationGatewayEnvelope) -> Result<ConversationGatewayOutput> {
+pub(crate) fn heartbeat(
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
     Ok(single_frame(ack_envelope(
         envelope.client_id.as_deref().unwrap_or("heartbeat"),
         envelope.conversation_id.as_deref(),
@@ -142,6 +145,7 @@ pub(crate) fn command(
             }
             message_submit(db_path, session, envelope)
         }
+        "llm.run.request" => llm_run_request(db_path, session, envelope),
         "message.edit" => {
             if let Some(output) = enforce_message_command_rate_limit(session, &envelope)? {
                 return Ok(output);
@@ -282,6 +286,102 @@ pub(crate) fn message_submit(
         "message.created",
         db_path,
     )
+}
+
+pub(crate) fn llm_run_request(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LlmRunPayload {
+        run_id: Option<String>,
+        assistant_participant_id: String,
+        provider_id: Option<String>,
+        model_id: Option<String>,
+        user_message: String,
+        prompt_slots: Option<Vec<PromptSlot>>,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let client_id = required_client_id(&envelope)?.to_string();
+    let payload: LlmRunPayload = serde_json::from_value(envelope.payload.clone())?;
+    let provider_id = payload
+        .provider_id
+        .unwrap_or_else(|| "local_fake".to_string());
+    let model_id = payload.model_id.unwrap_or_else(|| "fake-chat".to_string());
+    ensure!(
+        provider_id == "local_fake" && model_id == "fake-chat",
+        "Only deterministic local LLM provider mode is enabled for this gateway slice."
+    );
+    let run_id = payload
+        .run_id
+        .unwrap_or_else(|| format!("llm_run_{}", Uuid::new_v4()));
+    let prompt_slots = match payload.prompt_slots {
+        Some(slots) if !slots.is_empty() => slots,
+        _ => vec![PromptSlot::new(
+            "local_member_chat",
+            "Local Member Chat",
+            "Answer as Ordo using only the current local conversation context.",
+            vec![format!("conversation:{conversation_id}")],
+            "Deterministic local chat request from the member Ordo room.",
+            "participants",
+        )?],
+    };
+
+    let connection = Connection::open(db_path)?;
+    let gateway = LlmGateway::new(DeterministicLlmProvider::new(&provider_id, &model_id));
+    let actor = ActorContext::new(
+        ActorKind::BrowserOperator,
+        "conversation_gateway",
+        session.actor_id.clone(),
+    );
+    let result = gateway.run_completion(
+        db_path,
+        &connection,
+        &actor,
+        LlmGatewayRequest {
+            run_id: run_id.clone(),
+            conversation_id: conversation_id.clone(),
+            segment_id: envelope.segment_id.clone(),
+            assistant_participant_id: payload.assistant_participant_id,
+            client_id: Some(client_id.clone()),
+            provider_id,
+            model_id,
+            user_message: payload.user_message,
+            prompt_slots,
+        },
+    )?;
+    let final_message_id = result
+        .final_message
+        .as_ref()
+        .map(|message| message.id.clone());
+    let mut broadcast = result.frames;
+    if let Some(message_id) = final_message_id.as_deref() {
+        broadcast.push(latest_message_event(
+            db_path,
+            &conversation_id,
+            message_id,
+            "message.created",
+        )?);
+    }
+
+    Ok(ConversationGatewayOutput {
+        frames: vec![ack_envelope(
+            &client_id,
+            Some(&conversation_id),
+            "llm.run.request.ack",
+            json!({
+                "runId": run_id,
+                "finalMessageId": final_message_id,
+                "providerId": "local_fake",
+                "modelId": "fake-chat",
+            }),
+            &Utc::now().to_rfc3339(),
+        )],
+        broadcast,
+    })
 }
 
 pub(crate) fn message_edit(
@@ -1200,7 +1300,34 @@ mod tests {
             },
         )
         .unwrap();
+        let assistant = create_conversation_participant(
+            &connection,
+            &ConversationParticipantCreateRequest {
+                conversation_id: conversation.id.clone(),
+                participant_kind: "assistant".to_string(),
+                actor_id: None,
+                connection_id: None,
+                visitor_session_id: None,
+                display_name: "Ordo".to_string(),
+                role: "assistant".to_string(),
+            },
+        )
+        .unwrap();
+        drop(assistant);
         (temp_dir, db_path, conversation.id, participant.id)
+    }
+
+    fn assistant_participant_id(db_path: &Path, conversation_id: &str) -> String {
+        Connection::open(db_path)
+            .unwrap()
+            .query_row(
+                "SELECT id FROM conversation_participants
+                 WHERE conversation_id = ?1 AND role = 'assistant'
+                 LIMIT 1",
+                [conversation_id],
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     fn session(participant_id: String) -> ConversationGatewaySession {
@@ -1546,6 +1673,114 @@ mod tests {
     }
 
     #[test]
+    fn deterministic_llm_run_request_acknowledges_and_broadcasts_safe_evidence() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+        let assistant_id = assistant_participant_id(&db_path, &conversation_id);
+
+        let output = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "llm.run.request",
+                "client_llm_1",
+                &conversation_id,
+                json!({
+                    "runId": "llm_run_gateway_1",
+                    "assistantParticipantId": assistant_id,
+                    "providerId": "local_fake",
+                    "modelId": "fake-chat",
+                    "userMessage": "Please answer without exposing ada@example.com or sk-test-secret.",
+                    "promptSlots": [{
+                        "id": "conversation_brief",
+                        "label": "Conversation Brief",
+                        "content": "Client asked for a local deterministic reply.",
+                        "sourceRefs": ["conversation_event_1"],
+                        "inclusionReason": "Current conversation evidence.",
+                        "visibilityCeiling": "participants",
+                        "contentHash": "sha256:test"
+                    }]
+                }),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(output.frames[0].op, ConversationGatewayOp::Ack);
+        assert_eq!(output.frames[0].frame_type, "llm.run.request.ack");
+        assert_eq!(output.frames[0].payload["runId"], "llm_run_gateway_1");
+        assert!(output.frames[0].payload["finalMessageId"]
+            .as_str()
+            .is_some());
+
+        let broadcast_types = output
+            .broadcast
+            .iter()
+            .map(|frame| frame.frame_type.as_str())
+            .collect::<Vec<_>>();
+        assert!(broadcast_types.contains(&"llm.run.requested"));
+        assert!(broadcast_types.contains(&"llm.prompt.compiled"));
+        assert!(broadcast_types.contains(&"llm.prompt.slot.included"));
+        assert!(broadcast_types.contains(&"llm.provider.started"));
+        assert!(broadcast_types.contains(&"llm.text.delta"));
+        assert!(broadcast_types.contains(&"llm.text.completed"));
+        assert!(broadcast_types.contains(&"llm.usage.recorded"));
+        assert!(broadcast_types.contains(&"llm.run.completed"));
+        assert!(broadcast_types.contains(&"message.created"));
+
+        let serialized = output
+            .frames
+            .iter()
+            .chain(output.broadcast.iter())
+            .map(|frame| serde_json::to_string(&frame.payload).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!serialized.contains("ada@example.com"));
+        assert!(!serialized.contains("sk-test-secret"));
+        assert!(!serialized.contains("Client asked for a local deterministic reply."));
+
+        let connection = Connection::open(&db_path).unwrap();
+        let assistant_messages: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages
+                 WHERE conversation_id = ?1 AND message_kind = 'assistant' AND body_markdown = 'Drafting answer'",
+                [&conversation_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(assistant_messages, 1);
+    }
+
+    #[test]
+    fn llm_run_request_rejects_live_provider_mode_in_gateway_slice() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+        let assistant_id = assistant_participant_id(&db_path, &conversation_id);
+
+        let rejected = handle_gateway_text_frame(
+            &db_path,
+            &mut session,
+            &serde_json::to_string(&command(
+                "llm.run.request",
+                "client_llm_live",
+                &conversation_id,
+                json!({
+                    "assistantParticipantId": assistant_id,
+                    "providerId": "openai",
+                    "modelId": "gpt-test",
+                    "userMessage": "Please call a live provider."
+                }),
+            ))
+            .unwrap(),
+        );
+        assert_eq!(rejected.frames[0].op, ConversationGatewayOp::Error);
+        assert_eq!(rejected.frames[0].payload["code"], "command_failed");
+        assert!(rejected.frames[0].payload["message"]
+            .as_str()
+            .unwrap()
+            .contains("deterministic local LLM provider"));
+    }
+
+    #[test]
     fn unsupported_command_returns_structured_rejection_and_typing_is_ephemeral() {
         let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
         let mut session = session(participant_id);
@@ -1554,8 +1789,8 @@ mod tests {
             &db_path,
             &mut session,
             command(
-                "llm.run.request",
-                "client_llm_1",
+                "unknown.command",
+                "client_unknown_1",
                 &conversation_id,
                 json!({}),
             ),
@@ -1938,4 +2173,3 @@ mod tests {
         assert!(!durable_types.contains(&"presence.changed"));
     }
 }
-

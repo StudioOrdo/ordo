@@ -724,11 +724,84 @@ pub fn create_handoff_inbox_item(
     let next_action_hint = normalize_optional_string(request.next_action_hint);
     let evidence_refs = normalize_evidence_refs(request.evidence_refs)?;
     let visibility = normalize_handoff_visibility(request.visibility)?;
+    let request_payload = request.request.unwrap_or_else(|| json!({}));
+    let evidence_payload = request.evidence.unwrap_or_else(|| json!({}));
     let approval_requirement = request
         .approval_requirement
         .unwrap_or(ApprovalRequirement::OwnerApprovalRequired);
     let mut connection = Connection::open(db_path)?;
     let transaction = connection.transaction()?;
+    if let Some(existing) = find_open_duplicate_handoff_item(
+        &transaction,
+        &source_kind,
+        source_id.as_deref(),
+        &destination_kind,
+        destination_id.as_deref(),
+    )? {
+        let now = Utc::now().to_rfc3339();
+        let merged_evidence_refs =
+            merge_unique_evidence_refs(existing.evidence_refs.clone(), evidence_refs.clone());
+        let merged_evidence = merge_grouped_handoff_evidence(
+            existing.evidence,
+            request_payload,
+            evidence_payload,
+            &reason,
+            &requested_action,
+            &urgency,
+            &evidence_refs,
+        );
+        let merged_urgency = max_urgency(&existing.urgency, &urgency);
+        transaction.execute(
+            "UPDATE handoff_inbox_items
+             SET urgency = ?1, evidence_json = ?2, evidence_refs_json = ?3, updated_at = ?4
+             WHERE id = ?5",
+            params![
+                merged_urgency,
+                merged_evidence.to_string(),
+                serde_json::to_string(&merged_evidence_refs)?,
+                now,
+                existing.id,
+            ],
+        )?;
+        append_handoff_event_tx(
+            &transaction,
+            &existing.id,
+            "handoff.inbox.grouped",
+            json!({
+                "handoffItemId": existing.id,
+                "sourceKind": source_kind,
+                "sourceId": source_id,
+                "destinationKind": destination_kind,
+                "destinationId": destination_id,
+                "urgency": merged_urgency,
+                "evidenceRefs": merged_evidence_refs,
+                "updatedByActorId": actor_id,
+                "externalDelivery": false,
+            }),
+            &now,
+        )?;
+        let event = append_realtime_event_tx(
+            &transaction,
+            &system_event(
+                "handoff.inbox.grouped",
+                json!({
+                    "handoffItemId": existing.id,
+                    "sourceKind": source_kind,
+                    "sourceId": source_id,
+                    "destinationKind": destination_kind,
+                    "destinationId": destination_id,
+                    "urgency": merged_urgency,
+                    "evidenceRefs": merged_evidence_refs,
+                    "updatedByActorId": actor_id,
+                    "externalDelivery": false,
+                }),
+            ),
+        )?;
+        transaction.commit()?;
+        let item =
+            find_handoff_item_by_id(&connection, &existing.id)?.expect("handoff item just updated");
+        return Ok((item.into_view(), event));
+    }
     let id = format!("handoff_item_{}", Uuid::new_v4());
     let now = Utc::now().to_rfc3339();
     transaction.execute(
@@ -746,8 +819,8 @@ pub fn create_handoff_inbox_item(
             source_id,
             destination_kind,
             destination_id,
-            request.request.unwrap_or_else(|| json!({})).to_string(),
-            request.evidence.unwrap_or_else(|| json!({})).to_string(),
+            request_payload.to_string(),
+            evidence_payload.to_string(),
             approval_requirement.as_str(),
             actor_id,
             now,
@@ -883,12 +956,17 @@ pub fn update_handoff_inbox_item(
         .map(|value| normalize_urgency(Some(value)))
         .transpose()?
         .unwrap_or(existing.urgency);
+    let requested_assignee_actor_id =
+        normalize_identifier_option(request.assignee_actor_id, "Assignee actor id")?;
+    let existing_assignee_actor_id = existing.assignee_actor_id.clone();
     let assignee_actor_id = if request.clear_assignee.unwrap_or(false) {
         None
     } else {
-        normalize_identifier_option(request.assignee_actor_id, "Assignee actor id")?
-            .or(existing.assignee_actor_id)
+        requested_assignee_actor_id
+            .clone()
+            .or(existing_assignee_actor_id.clone())
     };
+    let assignee_changed = assignee_actor_id != existing_assignee_actor_id;
     let due_at = if request.clear_due_at.unwrap_or(false) {
         None
     } else {
@@ -910,7 +988,8 @@ pub fn update_handoff_inbox_item(
         .transpose()?
         .unwrap_or(existing.visibility);
     let delivery_state = request.delivery_state.unwrap_or_else(|| {
-        if assignee_actor_id.is_some()
+        if requested_assignee_actor_id.is_some()
+            && assignee_changed
             && matches!(
                 existing.delivery_state,
                 DeliveryState::PendingOwnerApproval | DeliveryState::Queued
@@ -948,7 +1027,7 @@ pub fn update_handoff_inbox_item(
         ],
     )?;
     let event_type =
-        handoff_update_event_type(existing.delivery_state, delivery_state, &assignee_actor_id);
+        handoff_update_event_type(existing.delivery_state, delivery_state, assignee_changed);
     append_handoff_event_tx(
         &transaction,
         item_id,
@@ -1084,6 +1163,34 @@ fn find_handoff_item_by_id(
                     evidence_refs_json, visibility
              FROM handoff_inbox_items WHERE id = ?1",
             [item_id],
+            handoff_item_from_row,
+        )
+        .optional()
+}
+
+fn find_open_duplicate_handoff_item(
+    connection: &Connection,
+    source_kind: &str,
+    source_id: Option<&str>,
+    destination_kind: &str,
+    destination_id: Option<&str>,
+) -> rusqlite::Result<Option<HandoffInboxItemRecord>> {
+    connection
+        .query_row(
+            "SELECT id, source_kind, source_id, destination_kind, destination_id, request_json,
+                    evidence_json, approval_requirement, delivery_state, owner_decision,
+                    decision_reason, created_by_actor_id, created_at, updated_at, resolved_at,
+                    reason, requested_action, urgency, assignee_actor_id, due_at, next_action_hint,
+                    evidence_refs_json, visibility
+             FROM handoff_inbox_items
+             WHERE source_kind = ?1
+               AND ((source_id IS NULL AND ?2 IS NULL) OR source_id = ?2)
+               AND destination_kind = ?3
+               AND ((destination_id IS NULL AND ?4 IS NULL) OR destination_id = ?4)
+               AND delivery_state NOT IN ('declined', 'approved_local_only')
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 1",
+            params![source_kind, source_id, destination_kind, destination_id],
             handoff_item_from_row,
         )
         .optional()
@@ -1386,6 +1493,58 @@ fn normalize_evidence_refs(value: Option<Vec<String>>) -> Result<Vec<String>> {
         .collect()
 }
 
+fn merge_unique_evidence_refs(mut existing: Vec<String>, incoming: Vec<String>) -> Vec<String> {
+    for evidence_ref in incoming {
+        if !existing
+            .iter()
+            .any(|existing_ref| existing_ref == &evidence_ref)
+        {
+            existing.push(evidence_ref);
+        }
+    }
+    existing
+}
+
+fn merge_grouped_handoff_evidence(
+    existing: Value,
+    request: Value,
+    evidence: Value,
+    reason: &str,
+    requested_action: &str,
+    urgency: &str,
+    evidence_refs: &[String],
+) -> Value {
+    json!({
+        "existing": existing,
+        "groupedRequest": {
+            "reason": reason,
+            "requestedAction": requested_action,
+            "urgency": urgency,
+            "request": request,
+            "evidence": evidence,
+            "evidenceRefs": evidence_refs,
+        }
+    })
+}
+
+fn max_urgency(existing: &str, incoming: &str) -> String {
+    if urgency_rank(incoming) > urgency_rank(existing) {
+        incoming.to_string()
+    } else {
+        existing.to_string()
+    }
+}
+
+fn urgency_rank(value: &str) -> u8 {
+    match value {
+        "low" => 0,
+        "normal" => 1,
+        "high" => 2,
+        "urgent" => 3,
+        _ => 1,
+    }
+}
+
 fn ensure_handoff_mutable(delivery_state: DeliveryState) -> Result<()> {
     if delivery_state.is_terminal() {
         bail!(
@@ -1411,12 +1570,12 @@ fn ensure_update_delivery_state(delivery_state: DeliveryState) -> Result<()> {
 fn handoff_update_event_type(
     previous_state: DeliveryState,
     delivery_state: DeliveryState,
-    assignee_actor_id: &Option<String>,
+    assignee_changed: bool,
 ) -> &'static str {
     if delivery_state == DeliveryState::ContinueScreening {
         "handoff.inbox.returned_to_ordo"
     } else if delivery_state == DeliveryState::Assigned
-        || (assignee_actor_id.is_some() && previous_state != DeliveryState::Assigned)
+        && (previous_state != DeliveryState::Assigned || assignee_changed)
     {
         "handoff.inbox.assigned"
     } else {
@@ -1774,6 +1933,130 @@ mod tests {
             Some("Ask one more qualifying question")
         );
         assert_eq!(returned_event.event_type, "handoff.inbox.returned_to_ordo");
+    }
+
+    #[test]
+    fn duplicate_support_queue_requests_group_evidence_without_second_row() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (first, _) = create_handoff_inbox_item(
+            &db_path,
+            HandoffInboxCreateRequest {
+                source_kind: "conversation".to_string(),
+                source_id: Some("conversation_1".to_string()),
+                destination_kind: "support".to_string(),
+                destination_id: Some("support_queue".to_string()),
+                reason: Some("Trial user asked for strategy help".to_string()),
+                requested_action: Some("Schedule Keith review".to_string()),
+                urgency: Some("normal".to_string()),
+                assignee_actor_id: None,
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: Some(vec!["conversation:conversation_1".to_string()]),
+                visibility: Some("staff".to_string()),
+                request: Some(json!({ "summary": "first request" })),
+                evidence: Some(json!({ "messageId": "message_1" })),
+                approval_requirement: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (second, event) = create_handoff_inbox_item(
+            &db_path,
+            HandoffInboxCreateRequest {
+                source_kind: "conversation".to_string(),
+                source_id: Some("conversation_1".to_string()),
+                destination_kind: "support".to_string(),
+                destination_id: Some("support_queue".to_string()),
+                reason: Some("Same trial user added more detail".to_string()),
+                requested_action: Some("Review second message".to_string()),
+                urgency: Some("urgent".to_string()),
+                assignee_actor_id: None,
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: Some(vec![
+                    "conversation:conversation_1".to_string(),
+                    "message:message_2".to_string(),
+                ]),
+                visibility: Some("staff".to_string()),
+                request: Some(json!({ "summary": "second request" })),
+                evidence: Some(json!({ "messageId": "message_2" })),
+                approval_requirement: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        assert_eq!(second.id, first.id);
+        assert_eq!(event.event_type, "handoff.inbox.grouped");
+        assert_eq!(second.urgency, "urgent");
+        assert_eq!(
+            second.evidence_refs,
+            vec![
+                "conversation:conversation_1".to_string(),
+                "message:message_2".to_string()
+            ]
+        );
+        assert!(second.evidence["groupedRequest"]["request"]["summary"] == "second request");
+        assert!(second.evidence["groupedRequest"]["evidence"]["messageId"] == "message_2");
+
+        let items = list_handoff_inbox_with_query(
+            &db_path,
+            HandoffInboxListQuery {
+                source_kind: Some("conversation".to_string()),
+                source_id: Some("conversation_1".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(items.items.len(), 1);
+        assert_eq!(items.items[0].id, first.id);
+    }
+
+    #[test]
+    fn existing_assignee_does_not_assign_on_unrelated_metadata_update() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (item, _) = create_handoff_inbox_item(
+            &db_path,
+            HandoffInboxCreateRequest {
+                source_kind: "conversation".to_string(),
+                source_id: Some("conversation_1".to_string()),
+                destination_kind: "support".to_string(),
+                destination_id: None,
+                reason: Some("needs review".to_string()),
+                requested_action: None,
+                urgency: None,
+                assignee_actor_id: Some("actor_keith".to_string()),
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: None,
+                visibility: None,
+                request: None,
+                evidence: None,
+                approval_requirement: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (updated, event) = update_handoff_inbox_item(
+            &db_path,
+            &item.id,
+            HandoffInboxUpdateRequest {
+                next_action_hint: Some("Look at the latest message".to_string()),
+                ..Default::default()
+            },
+            Some("actor_staff"),
+        )
+        .unwrap();
+
+        assert_eq!(updated.delivery_state, DeliveryState::PendingOwnerApproval);
+        assert_eq!(updated.assignee_actor_id.as_deref(), Some("actor_keith"));
+        assert_eq!(event.event_type, "handoff.inbox.updated");
     }
 
     #[test]

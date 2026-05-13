@@ -176,6 +176,21 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_hosted_trial_capacity_lifecycle",
         apply: add_hosted_trial_capacity_lifecycle,
     },
+    SchemaMigration {
+        version: 34,
+        name: "add_feedback_request_loop",
+        apply: add_feedback_request_loop,
+    },
+    SchemaMigration {
+        version: 35,
+        name: "add_reward_ledger_and_benefits",
+        apply: add_reward_ledger_and_benefits,
+    },
+    SchemaMigration {
+        version: 36,
+        name: "add_product_pack_manifest_spine",
+        apply: add_product_pack_manifest_spine,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -2538,6 +2553,371 @@ fn add_actor_experience_preferences_schema(connection: &Connection) -> Result<()
             ON actor_experience_preferences(updated_at DESC);
         "#,
     )?;
+    Ok(())
+}
+
+fn add_feedback_request_loop(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS feedback_requests (
+            id TEXT PRIMARY KEY,
+            target_kind TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            member_actor_id TEXT,
+            connection_id TEXT,
+            conversation_id TEXT,
+            source_kind TEXT NOT NULL,
+            source_id TEXT,
+            prompt TEXT NOT NULL,
+            member_context_summary TEXT NOT NULL,
+            status TEXT NOT NULL,
+            due_at TEXT,
+            priority TEXT NOT NULL DEFAULT 'normal',
+            created_by_actor_id TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            staff_context_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            closed_at TEXT,
+            CHECK (status IN (
+                'open',
+                'responded',
+                'follow_up_requested',
+                'accepted',
+                'rejected',
+                'expired',
+                'canceled'
+            )),
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_target
+            ON feedback_requests(target_kind, target_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_member
+            ON feedback_requests(member_actor_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_connection
+            ON feedback_requests(connection_id, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_requests_status
+            ON feedback_requests(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS feedback_request_responses (
+            id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            actor_id TEXT,
+            response_kind TEXT NOT NULL,
+            body_summary TEXT NOT NULL,
+            customer_feedback_id TEXT,
+            idempotency_key TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES feedback_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (customer_feedback_id) REFERENCES customer_feedback(id) ON DELETE SET NULL,
+            UNIQUE(request_id, idempotency_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_responses_request
+            ON feedback_request_responses(request_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_responses_actor
+            ON feedback_request_responses(actor_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS feedback_request_reviews (
+            id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            response_id TEXT,
+            reviewer_actor_id TEXT,
+            decision TEXT NOT NULL,
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            reason TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES feedback_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (response_id) REFERENCES feedback_request_responses(id) ON DELETE SET NULL,
+            CHECK (decision IN ('accepted', 'rejected', 'follow_up_requested'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_reviews_request
+            ON feedback_request_reviews(request_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_request_reviews_decision
+            ON feedback_request_reviews(decision, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS feedback_reward_eligibility (
+            id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            response_id TEXT,
+            review_id TEXT,
+            actor_id TEXT,
+            state TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES feedback_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (response_id) REFERENCES feedback_request_responses(id) ON DELETE SET NULL,
+            FOREIGN KEY (review_id) REFERENCES feedback_request_reviews(id) ON DELETE SET NULL,
+            UNIQUE(request_id, response_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_reward_eligibility_state
+            ON feedback_reward_eligibility(state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_reward_eligibility_actor
+            ON feedback_reward_eligibility(actor_id, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_reward_ledger_and_benefits(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS reward_programs (
+            id TEXT PRIMARY KEY,
+            slug TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            terms_json TEXT NOT NULL DEFAULT '{}',
+            policy_json TEXT NOT NULL DEFAULT '{}',
+            starts_at TEXT,
+            ends_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reward_programs_status
+            ON reward_programs(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS reward_rules (
+            id TEXT PRIMARY KEY,
+            program_id TEXT NOT NULL,
+            trigger_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            benefit_kind TEXT NOT NULL,
+            benefit_quantity INTEGER NOT NULL,
+            benefit_unit TEXT NOT NULL,
+            max_quantity_per_actor INTEGER NOT NULL,
+            qualification_policy_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (program_id) REFERENCES reward_programs(id) ON DELETE CASCADE,
+            UNIQUE(program_id, trigger_kind)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reward_rules_program_trigger
+            ON reward_rules(program_id, trigger_kind, status);
+
+        CREATE TABLE IF NOT EXISTS reward_events (
+            id TEXT PRIMARY KEY,
+            program_id TEXT NOT NULL,
+            rule_id TEXT NOT NULL,
+            actor_id TEXT,
+            connection_id TEXT,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            state TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            reason TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            qualified_at TEXT,
+            granted_at TEXT,
+            rejected_at TEXT,
+            expired_at TEXT,
+            capped_at TEXT,
+            reversed_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (program_id) REFERENCES reward_programs(id) ON DELETE CASCADE,
+            FOREIGN KEY (rule_id) REFERENCES reward_rules(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reward_events_actor_state
+            ON reward_events(actor_id, state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_reward_events_connection_state
+            ON reward_events(connection_id, state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_reward_events_source
+            ON reward_events(source_kind, source_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_reward_events_program_state
+            ON reward_events(program_id, state, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS reward_ledger_entries (
+            id TEXT PRIMARY KEY,
+            event_id TEXT NOT NULL,
+            program_id TEXT NOT NULL,
+            rule_id TEXT NOT NULL,
+            actor_id TEXT,
+            connection_id TEXT,
+            entry_kind TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            unit TEXT NOT NULL,
+            benefit_grant_id TEXT,
+            reason TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            reversed_at TEXT,
+            reversal_reason TEXT,
+            FOREIGN KEY (event_id) REFERENCES reward_events(id) ON DELETE CASCADE,
+            FOREIGN KEY (program_id) REFERENCES reward_programs(id) ON DELETE CASCADE,
+            FOREIGN KEY (rule_id) REFERENCES reward_rules(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reward_ledger_entries_event
+            ON reward_ledger_entries(event_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_reward_ledger_entries_actor
+            ON reward_ledger_entries(actor_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_reward_ledger_entries_benefit
+            ON reward_ledger_entries(benefit_grant_id);
+
+        CREATE TABLE IF NOT EXISTS benefit_grants (
+            id TEXT PRIMARY KEY,
+            event_id TEXT NOT NULL,
+            ledger_entry_id TEXT,
+            actor_id TEXT,
+            connection_id TEXT,
+            access_grant_id TEXT,
+            trial_id TEXT,
+            benefit_kind TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            unit TEXT NOT NULL,
+            state TEXT NOT NULL,
+            starts_at TEXT NOT NULL,
+            expires_at TEXT,
+            consumed_at TEXT,
+            revoked_at TEXT,
+            reversed_at TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (event_id) REFERENCES reward_events(id) ON DELETE CASCADE,
+            FOREIGN KEY (ledger_entry_id) REFERENCES reward_ledger_entries(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_benefit_grants_actor_state
+            ON benefit_grants(actor_id, state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_benefit_grants_connection_state
+            ON benefit_grants(connection_id, state, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_benefit_grants_access
+            ON benefit_grants(access_grant_id, state);
+        CREATE INDEX IF NOT EXISTS idx_benefit_grants_trial
+            ON benefit_grants(trial_id, state);
+
+        CREATE TABLE IF NOT EXISTS benefit_balances (
+            id TEXT PRIMARY KEY,
+            program_id TEXT NOT NULL,
+            actor_id TEXT,
+            connection_id TEXT,
+            benefit_kind TEXT NOT NULL,
+            unit TEXT NOT NULL,
+            total_earned INTEGER NOT NULL DEFAULT 0,
+            total_active INTEGER NOT NULL DEFAULT 0,
+            total_reversed INTEGER NOT NULL DEFAULT 0,
+            cap_quantity INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            UNIQUE(program_id, actor_id, connection_id, benefit_kind, unit),
+            FOREIGN KEY (program_id) REFERENCES reward_programs(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_benefit_balances_actor
+            ON benefit_balances(actor_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_benefit_balances_connection
+            ON benefit_balances(connection_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS qualification_reviews (
+            id TEXT PRIMARY KEY,
+            event_id TEXT NOT NULL,
+            reviewer_actor_id TEXT,
+            decision TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (event_id) REFERENCES reward_events(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_qualification_reviews_event
+            ON qualification_reviews(event_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_qualification_reviews_decision
+            ON qualification_reviews(decision, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_product_pack_manifest_spine(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS product_packs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            manifest_json TEXT NOT NULL DEFAULT '{}',
+            validation_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_by_actor_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (created_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_packs_status_updated
+            ON product_packs(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS product_pack_versions (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            manifest_json TEXT NOT NULL DEFAULT '{}',
+            validation_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            installed_by_actor_id TEXT,
+            installed_at TEXT NOT NULL,
+            FOREIGN KEY (pack_id) REFERENCES product_packs(id) ON DELETE CASCADE,
+            FOREIGN KEY (installed_by_actor_id) REFERENCES actors(id) ON DELETE SET NULL,
+            UNIQUE(pack_id, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_pack_versions_pack
+            ON product_pack_versions(pack_id, installed_at DESC);
+
+        CREATE TABLE IF NOT EXISTS product_pack_bindings (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            binding_kind TEXT NOT NULL,
+            binding_key TEXT NOT NULL,
+            capability_id TEXT,
+            template_id TEXT,
+            template_version INTEGER,
+            artifact_kind TEXT,
+            contract_json TEXT NOT NULL DEFAULT '{}',
+            visibility_json TEXT NOT NULL DEFAULT '{}',
+            access_json TEXT NOT NULL DEFAULT '{}',
+            growth_json TEXT NOT NULL DEFAULT '{}',
+            limits_json TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL,
+            disabled_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (pack_id) REFERENCES product_packs(id) ON DELETE CASCADE,
+            FOREIGN KEY (capability_id) REFERENCES capabilities(id) ON DELETE SET NULL,
+            FOREIGN KEY (template_id, template_version) REFERENCES process_templates(id, version),
+            UNIQUE(pack_id, binding_kind, binding_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_pack_bindings_pack
+            ON product_pack_bindings(pack_id, binding_kind, binding_key);
+        CREATE INDEX IF NOT EXISTS idx_product_pack_bindings_capability
+            ON product_pack_bindings(capability_id, status);
+        CREATE INDEX IF NOT EXISTS idx_product_pack_bindings_template
+            ON product_pack_bindings(template_id, template_version, status);
+        "#,
+    )?;
+
     Ok(())
 }
 

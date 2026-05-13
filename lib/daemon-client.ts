@@ -1,3 +1,32 @@
+import {
+  buildStudioWorkSnapshot,
+  type StudioSurfaceRoom,
+  type StudioSurfaceWorkItem,
+  type StudioWorkSnapshotView,
+  type StudioWorkViewer,
+} from "@/lib/studio-work";
+import type { GrowthPilotReportResponse } from "@/lib/growth-pilot-report";
+
+export type {
+  GrowthPilotEvidenceRef,
+  GrowthPilotReportItem,
+  GrowthPilotReportLimitation,
+  GrowthPilotReportMetric,
+  GrowthPilotReportResponse,
+  GrowthPilotReportSection,
+  GrowthReportSourceStatus,
+} from "@/lib/growth-pilot-report";
+
+export type {
+  StudioDeferredAction,
+  StudioRoomSummary,
+  StudioSurfaceRoom,
+  StudioSurfaceWorkItem,
+  StudioWorkItemView,
+  StudioWorkSnapshotView,
+  StudioWorkViewer,
+} from "@/lib/studio-work";
+
 export interface DaemonCheck {
   name: string;
   status: string;
@@ -148,6 +177,62 @@ export interface HostedTrialWaitlistEntry {
   updatedAt: string;
 }
 
+export interface OfferView {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  status: string;
+  visibility: string;
+  publicationState: string;
+  trialDays: number;
+  sourceKind: string;
+  sourceRef: string | null;
+  terms: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdByActorId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+  archivedAt: string | null;
+}
+
+export interface PublicOfferView {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  trialDays: number;
+  sourceKind: string;
+  sourceRef: string | null;
+  terms: Record<string, unknown>;
+}
+
+export interface OfferBuilderReference {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+  evidenceRefs: string[];
+  blockedBy: string | null;
+}
+
+export interface OfferBuilderValidation {
+  publishable: boolean;
+  state: string;
+  blockers: string[];
+  warnings: string[];
+  supportedReferences: OfferBuilderReference[];
+  deferredReferences: OfferBuilderReference[];
+  evidenceRefs: string[];
+}
+
+export interface OfferBuilderOffer {
+  offer: OfferView;
+  publicPreview: PublicOfferView | null;
+  validation: OfferBuilderValidation;
+}
+
 export interface RealtimeEventSummary {
   cursor: number;
   schemaVersion: string;
@@ -252,6 +337,14 @@ export interface IssueReportsSnapshot {
   degradedReason: string | null;
 }
 
+export interface GrowthPilotReportSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  report: GrowthPilotReportResponse | null;
+  generatedAt: string | null;
+  degradedReason: string | null;
+}
+
 interface BackupRestoreResponse {
   jobs: BackupRestoreJobSummary[];
 }
@@ -260,6 +353,15 @@ interface HostedTrialCapacityResponse {
   policies: HostedTrialCapacityPolicy[];
   slots: HostedTrialSlot[];
   waitlist: HostedTrialWaitlistEntry[];
+}
+
+interface OfferBuilderResponse {
+  offers: OfferBuilderOffer[];
+  generatedAt: string;
+}
+
+interface SurfaceWorkItemsResponse {
+  items: StudioSurfaceWorkItem[];
 }
 
 interface EventReplayResponse {
@@ -281,6 +383,22 @@ export interface HostedTrialOperationsSnapshot {
   slots: HostedTrialSlot[];
   waitlist: HostedTrialWaitlistEntry[];
   backupJobs: BackupRestoreJobSummary[];
+  degradedReason: string | null;
+}
+
+export interface OfferBuilderSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  generatedAt: string | null;
+  offers: OfferBuilderOffer[];
+  degradedReason: string | null;
+}
+
+export interface StudioWorkSnapshot extends StudioWorkSnapshotView {
+  daemonUrl: string;
+  createdAt: string;
+  viewer: StudioWorkViewer;
+  roomKind: StudioSurfaceRoom | null;
   degradedReason: string | null;
 }
 
@@ -409,6 +527,44 @@ export async function getHostedTrialOperationsSnapshot(): Promise<HostedTrialOpe
   };
 }
 
+export async function getOfferBuilderSnapshot(): Promise<OfferBuilderSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const builderResult = await readEndpoint<OfferBuilderResponse>(baseUrl, "/offer-builder");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    generatedAt: builderResult.data?.generatedAt ?? null,
+    offers: builderResult.data?.offers ?? [],
+    degradedReason: builderResult.error,
+  };
+}
+
+export async function getStudioWorkSnapshot(viewer: StudioWorkViewer, roomKind?: StudioSurfaceRoom): Promise<StudioWorkSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const params = new URLSearchParams({
+    viewer,
+    surfaceKind: "studio",
+  });
+  if (roomKind) {
+    params.set("roomKind", roomKind);
+  }
+  params.set("limit", "100");
+  const workResult = await readEndpoint<SurfaceWorkItemsResponse>(baseUrl, `/surface/work-items?${params.toString()}`);
+  const workSnapshot = buildStudioWorkSnapshot(workResult.data?.items ?? []);
+
+  return {
+    ...workSnapshot,
+    daemonUrl: baseUrl,
+    createdAt,
+    viewer,
+    roomKind: roomKind ?? null,
+    degradedReason: workResult.error,
+  };
+}
+
 export async function getEventReplaySnapshot(after?: number): Promise<EventReplaySnapshot> {
   const baseUrl = daemonUrl();
   const createdAt = new Date().toISOString();
@@ -454,6 +610,20 @@ export async function getIssueReportsSnapshot(): Promise<IssueReportsSnapshot> {
     reports,
     latestReport: latestReportResult.data?.report ?? null,
     degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
+  };
+}
+
+export async function getGrowthPilotReportSnapshot(): Promise<GrowthPilotReportSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const reportResult = await readEndpoint<GrowthPilotReportResponse>(baseUrl, "/growth/pilot-report");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    report: reportResult.data,
+    generatedAt: reportResult.data?.generatedAt ?? null,
+    degradedReason: reportResult.error,
   };
 }
 

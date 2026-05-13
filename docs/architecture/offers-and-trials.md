@@ -1,6 +1,6 @@
 # Offers And Trial Lifecycle
 
-Status: backend foundation implemented
+Status: backend foundation plus Offer Builder and reward-reference baseline implemented
 
 This slice turns public interest into durable commercial state without adding UI,
 payments, affiliate payouts, analytics dashboards, external egress, mediated
@@ -20,6 +20,8 @@ SQLite stores:
 
 Protected owner/operator routes:
 
+- `GET /offer-builder`
+- `POST /offer-builder`
 - `GET /offers`
 - `POST /offers`
 - `PUT /offers/:offer_id`
@@ -35,6 +37,33 @@ Public-safe routes:
 Protected routes pass through the local daemon access boundary and record policy
 decision evidence through non-MCP-exported capability ids.
 
+## Offer Builder Baseline
+
+The Offer Builder is daemon-owned validation over durable offer records. It is
+not a generic page builder, pack executor, payment adapter, or publishing
+adapter.
+
+`GET /offer-builder` returns owner/admin readiness state for current offers:
+
+- durable offer config;
+- safe public preview for published public offers;
+- supported references backed by current primitives: accepted-offer Access
+  grants, hosted-trial capacity/waitlist lifecycle, tracked entry points,
+  active reward programs, and policy-gated Support handoff CTA state;
+- explicit deferrals for product/workforce pack offer bindings, external
+  publishing, payments, and OAuth.
+
+`POST /offer-builder` creates or updates the pilot offer through the same
+durable `offers` table and blocks publication when the request tries to save
+unsupported reward, pack, payment, OAuth, provider, prompt, staff-internal, or
+secret-bearing claims as active offer behavior.
+
+The baseline can publish the 30-day OrdoStudio pilot offer only when terms are
+public-safe and disclose experimental hosting, human review, and backup/export
+before reset or wipe. Feedback/referral hosted-time rewards can be referenced
+only through an active reward program backed by reward ledger and benefit-grant
+state.
+
 ## Public Offer Boundary
 
 Public offer availability is intentionally narrow. An offer can be accepted only
@@ -46,6 +75,11 @@ when it is available through one of these public-safe sources:
 
 Private, authenticated, staff, owner, draft, archived, revoked, paused, and
 unpublished material cannot enter public acceptance.
+
+Public offer responses expose only public-safe offer fields and sanitized terms.
+Protected metadata remains owner/admin only. Acceptance receipts keep a terms
+snapshot so later edits to a published offer do not rewrite historical accepted
+terms evidence.
 
 ## Attribution And Trial State
 
@@ -67,10 +101,11 @@ events.
 
 ## Non-Goals
 
-- No UI implementation.
 - No payment processing.
 - No affiliate payout automation.
 - No analytics dashboard.
 - No cookie-heavy tracking.
 - No RAG or mediated chat.
 - No external notifications or egress.
+- No reward grant without reward ledger and benefit-grant evidence.
+- No product/workforce pack binding or arbitrary pack execution.

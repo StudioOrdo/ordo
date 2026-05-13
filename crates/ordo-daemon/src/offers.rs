@@ -8,8 +8,9 @@ use uuid::Uuid;
 
 use crate::attribution::{record_offer_acceptance_outcome_tx, OfferAcceptanceOutcomeInput};
 use crate::business::{BusinessFactVisibility, PublicationState};
-use crate::events::{append_realtime_event_tx, system_event, RealtimeEvent};
+use crate::events::{append_realtime_event, append_realtime_event_tx, system_event, RealtimeEvent};
 use crate::public_surfaces::{public_surfaces, PublicSurfaceItem};
+use crate::rewards::reward_program_is_active;
 
 const DEFAULT_TRIAL_DAYS: i64 = 30;
 const OFFER_RECEIPT_SCHEMA_VERSION: &str = "ordo.offer_acceptance.receipt.v1";
@@ -25,6 +26,7 @@ const HOSTED_TRIAL_RESET_BLOCKED_PENDING_BACKUP: &str = "blocked_pending_backup"
 const HOSTED_TRIAL_RESET_READY_FOR_OWNER_REVIEW: &str = "ready_for_owner_review";
 const HOSTED_TRIAL_WAITLIST_STATUS_WAITING: &str = "waiting";
 const HOSTED_TRIAL_WAITLIST_REASON_CAPACITY_FULL: &str = "capacity_full";
+const OFFER_BUILDER_SCHEMA_VERSION: &str = "ordo.offer_builder.v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -168,6 +170,53 @@ pub struct HostedTrialCapacityResponse {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OfferBuilderResponse {
+    pub offers: Vec<OfferBuilderOfferView>,
+    pub generated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferBuilderSaveResponse {
+    pub offer: OfferView,
+    pub public_preview: Option<PublicOfferView>,
+    pub validation: OfferBuilderValidationView,
+    pub generated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferBuilderOfferView {
+    pub offer: OfferView,
+    pub public_preview: Option<PublicOfferView>,
+    pub validation: OfferBuilderValidationView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferBuilderValidationView {
+    pub publishable: bool,
+    pub state: String,
+    pub blockers: Vec<String>,
+    pub warnings: Vec<String>,
+    pub supported_references: Vec<OfferBuilderReferenceView>,
+    pub deferred_references: Vec<OfferBuilderReferenceView>,
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferBuilderReferenceView {
+    pub key: String,
+    pub label: String,
+    pub status: String,
+    pub detail: String,
+    pub evidence_refs: Vec<String>,
+    pub blocked_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HostedTrialCapacityPolicyView {
     pub id: String,
     pub offer_id: String,
@@ -263,6 +312,7 @@ pub struct PublicOfferView {
     pub trial_days: i64,
     pub source_kind: String,
     pub source_ref: Option<String>,
+    pub terms: Value,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -311,6 +361,8 @@ pub struct OfferAcceptanceReceipt {
     pub trial_days: i64,
     pub trial_ends_at: String,
     pub access_grant_id: String,
+    #[serde(default)]
+    pub terms_snapshot: Value,
     pub expectations: Vec<String>,
     pub support: String,
     pub evidence_refs: Vec<String>,
@@ -350,6 +402,25 @@ pub struct OfferWriteRequest {
     pub source_ref: Option<String>,
     pub terms: Option<Value>,
     pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferBuilderSaveRequest {
+    pub offer: OfferWriteRequest,
+    pub references: Option<OfferBuilderReferencesRequest>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferBuilderReferencesRequest {
+    pub tracked_entry_point_slug: Option<String>,
+    pub support_handoff_cta: Option<bool>,
+    pub reward_program_id: Option<String>,
+    pub pack_ids: Option<Vec<String>>,
+    pub external_publishing: Option<bool>,
+    pub payment: Option<bool>,
+    pub oauth: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -418,6 +489,7 @@ struct PublicOfferRecord {
     trial_days: i64,
     source_kind: String,
     source_ref: Option<String>,
+    terms: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -672,6 +744,79 @@ pub fn list_hosted_trial_capacity(db_path: &Path) -> Result<HostedTrialCapacityR
     })
 }
 
+pub fn inspect_offer_builder(db_path: &Path) -> Result<OfferBuilderResponse> {
+    let connection = Connection::open(db_path)?;
+    let mut statement = connection.prepare(
+        "SELECT id, slug, title, summary, status, visibility, publication_state, trial_days,
+                source_kind, source_ref, terms_json, metadata_json, created_by_actor_id,
+                created_at, updated_at, published_at, archived_at
+         FROM offers
+         ORDER BY updated_at DESC, id DESC",
+    )?;
+    let records = statement
+        .query_map([], offer_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let offers = records
+        .into_iter()
+        .map(|record| offer_builder_view(&connection, record))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(OfferBuilderResponse {
+        offers,
+        generated_at: Utc::now().to_rfc3339(),
+    })
+}
+
+pub fn save_offer_builder_offer(
+    db_path: &Path,
+    request: OfferBuilderSaveRequest,
+    actor_id: Option<&str>,
+) -> Result<(OfferBuilderSaveResponse, RealtimeEvent)> {
+    let connection = Connection::open(db_path)?;
+    let mut offer = normalize_offer_builder_request(request.offer, request.references.as_ref())?;
+    let slug = require_identifier(&offer.slug, "Offer slug")?;
+    let existing = find_offer_by_slug(&connection, &slug)?;
+    let validation =
+        validate_offer_builder_write(&connection, &offer, request.references.as_ref())?;
+    if is_public_publication_request(&offer) && !validation.publishable {
+        bail!(
+            "Offer Builder cannot publish unsupported pilot offer: {}",
+            validation.blockers.join("; ")
+        );
+    }
+    merge_offer_builder_metadata(&mut offer, request.references.as_ref(), &validation)?;
+
+    let (saved, _) = if let Some(existing) = existing {
+        update_offer(db_path, &existing.id, offer, actor_id)?
+    } else {
+        create_offer(db_path, offer, actor_id)?
+    };
+
+    let connection = Connection::open(db_path)?;
+    let event = append_realtime_event(
+        &connection,
+        &system_event(
+            "offer_builder.saved",
+            json!({
+                "offerId": saved.id,
+                "offerSlug": saved.slug,
+                "publicationState": saved.publication_state.as_str(),
+                "status": saved.status.as_str(),
+            }),
+        ),
+    )?;
+    let record = find_offer_by_id(&connection, &saved.id)?.expect("offer just saved");
+    let builder_view = offer_builder_view(&connection, record)?;
+    Ok((
+        OfferBuilderSaveResponse {
+            offer: saved,
+            public_preview: builder_view.public_preview,
+            validation: builder_view.validation,
+            generated_at: Utc::now().to_rfc3339(),
+        },
+        event,
+    ))
+}
+
 pub fn create_offer(
     db_path: &Path,
     request: OfferWriteRequest,
@@ -688,6 +833,17 @@ pub fn create_offer(
     let visibility = request.visibility.unwrap_or(BusinessFactVisibility::Owner);
     let publication_state = request.publication_state.unwrap_or(PublicationState::Draft);
     let trial_days = normalize_trial_days(request.trial_days)?;
+    let terms = normalize_offer_terms(request.terms, trial_days);
+    let metadata = request.metadata.unwrap_or_else(|| json!({}));
+    validate_offer_publication_fields(
+        &transaction,
+        publication_state,
+        visibility,
+        status,
+        trial_days,
+        &terms,
+        &metadata,
+    )?;
     let published_at = (publication_state == PublicationState::Published).then(|| now.clone());
     let archived_at = (status == OfferStatus::Archived
         || matches!(
@@ -714,8 +870,8 @@ pub fn create_offer(
             normalize_optional_string(request.source_kind)
                 .unwrap_or_else(|| "operator".to_string()),
             normalize_optional_string(request.source_ref),
-            request.terms.unwrap_or_else(|| json!({})).to_string(),
-            request.metadata.unwrap_or_else(|| json!({})).to_string(),
+            terms.to_string(),
+            metadata.to_string(),
             actor_id,
             now,
             published_at,
@@ -760,6 +916,17 @@ pub fn update_offer(
         .publication_state
         .unwrap_or(existing.publication_state);
     let trial_days = normalize_trial_days(request.trial_days.or(Some(existing.trial_days)))?;
+    let terms = normalize_offer_terms(request.terms.or(Some(existing.terms.clone())), trial_days);
+    let metadata = request.metadata.unwrap_or(existing.metadata.clone());
+    validate_offer_publication_fields(
+        &transaction,
+        publication_state,
+        visibility,
+        status,
+        trial_days,
+        &terms,
+        &metadata,
+    )?;
     let published_at = if publication_state == PublicationState::Published
         && existing.publication_state != PublicationState::Published
     {
@@ -805,8 +972,8 @@ pub fn update_offer(
             trial_days,
             normalize_optional_string(request.source_kind).unwrap_or(existing.source_kind),
             normalize_optional_string(request.source_ref).or(existing.source_ref),
-            request.terms.unwrap_or(existing.terms).to_string(),
-            request.metadata.unwrap_or(existing.metadata).to_string(),
+            terms.to_string(),
+            metadata.to_string(),
             actor_id,
             now,
             published_at,
@@ -1415,10 +1582,574 @@ pub fn request_hosted_trial_reset(
     Ok((slot.into_reset_plan(), event))
 }
 
+fn offer_builder_view(
+    connection: &Connection,
+    record: OfferRecord,
+) -> Result<OfferBuilderOfferView> {
+    let validation = validate_offer_builder_record(connection, &record)?;
+    let public_preview = if record.status == OfferStatus::Available
+        && record.visibility == BusinessFactVisibility::Public
+        && record.publication_state == PublicationState::Published
+    {
+        Some(PublicOfferRecord::from_offer_record(&record).into_view())
+    } else {
+        None
+    };
+    Ok(OfferBuilderOfferView {
+        offer: record.into_view(),
+        public_preview,
+        validation,
+    })
+}
+
+fn validate_offer_builder_record(
+    connection: &Connection,
+    record: &OfferRecord,
+) -> Result<OfferBuilderValidationView> {
+    validate_offer_builder_fields(
+        connection,
+        Some(&record.id),
+        &record.slug,
+        record.status,
+        record.visibility,
+        record.publication_state,
+        record.trial_days,
+        &record.terms,
+        &record.metadata,
+        offer_builder_references_from_metadata(&record.metadata),
+    )
+}
+
+fn validate_offer_builder_write(
+    connection: &Connection,
+    request: &OfferWriteRequest,
+    references: Option<&OfferBuilderReferencesRequest>,
+) -> Result<OfferBuilderValidationView> {
+    let slug = require_identifier(&request.slug, "Offer slug")?;
+    let status = request.status.unwrap_or(OfferStatus::Draft);
+    let visibility = request.visibility.unwrap_or(BusinessFactVisibility::Owner);
+    let publication_state = request.publication_state.unwrap_or(PublicationState::Draft);
+    let trial_days = normalize_trial_days(request.trial_days)?;
+    let terms = normalize_offer_terms(request.terms.clone(), trial_days);
+    let metadata = request.metadata.clone().unwrap_or_else(|| json!({}));
+    validate_offer_builder_fields(
+        connection,
+        None,
+        &slug,
+        status,
+        visibility,
+        publication_state,
+        trial_days,
+        &terms,
+        &metadata,
+        references.cloned(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_offer_builder_fields(
+    connection: &Connection,
+    offer_id: Option<&str>,
+    slug: &str,
+    status: OfferStatus,
+    visibility: BusinessFactVisibility,
+    publication_state: PublicationState,
+    trial_days: i64,
+    terms: &Value,
+    metadata: &Value,
+    references: Option<OfferBuilderReferencesRequest>,
+) -> Result<OfferBuilderValidationView> {
+    let mut blockers = Vec::new();
+    let mut warnings = Vec::new();
+    let mut supported_references = Vec::new();
+    let mut deferred_references = Vec::new();
+    let mut evidence_refs = vec![format!("offer_slug:{slug}")];
+    if let Some(offer_id) = offer_id {
+        evidence_refs.push(format!("offer:{offer_id}"));
+    }
+
+    if trial_days != DEFAULT_TRIAL_DAYS {
+        blockers.push("The NYC pilot offer must publish as a 30-day hosted trial.".to_string());
+    }
+    if !terms
+        .get("experimentalHosting")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        blockers.push("Published pilot terms must disclose experimental hosting.".to_string());
+    }
+    if !terms
+        .get("backupBeforeWipeRequired")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        blockers.push(
+            "Published pilot terms must require backup/export before reset or wipe.".to_string(),
+        );
+    }
+    if contains_internal_or_secret_key(terms) || contains_internal_or_secret_key(metadata) {
+        blockers.push(
+            "Public offers cannot include internal or secret-bearing keys in terms or metadata."
+                .to_string(),
+        );
+    }
+
+    supported_references.push(reference(
+        "access_grant",
+        "Accepted-offer Access grant",
+        "available",
+        "Public acceptance creates a hosted_trial/use resource grant backed by accepted offer evidence.",
+        vec!["resource_grants".to_string(), "offer_acceptances".to_string()],
+        None,
+    ));
+    supported_references.push(reference(
+        "hosted_trial_capacity",
+        "Hosted trial capacity",
+        "available",
+        "Hosted trial acceptance allocates at most 10 active slots and records waitlist state.",
+        vec![
+            "hosted_trial_capacity_policies".to_string(),
+            "hosted_trial_slots".to_string(),
+        ],
+        None,
+    ));
+
+    let references = references.unwrap_or_default();
+    if let Some(entry_slug) = references.tracked_entry_point_slug.as_deref() {
+        match find_active_entry_point(connection, entry_slug)? {
+            Some(entry_id) => {
+                supported_references.push(reference(
+                    "tracked_entry_point",
+                    "Tracked QR entry point",
+                    "available",
+                    "The referenced active tracked entry point can carry visitor/session attribution into acceptance.",
+                    vec![format!("tracked_entry_point:{entry_id}")],
+                    None,
+                ));
+            }
+            None => blockers.push(format!(
+                "Tracked entry point is not active or does not exist: {entry_slug}"
+            )),
+        }
+    } else {
+        warnings.push(
+            "No tracked entry point is attached; QR/session attribution will not be offer-specific."
+                .to_string(),
+        );
+    }
+
+    if references.support_handoff_cta.unwrap_or(false) {
+        supported_references.push(reference(
+            "support_handoff_cta",
+            "Support handoff CTA",
+            "available",
+            "Support handoff CTA is backed by the local handoff inbox foundation and remains policy-gated.",
+            vec!["handoff_inbox_items".to_string()],
+            None,
+        ));
+    } else {
+        warnings.push("Support handoff CTA is not attached to this offer.".to_string());
+    }
+
+    if let Some(reward_program_id) = references.reward_program_id.as_deref() {
+        if reward_program_is_active(connection, reward_program_id)? {
+            supported_references.push(reference(
+                "reward_ledger",
+                "Feedback/referral rewards",
+                "available",
+                "Reward program, ledger, hosted-time benefit grants, balances, and qualification review are available for evidence-backed referral and feedback rewards.",
+                vec![format!("reward_program:{reward_program_id}")],
+                None,
+            ));
+        } else {
+            blockers.push(format!(
+                "Reward program is not active or does not exist: {reward_program_id}"
+            ));
+        }
+    } else if has_active_reward_reference(terms) || has_active_reward_reference(metadata) {
+        blockers.push(
+            "Active reward references must name an active reward program; unsupported reward ids cannot be published."
+                .to_string(),
+        );
+    } else {
+        warnings.push("No reward program is attached to this offer.".to_string());
+    }
+
+    if references
+        .pack_ids
+        .as_ref()
+        .map(|pack_ids| !pack_ids.is_empty())
+        .unwrap_or(false)
+        || has_active_pack_reference(terms)
+        || has_active_pack_reference(metadata)
+    {
+        blockers.push(
+            "Product/workforce pack offer bindings are not available yet; do not save pack claims as active offer behavior."
+                .to_string(),
+        );
+    }
+    deferred_references.push(reference(
+        "product_workforce_packs",
+        "Product/workforce packs",
+        "not_available_yet",
+        "MCP packs exist as governed capability metadata, but durable offer-pack binding is not implemented.",
+        vec!["mcp_packs".to_string()],
+        Some("offer_pack_binding".to_string()),
+    ));
+
+    if references.external_publishing.unwrap_or(false)
+        || references.payment.unwrap_or(false)
+        || references.oauth.unwrap_or(false)
+    {
+        blockers.push(
+            "External publishing, payment processing, and OAuth are outside the Offer Builder baseline."
+                .to_string(),
+        );
+    }
+    deferred_references.push(reference(
+        "external_platforms",
+        "External publishing/payments/OAuth",
+        "out_of_scope",
+        "This slice is deterministic and network-free; live platform integrations are not part of the baseline.",
+        vec![],
+        Some("future_guarded_adapters".to_string()),
+    ));
+
+    let wants_publication = status == OfferStatus::Available
+        || visibility == BusinessFactVisibility::Public
+        || publication_state == PublicationState::Published;
+    let publishable = blockers.is_empty()
+        && status == OfferStatus::Available
+        && visibility == BusinessFactVisibility::Public
+        && publication_state == PublicationState::Published;
+    let state = if publishable {
+        "ready"
+    } else if wants_publication && !blockers.is_empty() {
+        "blocked"
+    } else {
+        "draft"
+    }
+    .to_string();
+
+    Ok(OfferBuilderValidationView {
+        publishable,
+        state,
+        blockers,
+        warnings,
+        supported_references,
+        deferred_references,
+        evidence_refs,
+    })
+}
+
+fn validate_offer_publication_fields(
+    connection: &Connection,
+    publication_state: PublicationState,
+    visibility: BusinessFactVisibility,
+    status: OfferStatus,
+    trial_days: i64,
+    terms: &Value,
+    metadata: &Value,
+) -> Result<()> {
+    if status != OfferStatus::Available
+        && visibility != BusinessFactVisibility::Public
+        && publication_state != PublicationState::Published
+    {
+        return Ok(());
+    }
+    let validation = validate_offer_builder_fields(
+        connection,
+        None,
+        "pending",
+        status,
+        visibility,
+        publication_state,
+        trial_days,
+        terms,
+        metadata,
+        offer_builder_references_from_metadata(metadata),
+    )?;
+    if !validation.blockers.is_empty() {
+        bail!("{}", validation.blockers.join("; "));
+    }
+    Ok(())
+}
+
+fn normalize_offer_builder_request(
+    mut offer: OfferWriteRequest,
+    references: Option<&OfferBuilderReferencesRequest>,
+) -> Result<OfferWriteRequest> {
+    let trial_days = normalize_trial_days(offer.trial_days.or(Some(DEFAULT_TRIAL_DAYS)))?;
+    offer.trial_days = Some(trial_days);
+    offer.source_kind = offer
+        .source_kind
+        .or_else(|| Some("offer_builder".to_string()));
+    offer.terms = Some(normalize_offer_terms(offer.terms, trial_days));
+    let mut metadata = offer.metadata.unwrap_or_else(|| json!({}));
+    if !metadata.is_object() {
+        bail!("Offer Builder metadata must be a JSON object.");
+    }
+    if let Some(references) = references {
+        metadata["offerBuilder"] = json!({
+            "schemaVersion": OFFER_BUILDER_SCHEMA_VERSION,
+            "trackedEntryPointSlug": references.tracked_entry_point_slug.as_deref(),
+            "supportHandoffCta": references.support_handoff_cta.unwrap_or(false),
+            "accessGrant": {
+                "status": "available",
+                "resourceKind": HOSTED_TRIAL_RESOURCE_KIND,
+                "action": HOSTED_TRIAL_ACTION,
+                "source": "accepted_offer"
+            },
+            "capacity": {
+                "status": "available",
+                "activeSlotLimit": HOSTED_TRIAL_ACTIVE_SLOT_LIMIT,
+                "waitlist": true
+            },
+            "rewards": {
+                "status": if references.reward_program_id.is_some() { "available" } else { "not_configured" },
+                "rewardProgramId": references.reward_program_id.as_deref()
+            },
+            "packs": {
+                "status": "not_available_yet",
+                "blockedBy": "offer_pack_binding"
+            },
+            "externalPublishing": {
+                "status": "out_of_scope"
+            }
+        });
+    }
+    offer.metadata = Some(metadata);
+    Ok(offer)
+}
+
+fn normalize_offer_terms(terms: Option<Value>, trial_days: i64) -> Value {
+    let mut terms = terms.unwrap_or_else(|| json!({}));
+    if !terms.is_object() {
+        terms = json!({});
+    }
+    if terms.get("trialDays").is_none() {
+        terms["trialDays"] = json!(trial_days);
+    }
+    if terms.get("experimentalHosting").is_none() {
+        terms["experimentalHosting"] = json!(true);
+    }
+    if terms.get("backupBeforeWipeRequired").is_none() {
+        terms["backupBeforeWipeRequired"] = json!(true);
+    }
+    if terms.get("humanReviewRequired").is_none() {
+        terms["humanReviewRequired"] = json!(true);
+    }
+    if terms.get("rewards").is_none() {
+        terms["rewards"] = json!({
+            "status": "not_configured"
+        });
+    }
+    if terms.get("packs").is_none() {
+        terms["packs"] = json!({
+            "status": "not_available_yet",
+            "blockedBy": "offer_pack_binding"
+        });
+    }
+    terms
+}
+
+fn merge_offer_builder_metadata(
+    offer: &mut OfferWriteRequest,
+    references: Option<&OfferBuilderReferencesRequest>,
+    validation: &OfferBuilderValidationView,
+) -> Result<()> {
+    let mut metadata = offer.metadata.take().unwrap_or_else(|| json!({}));
+    if !metadata.is_object() {
+        bail!("Offer Builder metadata must be a JSON object.");
+    }
+    metadata["offerBuilderValidation"] = json!({
+        "schemaVersion": OFFER_BUILDER_SCHEMA_VERSION,
+        "state": validation.state,
+        "publishable": validation.publishable,
+        "blockers": validation.blockers,
+        "warnings": validation.warnings,
+        "supportedReferences": validation.supported_references,
+        "deferredReferences": validation.deferred_references,
+    });
+    if let Some(references) = references {
+        metadata["offerBuilderReferences"] = serde_json::to_value(references)?;
+    }
+    offer.metadata = Some(metadata);
+    Ok(())
+}
+
+fn offer_builder_references_from_metadata(
+    metadata: &Value,
+) -> Option<OfferBuilderReferencesRequest> {
+    let builder = metadata.get("offerBuilder")?;
+    Some(OfferBuilderReferencesRequest {
+        tracked_entry_point_slug: builder
+            .get("trackedEntryPointSlug")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        support_handoff_cta: builder.get("supportHandoffCta").and_then(Value::as_bool),
+        reward_program_id: builder
+            .get("rewardProgramId")
+            .and_then(Value::as_str)
+            .or_else(|| {
+                builder
+                    .get("rewards")
+                    .and_then(|rewards| rewards.get("rewardProgramId"))
+                    .and_then(Value::as_str)
+            })
+            .map(str::to_string),
+        pack_ids: builder.get("packIds").and_then(|value| {
+            value.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+        }),
+        external_publishing: builder.get("externalPublishing").and_then(|value| {
+            value
+                .as_bool()
+                .or_else(|| value.get("enabled").and_then(Value::as_bool))
+        }),
+        payment: builder.get("payment").and_then(Value::as_bool),
+        oauth: builder.get("oauth").and_then(Value::as_bool),
+    })
+}
+
+fn reference(
+    key: &str,
+    label: &str,
+    status: &str,
+    detail: &str,
+    evidence_refs: Vec<String>,
+    blocked_by: Option<String>,
+) -> OfferBuilderReferenceView {
+    OfferBuilderReferenceView {
+        key: key.to_string(),
+        label: label.to_string(),
+        status: status.to_string(),
+        detail: detail.to_string(),
+        evidence_refs,
+        blocked_by,
+    }
+}
+
+fn is_public_publication_request(request: &OfferWriteRequest) -> bool {
+    request.status == Some(OfferStatus::Available)
+        || request.visibility == Some(BusinessFactVisibility::Public)
+        || request.publication_state == Some(PublicationState::Published)
+}
+
+fn find_active_entry_point(connection: &Connection, slug: &str) -> Result<Option<String>> {
+    let slug = require_identifier(slug, "Tracked entry point slug")?;
+    Ok(connection
+        .query_row(
+            "SELECT id FROM tracked_entry_points WHERE slug = ?1 AND status = 'active'",
+            [slug],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+fn contains_internal_or_secret_key(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => map.iter().any(|(key, value)| {
+            is_internal_or_secret_key(key) || contains_internal_or_secret_key(value)
+        }),
+        Value::Array(items) => items.iter().any(contains_internal_or_secret_key),
+        _ => false,
+    }
+}
+
+fn is_internal_or_secret_key(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase();
+    [
+        "secret",
+        "token",
+        "apikey",
+        "api_key",
+        "providersecret",
+        "provider_secret",
+        "rawprompt",
+        "raw_prompt",
+        "systemprompt",
+        "system_prompt",
+        "staffnote",
+        "staff_note",
+        "staffnotes",
+        "staff_notes",
+        "policyinternal",
+        "policy_internal",
+        "owneronly",
+        "owner_only",
+    ]
+    .iter()
+    .any(|blocked| normalized.contains(blocked))
+}
+
+fn has_active_reward_reference(value: &Value) -> bool {
+    has_active_reference(
+        value,
+        &[
+            "rewardProgramId",
+            "rewardLedgerId",
+            "benefitGrantId",
+            "hostedTimeExtension",
+            "reward_program_id",
+        ],
+    )
+}
+
+fn has_active_pack_reference(value: &Value) -> bool {
+    has_active_reference(
+        value,
+        &[
+            "packIds",
+            "packId",
+            "productPackId",
+            "workforcePackId",
+            "pack_ids",
+        ],
+    )
+}
+
+fn has_active_reference(value: &Value, keys: &[&str]) -> bool {
+    match value {
+        Value::Object(map) => map.iter().any(|(key, child)| {
+            let key_matches = keys
+                .iter()
+                .any(|candidate| key.eq_ignore_ascii_case(candidate));
+            if key_matches && !is_inactive_reference(child) {
+                return true;
+            }
+            has_active_reference(child, keys)
+        }),
+        Value::Array(items) => items.iter().any(|item| has_active_reference(item, keys)),
+        _ => false,
+    }
+}
+
+fn is_deferred_reference(value: &Value) -> bool {
+    value
+        .get("status")
+        .and_then(Value::as_str)
+        .map(|status| status == "not_available_yet" || status == "deferred")
+        .unwrap_or(false)
+}
+
+fn is_inactive_reference(value: &Value) -> bool {
+    value.is_null()
+        || value
+            .as_array()
+            .map(|items| items.is_empty())
+            .unwrap_or(false)
+        || is_deferred_reference(value)
+}
+
 fn explicit_public_offers(db_path: &Path) -> Result<Vec<PublicOfferRecord>> {
     let connection = Connection::open(db_path)?;
     let mut statement = connection.prepare(
-        "SELECT id, slug, title, summary, trial_days, source_kind, source_ref
+        "SELECT id, slug, title, summary, trial_days, source_kind, source_ref, terms_json
          FROM offers
          WHERE status = 'available' AND visibility = 'public' AND publication_state = 'published'
          ORDER BY updated_at DESC, id DESC",
@@ -1457,13 +2188,30 @@ fn find_explicit_public_offer(
     let connection = Connection::open(db_path)?;
     Ok(connection
         .query_row(
-            "SELECT id, slug, title, summary, trial_days, source_kind, source_ref
+            "SELECT id, slug, title, summary, trial_days, source_kind, source_ref, terms_json
              FROM offers
              WHERE slug = ?1 AND status = 'available' AND visibility = 'public' AND publication_state = 'published'",
             [offer_slug],
             public_offer_from_row,
         )
         .optional()?)
+}
+
+fn find_offer_by_slug(
+    connection: &Connection,
+    offer_slug: &str,
+) -> rusqlite::Result<Option<OfferRecord>> {
+    connection
+        .query_row(
+            "SELECT id, slug, title, summary, status, visibility, publication_state, trial_days,
+                    source_kind, source_ref, terms_json, metadata_json, created_by_actor_id,
+                    created_at, updated_at, published_at, archived_at
+             FROM offers
+             WHERE slug = ?1",
+            [offer_slug],
+            offer_from_row,
+        )
+        .optional()
 }
 
 fn find_offer_by_id(
@@ -1633,7 +2381,7 @@ fn ensure_hosted_trial_capacity_policy_tx(
             json!({
                 "source": "public_offer_acceptance",
                 "experimentalHosting": true,
-                "rewardExtensionsDeferredTo": "#248"
+                "rewardExtensionsSource": "reward_ledger_benefit_grants"
             })
             .to_string(),
             now,
@@ -1783,14 +2531,20 @@ fn offer_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OfferRecord> {
 }
 
 fn public_offer_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PublicOfferRecord> {
+    let terms_json: String = row.get(7)?;
+    let trial_days: i64 = row.get(4)?;
     Ok(PublicOfferRecord {
         id: row.get(0)?,
         slug: row.get(1)?,
         title: row.get(2)?,
         summary: row.get(3)?,
-        trial_days: row.get(4)?,
+        trial_days,
         source_kind: row.get(5)?,
         source_ref: row.get(6)?,
+        terms: public_offer_terms(
+            serde_json::from_str(&terms_json).unwrap_or_else(|_| json!({})),
+            trial_days,
+        ),
     })
 }
 
@@ -1949,7 +2703,40 @@ fn public_offer_from_surface_item(item: &PublicSurfaceItem) -> PublicOfferRecord
         trial_days: DEFAULT_TRIAL_DAYS,
         source_kind: "public_surface".to_string(),
         source_ref: Some(item.item_id.clone()),
+        terms: public_offer_terms(json!({}), DEFAULT_TRIAL_DAYS),
     }
+}
+
+fn public_offer_terms(terms: Value, trial_days: i64) -> Value {
+    json!({
+        "trialDays": terms
+            .get("trialDays")
+            .and_then(Value::as_i64)
+            .unwrap_or(trial_days),
+        "termsVersion": terms
+            .get("termsVersion")
+            .and_then(Value::as_str)
+            .unwrap_or("current"),
+        "experimentalHosting": terms
+            .get("experimentalHosting")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
+        "backupBeforeWipeRequired": terms
+            .get("backupBeforeWipeRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
+        "humanReviewRequired": terms
+            .get("humanReviewRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
+        "rewards": {
+            "status": "not_configured"
+        },
+        "packs": {
+            "status": "not_available_yet",
+            "blockedBy": "offer_pack_binding"
+        }
+    })
 }
 
 fn surface_field_text(item: &PublicSurfaceItem, key: &str) -> Option<String> {
@@ -2007,6 +2794,19 @@ impl OfferRecord {
 }
 
 impl PublicOfferRecord {
+    fn from_offer_record(record: &OfferRecord) -> Self {
+        Self {
+            id: record.id.clone(),
+            slug: record.slug.clone(),
+            title: record.title.clone(),
+            summary: record.summary.clone(),
+            trial_days: record.trial_days,
+            source_kind: record.source_kind.clone(),
+            source_ref: record.source_ref.clone(),
+            terms: public_offer_terms(record.terms.clone(), record.trial_days),
+        }
+    }
+
     fn into_view(self) -> PublicOfferView {
         PublicOfferView {
             id: self.id,
@@ -2016,6 +2816,7 @@ impl PublicOfferRecord {
             trial_days: self.trial_days,
             source_kind: self.source_kind,
             source_ref: self.source_ref,
+            terms: self.terms,
         }
     }
 }
@@ -2267,6 +3068,7 @@ fn offer_acceptance_receipt(
         trial_days,
         trial_ends_at: trial_ends_at.to_string(),
         access_grant_id: access_grant_id.to_string(),
+        terms_snapshot: public_offer_terms(offer.terms.clone(), offer.trial_days),
         expectations: vec![
             "This is an experimental hosted pilot, not production-critical infrastructure."
                 .to_string(),
@@ -2617,6 +3419,305 @@ mod tests {
             )
             .unwrap();
         assert_eq!(attribution_count, 1);
+    }
+
+    #[test]
+    fn offer_builder_publishes_pilot_offer_with_supported_references() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        seed_public_about(&db_path);
+        create_entry_point(
+            &db_path,
+            EntryPointWriteRequest {
+                slug: "nyc-meetup".to_string(),
+                label: "NYC Meetup".to_string(),
+                status: None,
+                source_kind: "qr".to_string(),
+                source_label: Some("NYC meetup".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: Some(json!({ "campaign": "nyc-pilot" })),
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (saved, event) = save_offer_builder_offer(
+            &db_path,
+            OfferBuilderSaveRequest {
+                offer: OfferWriteRequest {
+                    slug: "nyc-pilot".to_string(),
+                    title: "OrdoStudio NYC Pilot".to_string(),
+                    summary: "30 days of experimental hosted OrdoStudio access.".to_string(),
+                    status: Some(OfferStatus::Available),
+                    visibility: Some(BusinessFactVisibility::Public),
+                    publication_state: Some(PublicationState::Published),
+                    trial_days: Some(30),
+                    source_kind: Some("offer_builder".to_string()),
+                    source_ref: Some("nyc-pilot".to_string()),
+                    terms: Some(json!({
+                        "termsVersion": "2026-05-13",
+                        "trialDays": 30,
+                        "experimentalHosting": true,
+                        "backupBeforeWipeRequired": true,
+                        "humanReviewRequired": true
+                    })),
+                    metadata: None,
+                },
+                references: Some(OfferBuilderReferencesRequest {
+                    tracked_entry_point_slug: Some("nyc-meetup".to_string()),
+                    support_handoff_cta: Some(true),
+                    reward_program_id: Some("reward_program_ordostudio_nyc_pilot".to_string()),
+                    pack_ids: None,
+                    external_publishing: None,
+                    payment: None,
+                    oauth: None,
+                }),
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        assert_eq!(saved.offer.slug, "nyc-pilot");
+        assert_eq!(event.event_type, "offer_builder.saved");
+        assert!(saved.validation.publishable);
+        assert!(saved.validation.blockers.is_empty());
+        assert!(saved.public_preview.is_some());
+        assert!(saved
+            .validation
+            .supported_references
+            .iter()
+            .any(|reference| reference.key == "hosted_trial_capacity"));
+        assert!(saved
+            .validation
+            .supported_references
+            .iter()
+            .any(|reference| reference.key == "tracked_entry_point"));
+        assert!(saved
+            .validation
+            .supported_references
+            .iter()
+            .any(|reference| reference.key == "reward_ledger" && reference.status == "available"));
+
+        let public_offers = list_public_available_offers(&db_path).unwrap();
+        let public_offer = public_offers
+            .offers
+            .iter()
+            .find(|offer| offer.slug == "nyc-pilot")
+            .unwrap();
+        assert_eq!(public_offer.title, "OrdoStudio NYC Pilot");
+        assert_eq!(public_offer.terms["trialDays"], 30);
+        let public_json = serde_json::to_string(public_offer).unwrap();
+        assert!(!public_json.contains("rewardProgramId"));
+        assert!(!public_json.contains("packIds"));
+        assert!(!public_json.contains("provider"));
+        assert!(!public_json.contains("secret"));
+        assert!(!public_json.contains("rawPrompt"));
+    }
+
+    #[test]
+    fn offer_builder_blocks_unsupported_reward_pack_and_internal_references() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+
+        let blocked = save_offer_builder_offer(
+            &db_path,
+            OfferBuilderSaveRequest {
+                offer: OfferWriteRequest {
+                    slug: "unsafe-pilot".to_string(),
+                    title: "Unsafe Pilot".to_string(),
+                    summary: "Should not publish.".to_string(),
+                    status: Some(OfferStatus::Available),
+                    visibility: Some(BusinessFactVisibility::Public),
+                    publication_state: Some(PublicationState::Published),
+                    trial_days: Some(30),
+                    source_kind: Some("offer_builder".to_string()),
+                    source_ref: None,
+                    terms: Some(json!({
+                        "trialDays": 30,
+                        "experimentalHosting": true,
+                        "providerSecret": "sk_live_leak"
+                    })),
+                    metadata: Some(json!({ "rawPrompt": "internal system prompt" })),
+                },
+                references: Some(OfferBuilderReferencesRequest {
+                    tracked_entry_point_slug: None,
+                    support_handoff_cta: Some(true),
+                    reward_program_id: Some("reward_program_fake".to_string()),
+                    pack_ids: Some(vec!["pack.fake".to_string()]),
+                    external_publishing: Some(true),
+                    payment: Some(true),
+                    oauth: Some(true),
+                }),
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(blocked.contains("Reward program is not active or does not exist"));
+        assert!(blocked.contains("Product/workforce pack offer bindings are not available yet"));
+        assert!(blocked.contains("Public offers cannot include internal or secret-bearing keys"));
+        let offers = list_offers(&db_path).unwrap();
+        assert!(offers.offers.is_empty());
+    }
+
+    #[test]
+    fn offer_builder_edits_existing_offer_by_slug_without_duplicate() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+
+        let (created, _) = save_offer_builder_offer(
+            &db_path,
+            OfferBuilderSaveRequest {
+                offer: OfferWriteRequest {
+                    slug: "nyc-pilot".to_string(),
+                    title: "OrdoStudio NYC Pilot".to_string(),
+                    summary: "Initial pilot summary.".to_string(),
+                    status: Some(OfferStatus::Draft),
+                    visibility: Some(BusinessFactVisibility::Owner),
+                    publication_state: Some(PublicationState::Draft),
+                    trial_days: Some(30),
+                    source_kind: Some("offer_builder".to_string()),
+                    source_ref: Some("nyc-pilot".to_string()),
+                    terms: Some(json!({
+                        "termsVersion": "draft",
+                        "trialDays": 30,
+                        "experimentalHosting": true,
+                        "backupBeforeWipeRequired": true
+                    })),
+                    metadata: None,
+                },
+                references: Some(OfferBuilderReferencesRequest {
+                    tracked_entry_point_slug: None,
+                    support_handoff_cta: Some(false),
+                    reward_program_id: None,
+                    pack_ids: None,
+                    external_publishing: None,
+                    payment: None,
+                    oauth: None,
+                }),
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (edited, _) = save_offer_builder_offer(
+            &db_path,
+            OfferBuilderSaveRequest {
+                offer: OfferWriteRequest {
+                    slug: "nyc-pilot".to_string(),
+                    title: "OrdoStudio NYC Pilot".to_string(),
+                    summary: "Published pilot summary.".to_string(),
+                    status: Some(OfferStatus::Available),
+                    visibility: Some(BusinessFactVisibility::Public),
+                    publication_state: Some(PublicationState::Published),
+                    trial_days: Some(30),
+                    source_kind: Some("offer_builder".to_string()),
+                    source_ref: Some("nyc-pilot".to_string()),
+                    terms: Some(json!({
+                        "termsVersion": "published",
+                        "trialDays": 30,
+                        "experimentalHosting": true,
+                        "backupBeforeWipeRequired": true
+                    })),
+                    metadata: None,
+                },
+                references: Some(OfferBuilderReferencesRequest {
+                    tracked_entry_point_slug: None,
+                    support_handoff_cta: Some(true),
+                    reward_program_id: None,
+                    pack_ids: None,
+                    external_publishing: None,
+                    payment: None,
+                    oauth: None,
+                }),
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        assert_eq!(created.offer.id, edited.offer.id);
+        assert_eq!(edited.offer.summary, "Published pilot summary.");
+        assert!(edited.validation.publishable);
+        assert!(edited.public_preview.is_some());
+
+        let offers = list_offers(&db_path).unwrap();
+        assert_eq!(offers.offers.len(), 1);
+        assert_eq!(offers.offers[0].terms["termsVersion"], "published");
+    }
+
+    #[test]
+    fn acceptance_receipt_preserves_terms_snapshot_after_offer_edit() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (offer, _) = create_offer(
+            &db_path,
+            OfferWriteRequest {
+                terms: Some(json!({
+                    "termsVersion": "v1",
+                    "trialDays": 30,
+                    "experimentalHosting": true,
+                    "backupBeforeWipeRequired": true
+                })),
+                ..public_offer_request("terms-pack")
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let (acceptance, _, _, receipt, _) = accept_public_offer(
+            &db_path,
+            &offer.slug,
+            OfferAcceptanceCreateRequest {
+                visitor_session_id: None,
+                local_session_id: None,
+                idempotency_key: Some("terms-snapshot".to_string()),
+                attribution: None,
+                acceptance_context: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(receipt.terms_snapshot["termsVersion"], "v1");
+
+        update_offer(
+            &db_path,
+            &offer.id,
+            OfferWriteRequest {
+                terms: Some(json!({
+                    "termsVersion": "v2",
+                    "trialDays": 30,
+                    "experimentalHosting": true,
+                    "backupBeforeWipeRequired": true
+                })),
+                ..public_offer_request("terms-pack")
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let connection = Connection::open(&db_path).unwrap();
+        let stored_receipt: String = connection
+            .query_row(
+                "SELECT receipt_json FROM offer_acceptances WHERE id = ?1",
+                [acceptance.id.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let stored_receipt: OfferAcceptanceReceipt = serde_json::from_str(&stored_receipt).unwrap();
+        assert_eq!(stored_receipt.terms_snapshot["termsVersion"], "v1");
+        let current_public = list_public_available_offers(&db_path)
+            .unwrap()
+            .offers
+            .into_iter()
+            .find(|offer| offer.slug == "terms-pack")
+            .unwrap();
+        assert_eq!(current_public.terms["termsVersion"], "v2");
     }
 
     #[test]

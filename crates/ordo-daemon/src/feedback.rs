@@ -3,6 +3,7 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::Path;
 use uuid::Uuid;
 
 use crate::events::{append_realtime_event, system_event, RealtimeEvent};
@@ -137,6 +138,251 @@ pub struct ReviewCandidateInput {
     pub review_body: String,
     pub evidence_refs: Vec<String>,
     pub provenance: Value,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedbackRequestStatus {
+    Open,
+    Responded,
+    FollowUpRequested,
+    Accepted,
+    Rejected,
+    Expired,
+    Canceled,
+}
+
+impl FeedbackRequestStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Responded => "responded",
+            Self::FollowUpRequested => "follow_up_requested",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Expired => "expired",
+            Self::Canceled => "canceled",
+        }
+    }
+
+    fn terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Accepted | Self::Rejected | Self::Expired | Self::Canceled
+        )
+    }
+}
+
+impl TryFrom<&str> for FeedbackRequestStatus {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        match value {
+            "open" => Ok(Self::Open),
+            "responded" => Ok(Self::Responded),
+            "follow_up_requested" => Ok(Self::FollowUpRequested),
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            "expired" => Ok(Self::Expired),
+            "canceled" => Ok(Self::Canceled),
+            other => bail!("Unsupported feedback request status: {other}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedbackRequestReviewDecision {
+    Accepted,
+    Rejected,
+    FollowUpRequested,
+}
+
+impl FeedbackRequestReviewDecision {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::FollowUpRequested => "follow_up_requested",
+        }
+    }
+}
+
+impl TryFrom<&str> for FeedbackRequestReviewDecision {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        match value {
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            "follow_up_requested" => Ok(Self::FollowUpRequested),
+            other => bail!("Unsupported feedback request review decision: {other}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedbackRequestViewer {
+    Public,
+    Member,
+    Staff,
+    Growth,
+    Owner,
+    System,
+}
+
+impl Default for FeedbackRequestViewer {
+    fn default() -> Self {
+        Self::Member
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FeedbackRequestQuery {
+    pub viewer: FeedbackRequestViewer,
+    pub actor_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub target_kind: Option<String>,
+    pub status: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRequestListResponse {
+    pub requests: Vec<FeedbackRequestView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRequestView {
+    pub id: String,
+    pub target_kind: String,
+    pub target_id: String,
+    pub member_actor_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub source_kind: String,
+    pub source_id: Option<String>,
+    pub prompt: String,
+    pub member_context_summary: String,
+    pub status: FeedbackRequestStatus,
+    pub due_at: Option<String>,
+    pub priority: String,
+    pub evidence_refs: Vec<String>,
+    pub responses: Vec<FeedbackRequestResponseView>,
+    pub reviews: Vec<FeedbackRequestReviewView>,
+    pub reward_eligibility: Option<FeedbackRewardEligibilityView>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRequestResponseView {
+    pub id: String,
+    pub request_id: String,
+    pub actor_id: Option<String>,
+    pub response_kind: String,
+    pub body_summary: String,
+    pub customer_feedback_id: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRequestReviewView {
+    pub id: String,
+    pub request_id: String,
+    pub response_id: Option<String>,
+    pub decision: FeedbackRequestReviewDecision,
+    pub tags: Vec<String>,
+    pub reason: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRewardEligibilityView {
+    pub id: String,
+    pub request_id: String,
+    pub response_id: Option<String>,
+    pub review_id: Option<String>,
+    pub actor_id: Option<String>,
+    pub state: String,
+    pub reason: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FeedbackRequestCreateRequest {
+    pub target_kind: String,
+    pub target_id: String,
+    pub member_actor_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub source_kind: String,
+    pub source_id: Option<String>,
+    pub prompt: String,
+    pub member_context_summary: String,
+    pub due_at: Option<String>,
+    pub priority: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub provenance: Value,
+    pub staff_context: Value,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FeedbackRequestRespondRequest {
+    pub response_kind: Option<String>,
+    pub body_summary: String,
+    pub idempotency_key: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub provenance: Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRequestReviewRequest {
+    pub decision: FeedbackRequestReviewDecision,
+    pub response_id: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub reason: String,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+    #[serde(default)]
+    pub provenance: Value,
+}
+
+#[derive(Debug, Clone)]
+struct FeedbackRequestRecord {
+    id: String,
+    target_kind: String,
+    target_id: String,
+    member_actor_id: Option<String>,
+    connection_id: Option<String>,
+    conversation_id: Option<String>,
+    source_kind: String,
+    source_id: Option<String>,
+    prompt: String,
+    member_context_summary: String,
+    status: FeedbackRequestStatus,
+    due_at: Option<String>,
+    priority: String,
+    evidence_refs: Vec<String>,
+    created_at: String,
+    updated_at: String,
 }
 
 pub fn capture_feedback(
@@ -430,23 +676,367 @@ pub fn list_private_feedback(
     connection: &Connection,
     conversation_id: &str,
 ) -> Result<Vec<CustomerFeedbackView>> {
-    connection.query_many("SELECT id, connection_id, conversation_id, segment_id, message_id, feedback_kind,
+    connection.query_many(
+        "SELECT id, connection_id, conversation_id, segment_id, message_id, feedback_kind,
                 status, visibility, body_summary, is_starred, source_refs_json,
                 evidence_refs_json, provenance_json, created_at, updated_at
          FROM customer_feedback
          WHERE conversation_id = ?1 AND visibility = 'private_business_intelligence'
-         ORDER BY updated_at DESC", [conversation_id], feedback_from_row)
+         ORDER BY updated_at DESC",
+        [conversation_id],
+        feedback_from_row,
+    )
 }
 
 pub fn list_public_reviews(connection: &Connection) -> Result<Vec<CustomerReviewView>> {
-    connection.query_many("SELECT id, feedback_id, connection_id, conversation_id, status, review_body,
+    connection.query_many(
+        "SELECT id, feedback_id, connection_id, conversation_id, status, review_body,
                 publication_visibility, consent_evidence_refs_json,
                 approval_evidence_refs_json, evidence_refs_json, provenance_json,
                 created_at, updated_at, published_at, featured_at, retired_at
          FROM customer_reviews
          WHERE publication_visibility = 'public_review'
            AND status IN ('published', 'featured')
-         ORDER BY updated_at DESC", [], review_from_row)
+         ORDER BY updated_at DESC",
+        [],
+        review_from_row,
+    )
+}
+
+pub fn list_feedback_requests(
+    db_path: &Path,
+    query: FeedbackRequestQuery,
+) -> Result<FeedbackRequestListResponse> {
+    let connection = Connection::open(db_path)?;
+    list_feedback_requests_in_connection(&connection, query)
+}
+
+pub fn create_feedback_request(
+    db_path: &Path,
+    input: FeedbackRequestCreateRequest,
+    actor_id: Option<&str>,
+) -> Result<(FeedbackRequestView, RealtimeEvent)> {
+    let connection = Connection::open(db_path)?;
+    create_feedback_request_in_connection(&connection, input, actor_id)
+}
+
+pub fn respond_to_feedback_request(
+    db_path: &Path,
+    request_id: &str,
+    input: FeedbackRequestRespondRequest,
+    actor_id: Option<&str>,
+) -> Result<(FeedbackRequestView, RealtimeEvent)> {
+    let connection = Connection::open(db_path)?;
+    respond_to_feedback_request_in_connection(&connection, request_id, input, actor_id)
+}
+
+pub fn review_feedback_request(
+    db_path: &Path,
+    request_id: &str,
+    input: FeedbackRequestReviewRequest,
+    actor_id: Option<&str>,
+) -> Result<(FeedbackRequestView, RealtimeEvent)> {
+    let connection = Connection::open(db_path)?;
+    review_feedback_request_in_connection(&connection, request_id, input, actor_id)
+}
+
+pub fn list_feedback_requests_in_connection(
+    connection: &Connection,
+    query: FeedbackRequestQuery,
+) -> Result<FeedbackRequestListResponse> {
+    let mut statement = connection.prepare(
+        "SELECT id, target_kind, target_id, member_actor_id, connection_id,
+                conversation_id, source_kind, source_id, prompt, member_context_summary,
+                status, due_at, priority, evidence_refs_json, created_at, updated_at
+         FROM feedback_requests
+         ORDER BY updated_at DESC, id ASC",
+    )?;
+    let records = statement
+        .query_map([], feedback_request_record_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let limit = query.limit.unwrap_or(100).min(500);
+    let requests = records
+        .into_iter()
+        .filter(|record| feedback_request_matches_query(record, &query))
+        .take(limit)
+        .map(|record| feedback_request_view(connection, record, query.viewer, &query))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(FeedbackRequestListResponse { requests })
+}
+
+pub fn create_feedback_request_in_connection(
+    connection: &Connection,
+    input: FeedbackRequestCreateRequest,
+    actor_id: Option<&str>,
+) -> Result<(FeedbackRequestView, RealtimeEvent)> {
+    validate_feedback_request_create(&input)?;
+    let now = Utc::now().to_rfc3339();
+    let id = format!("feedback_request_{}", Uuid::new_v4());
+    connection.execute(
+        "INSERT INTO feedback_requests (
+            id, target_kind, target_id, member_actor_id, connection_id, conversation_id,
+            source_kind, source_id, prompt, member_context_summary, status, due_at,
+            priority, created_by_actor_id, evidence_refs_json, provenance_json,
+            staff_context_json, created_at, updated_at
+         ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'open', ?11, ?12, ?13,
+            ?14, ?15, ?16, ?17, ?17
+         )",
+        params![
+            id,
+            normalize_kind(&input.target_kind),
+            input.target_id.trim(),
+            input.member_actor_id.as_deref().map(str::trim),
+            input.connection_id.as_deref().map(str::trim),
+            input.conversation_id.as_deref().map(str::trim),
+            normalize_kind(&input.source_kind),
+            input.source_id.as_deref().map(str::trim),
+            input.prompt.trim(),
+            input.member_context_summary.trim(),
+            input.due_at.as_deref().map(str::trim),
+            input.priority.as_deref().unwrap_or("normal").trim(),
+            actor_id,
+            json!(input.evidence_refs).to_string(),
+            input.provenance.to_string(),
+            input.staff_context.to_string(),
+            now,
+        ],
+    )?;
+    let view = load_feedback_request_view(
+        connection,
+        &id,
+        FeedbackRequestViewer::Staff,
+        &FeedbackRequestQuery {
+            viewer: FeedbackRequestViewer::Staff,
+            ..FeedbackRequestQuery::default()
+        },
+    )?;
+    let event = append_realtime_event(
+        connection,
+        &system_event(
+            "feedback.request.created",
+            json!({
+                "requestId": view.id,
+                "targetKind": view.target_kind,
+                "targetId": view.target_id,
+                "status": view.status.as_str(),
+                "evidenceRefs": view.evidence_refs,
+            }),
+        ),
+    )?;
+    Ok((view, event))
+}
+
+pub fn respond_to_feedback_request_in_connection(
+    connection: &Connection,
+    request_id: &str,
+    input: FeedbackRequestRespondRequest,
+    actor_id: Option<&str>,
+) -> Result<(FeedbackRequestView, RealtimeEvent)> {
+    validate_feedback_request_response(&input)?;
+    if let Some(key) = normalized_optional(input.idempotency_key.as_deref()) {
+        if let Some(existing) = load_response_by_idempotency_key(connection, request_id, &key)? {
+            let view = load_feedback_request_view(
+                connection,
+                request_id,
+                FeedbackRequestViewer::Staff,
+                &FeedbackRequestQuery {
+                    viewer: FeedbackRequestViewer::Staff,
+                    ..FeedbackRequestQuery::default()
+                },
+            )?;
+            let event = append_realtime_event(
+                connection,
+                &system_event(
+                    "feedback.request.response.replayed",
+                    json!({
+                        "requestId": request_id,
+                        "responseId": existing.id,
+                        "idempotencyKey": key,
+                    }),
+                ),
+            )?;
+            return Ok((view, event));
+        }
+    }
+
+    let record = load_feedback_request_record(connection, request_id)?;
+    ensure!(
+        matches!(
+            record.status,
+            FeedbackRequestStatus::Open | FeedbackRequestStatus::FollowUpRequested
+        ),
+        "feedback request is not waiting for a member response"
+    );
+    let now = Utc::now().to_rfc3339();
+    let response_kind = input
+        .response_kind
+        .as_deref()
+        .map(normalize_kind)
+        .unwrap_or_else(|| "answer".to_string());
+    let response_id = format!("feedback_request_response_{}", Uuid::new_v4());
+    let customer_feedback_id = if let Some(conversation_id) = record.conversation_id.as_deref() {
+        let (feedback, _) = capture_feedback(
+            connection,
+            CustomerFeedbackInput {
+                connection_id: record.connection_id.clone(),
+                conversation_id: conversation_id.to_string(),
+                segment_id: None,
+                message_id: None,
+                feedback_kind: response_kind.clone(),
+                body_summary: input.body_summary.trim().to_string(),
+                source_refs: vec![
+                    format!("feedback_request:{request_id}"),
+                    format!("{}:{}", record.target_kind, record.target_id),
+                ],
+                evidence_refs: input.evidence_refs.clone(),
+                provenance: json!({
+                    "source": "feedback_request",
+                    "requestId": request_id,
+                    "responseProvenance": input.provenance.clone(),
+                }),
+            },
+        )?;
+        Some(feedback.id)
+    } else {
+        None
+    };
+    let idempotency_key = normalized_optional(input.idempotency_key.as_deref());
+    connection.execute(
+        "INSERT INTO feedback_request_responses (
+            id, request_id, actor_id, response_kind, body_summary, customer_feedback_id,
+            idempotency_key, evidence_refs_json, provenance_json, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+        params![
+            response_id,
+            request_id,
+            actor_id,
+            response_kind,
+            input.body_summary.trim(),
+            customer_feedback_id,
+            idempotency_key,
+            json!(input.evidence_refs).to_string(),
+            input.provenance.to_string(),
+            now,
+        ],
+    )?;
+    connection.execute(
+        "UPDATE feedback_requests
+         SET status = 'responded', updated_at = ?1
+         WHERE id = ?2",
+        params![now, request_id],
+    )?;
+    let view = load_feedback_request_view(
+        connection,
+        request_id,
+        FeedbackRequestViewer::Staff,
+        &FeedbackRequestQuery {
+            viewer: FeedbackRequestViewer::Staff,
+            ..FeedbackRequestQuery::default()
+        },
+    )?;
+    let event = append_realtime_event(
+        connection,
+        &system_event(
+            "feedback.request.responded",
+            json!({
+                "requestId": request_id,
+                "responseId": response_id,
+                "status": view.status.as_str(),
+                "evidenceRefs": input.evidence_refs,
+            }),
+        ),
+    )?;
+    Ok((view, event))
+}
+
+pub fn review_feedback_request_in_connection(
+    connection: &Connection,
+    request_id: &str,
+    input: FeedbackRequestReviewRequest,
+    actor_id: Option<&str>,
+) -> Result<(FeedbackRequestView, RealtimeEvent)> {
+    validate_feedback_request_review(&input)?;
+    let record = load_feedback_request_record(connection, request_id)?;
+    ensure!(
+        !record.status.terminal(),
+        "feedback request already has a terminal review decision"
+    );
+    let response_id = match input.decision {
+        FeedbackRequestReviewDecision::Accepted | FeedbackRequestReviewDecision::Rejected => input
+            .response_id
+            .clone()
+            .or_else(|| latest_response_id(connection, request_id).ok().flatten())
+            .ok_or_else(|| anyhow::anyhow!("review decision requires a response"))
+            .map(Some)?,
+        FeedbackRequestReviewDecision::FollowUpRequested => input.response_id.clone(),
+    };
+    if let Some(response_id) = response_id.as_deref() {
+        ensure_response_belongs_to_request(connection, request_id, response_id)?;
+    }
+
+    let now = Utc::now().to_rfc3339();
+    let review_id = format!("feedback_request_review_{}", Uuid::new_v4());
+    connection.execute(
+        "INSERT INTO feedback_request_reviews (
+            id, request_id, response_id, reviewer_actor_id, decision, tags_json, reason,
+            evidence_refs_json, provenance_json, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+        params![
+            review_id,
+            request_id,
+            response_id,
+            actor_id,
+            input.decision.as_str(),
+            json!(input.tags).to_string(),
+            input.reason.trim(),
+            json!(input.evidence_refs).to_string(),
+            input.provenance.to_string(),
+            now,
+        ],
+    )?;
+    connection.execute(
+        "UPDATE feedback_requests
+         SET status = ?1,
+             updated_at = ?2,
+             closed_at = CASE WHEN ?1 IN ('accepted', 'rejected') THEN ?2 ELSE closed_at END
+         WHERE id = ?3",
+        params![input.decision.as_str(), now, request_id],
+    )?;
+    record_reward_eligibility(
+        connection,
+        request_id,
+        response_id.as_deref(),
+        &review_id,
+        actor_id,
+        input.decision,
+        &input.evidence_refs,
+        &now,
+    )?;
+    let view = load_feedback_request_view(
+        connection,
+        request_id,
+        FeedbackRequestViewer::Staff,
+        &FeedbackRequestQuery {
+            viewer: FeedbackRequestViewer::Staff,
+            ..FeedbackRequestQuery::default()
+        },
+    )?;
+    let event = append_realtime_event(
+        connection,
+        &system_event(
+            "feedback.request.reviewed",
+            json!({
+                "requestId": request_id,
+                "reviewId": review_id,
+                "decision": input.decision.as_str(),
+                "status": view.status.as_str(),
+                "rewardQualificationRequired": input.decision == FeedbackRequestReviewDecision::Accepted,
+                "evidenceRefs": input.evidence_refs,
+            }),
+        ),
+    )?;
+    Ok((view, event))
 }
 
 fn load_feedback(connection: &Connection, feedback_id: &str) -> Result<CustomerFeedbackView> {
@@ -508,6 +1098,534 @@ fn load_review(connection: &Connection, review_id: &str) -> Result<CustomerRevie
 
 fn ensure_feedback_exists(connection: &Connection, feedback_id: &str) -> Result<()> {
     load_feedback(connection, feedback_id).map(|_| ())
+}
+
+fn load_feedback_request_record(
+    connection: &Connection,
+    request_id: &str,
+) -> Result<FeedbackRequestRecord> {
+    connection
+        .query_row(
+            "SELECT id, target_kind, target_id, member_actor_id, connection_id,
+                    conversation_id, source_kind, source_id, prompt, member_context_summary,
+                    status, due_at, priority, evidence_refs_json, created_at, updated_at
+             FROM feedback_requests WHERE id = ?1",
+            [request_id],
+            feedback_request_record_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("Feedback request was not found: {request_id}"))
+}
+
+fn load_feedback_request_view(
+    connection: &Connection,
+    request_id: &str,
+    viewer: FeedbackRequestViewer,
+    query: &FeedbackRequestQuery,
+) -> Result<FeedbackRequestView> {
+    let record = load_feedback_request_record(connection, request_id)?;
+    feedback_request_view(connection, record, viewer, query)
+}
+
+fn feedback_request_record_from_row(row: &Row<'_>) -> rusqlite::Result<FeedbackRequestRecord> {
+    let status_raw: String = row.get(10)?;
+    let evidence_refs_json: String = row.get(13)?;
+    Ok(FeedbackRequestRecord {
+        id: row.get(0)?,
+        target_kind: row.get(1)?,
+        target_id: row.get(2)?,
+        member_actor_id: row.get(3)?,
+        connection_id: row.get(4)?,
+        conversation_id: row.get(5)?,
+        source_kind: row.get(6)?,
+        source_id: row.get(7)?,
+        prompt: row.get(8)?,
+        member_context_summary: row.get(9)?,
+        status: FeedbackRequestStatus::try_from(status_raw.as_str()).map_err(to_sql_error)?,
+        due_at: row.get(11)?,
+        priority: row.get(12)?,
+        evidence_refs: parse_string_vec(&evidence_refs_json),
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
+    })
+}
+
+fn feedback_request_view(
+    connection: &Connection,
+    record: FeedbackRequestRecord,
+    viewer: FeedbackRequestViewer,
+    query: &FeedbackRequestQuery,
+) -> Result<FeedbackRequestView> {
+    let safe_member_view = matches!(
+        viewer,
+        FeedbackRequestViewer::Member | FeedbackRequestViewer::Public
+    );
+    let growth_view = viewer == FeedbackRequestViewer::Growth;
+    let responses = if safe_member_view {
+        load_feedback_request_responses(connection, &record.id)?
+            .into_iter()
+            .filter(|response| response_matches_member_query(response, query))
+            .map(member_safe_feedback_response)
+            .collect()
+    } else if growth_view {
+        Vec::new()
+    } else {
+        load_feedback_request_responses(connection, &record.id)?
+    };
+    let reviews = if safe_member_view || growth_view {
+        Vec::new()
+    } else {
+        load_feedback_request_reviews(connection, &record.id)?
+    };
+    let mut reward_eligibility =
+        load_feedback_reward_eligibility(connection, &record.id, safe_member_view || growth_view)?;
+    if safe_member_view {
+        reward_eligibility = reward_eligibility.map(member_safe_reward_eligibility);
+    }
+    let evidence_refs = if safe_member_view {
+        vec![format!("feedback_request:{}", record.id)]
+    } else {
+        record.evidence_refs.clone()
+    };
+    let prompt = if growth_view {
+        String::new()
+    } else {
+        record.prompt.clone()
+    };
+    let member_context_summary = if growth_view {
+        String::new()
+    } else {
+        record.member_context_summary.clone()
+    };
+
+    Ok(FeedbackRequestView {
+        id: record.id,
+        target_kind: record.target_kind,
+        target_id: if safe_member_view {
+            String::new()
+        } else {
+            record.target_id
+        },
+        member_actor_id: if safe_member_view {
+            None
+        } else {
+            record.member_actor_id
+        },
+        connection_id: if safe_member_view {
+            None
+        } else {
+            record.connection_id
+        },
+        conversation_id: if safe_member_view {
+            None
+        } else {
+            record.conversation_id
+        },
+        source_kind: if safe_member_view {
+            "feedback_request".to_string()
+        } else {
+            record.source_kind
+        },
+        source_id: if safe_member_view {
+            None
+        } else {
+            record.source_id
+        },
+        prompt,
+        member_context_summary,
+        status: record.status,
+        due_at: record.due_at,
+        priority: record.priority,
+        evidence_refs,
+        responses,
+        reviews,
+        reward_eligibility,
+        created_at: record.created_at,
+        updated_at: record.updated_at,
+    })
+}
+
+fn member_safe_feedback_response(
+    mut response: FeedbackRequestResponseView,
+) -> FeedbackRequestResponseView {
+    response.actor_id = None;
+    response.customer_feedback_id = None;
+    response.evidence_refs.clear();
+    response
+}
+
+fn member_safe_reward_eligibility(
+    mut eligibility: FeedbackRewardEligibilityView,
+) -> FeedbackRewardEligibilityView {
+    eligibility.response_id = None;
+    eligibility.review_id = None;
+    eligibility.actor_id = None;
+    eligibility.reason = None;
+    eligibility.evidence_refs.clear();
+    eligibility
+}
+
+fn load_feedback_request_responses(
+    connection: &Connection,
+    request_id: &str,
+) -> Result<Vec<FeedbackRequestResponseView>> {
+    connection.query_many(
+        "SELECT id, request_id, actor_id, response_kind, body_summary, customer_feedback_id,
+                evidence_refs_json, created_at, updated_at
+         FROM feedback_request_responses
+         WHERE request_id = ?1
+         ORDER BY created_at ASC, id ASC",
+        [request_id],
+        feedback_request_response_from_row,
+    )
+}
+
+fn load_response_by_idempotency_key(
+    connection: &Connection,
+    request_id: &str,
+    idempotency_key: &str,
+) -> Result<Option<FeedbackRequestResponseView>> {
+    connection
+        .query_row(
+            "SELECT id, request_id, actor_id, response_kind, body_summary, customer_feedback_id,
+                    evidence_refs_json, created_at, updated_at
+             FROM feedback_request_responses
+             WHERE request_id = ?1 AND idempotency_key = ?2",
+            params![request_id, idempotency_key],
+            feedback_request_response_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn feedback_request_response_from_row(
+    row: &Row<'_>,
+) -> rusqlite::Result<FeedbackRequestResponseView> {
+    let evidence_refs_json: String = row.get(6)?;
+    Ok(FeedbackRequestResponseView {
+        id: row.get(0)?,
+        request_id: row.get(1)?,
+        actor_id: row.get(2)?,
+        response_kind: row.get(3)?,
+        body_summary: row.get(4)?,
+        customer_feedback_id: row.get(5)?,
+        evidence_refs: parse_string_vec(&evidence_refs_json),
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
+}
+
+fn load_feedback_request_reviews(
+    connection: &Connection,
+    request_id: &str,
+) -> Result<Vec<FeedbackRequestReviewView>> {
+    connection.query_many(
+        "SELECT id, request_id, response_id, decision, tags_json, reason,
+                evidence_refs_json, created_at, updated_at
+         FROM feedback_request_reviews
+         WHERE request_id = ?1
+         ORDER BY created_at ASC, id ASC",
+        [request_id],
+        feedback_request_review_from_row,
+    )
+}
+
+fn feedback_request_review_from_row(row: &Row<'_>) -> rusqlite::Result<FeedbackRequestReviewView> {
+    let decision_raw: String = row.get(3)?;
+    let tags_json: String = row.get(4)?;
+    let evidence_refs_json: String = row.get(6)?;
+    Ok(FeedbackRequestReviewView {
+        id: row.get(0)?,
+        request_id: row.get(1)?,
+        response_id: row.get(2)?,
+        decision: FeedbackRequestReviewDecision::try_from(decision_raw.as_str())
+            .map_err(to_sql_error)?,
+        tags: parse_string_vec(&tags_json),
+        reason: Some(row.get(5)?),
+        evidence_refs: parse_string_vec(&evidence_refs_json),
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
+}
+
+fn load_feedback_reward_eligibility(
+    connection: &Connection,
+    request_id: &str,
+    safe_reason: bool,
+) -> Result<Option<FeedbackRewardEligibilityView>> {
+    connection
+        .query_row(
+            "SELECT id, request_id, response_id, review_id, actor_id, state, reason,
+                    evidence_refs_json, created_at, updated_at
+             FROM feedback_reward_eligibility
+             WHERE request_id = ?1
+             ORDER BY updated_at DESC, id ASC
+             LIMIT 1",
+            [request_id],
+            |row| feedback_reward_eligibility_from_row(row, safe_reason),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn feedback_reward_eligibility_from_row(
+    row: &Row<'_>,
+    safe_reason: bool,
+) -> rusqlite::Result<FeedbackRewardEligibilityView> {
+    let evidence_refs_json: String = row.get(7)?;
+    Ok(FeedbackRewardEligibilityView {
+        id: row.get(0)?,
+        request_id: row.get(1)?,
+        response_id: row.get(2)?,
+        review_id: row.get(3)?,
+        actor_id: row.get(4)?,
+        state: row.get(5)?,
+        reason: if safe_reason { None } else { Some(row.get(6)?) },
+        evidence_refs: if safe_reason {
+            Vec::new()
+        } else {
+            parse_string_vec(&evidence_refs_json)
+        },
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+fn latest_response_id(connection: &Connection, request_id: &str) -> Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT id FROM feedback_request_responses
+             WHERE request_id = ?1
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 1",
+            [request_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn ensure_response_belongs_to_request(
+    connection: &Connection,
+    request_id: &str,
+    response_id: &str,
+) -> Result<()> {
+    let exists: Option<String> = connection
+        .query_row(
+            "SELECT id FROM feedback_request_responses WHERE id = ?1 AND request_id = ?2",
+            params![response_id, request_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    ensure!(
+        exists.is_some(),
+        "feedback response does not belong to request"
+    );
+    Ok(())
+}
+
+fn record_reward_eligibility(
+    connection: &Connection,
+    request_id: &str,
+    response_id: Option<&str>,
+    review_id: &str,
+    actor_id: Option<&str>,
+    decision: FeedbackRequestReviewDecision,
+    evidence_refs: &[String],
+    now: &str,
+) -> Result<()> {
+    let (state, reason) = match decision {
+        FeedbackRequestReviewDecision::Accepted => (
+            "pending_qualification",
+            "Feedback was accepted; reward qualification is pending reward ledger review.",
+        ),
+        FeedbackRequestReviewDecision::Rejected => (
+            "not_qualified",
+            "Feedback was rejected by Support review evidence.",
+        ),
+        FeedbackRequestReviewDecision::FollowUpRequested => (
+            "needs_follow_up",
+            "Support requested follow-up before reward qualification.",
+        ),
+    };
+    let id = format!("feedback_reward_eligibility_{}", Uuid::new_v4());
+    connection.execute(
+        "INSERT INTO feedback_reward_eligibility (
+            id, request_id, response_id, review_id, actor_id, state, reason,
+            evidence_refs_json, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+         ON CONFLICT(request_id, response_id) DO UPDATE SET
+            review_id = excluded.review_id,
+            actor_id = excluded.actor_id,
+            state = excluded.state,
+            reason = excluded.reason,
+            evidence_refs_json = excluded.evidence_refs_json,
+            updated_at = excluded.updated_at",
+        params![
+            id,
+            request_id,
+            response_id,
+            review_id,
+            actor_id,
+            state,
+            reason,
+            json!(evidence_refs).to_string(),
+            now,
+        ],
+    )?;
+    Ok(())
+}
+
+fn feedback_request_matches_query(
+    record: &FeedbackRequestRecord,
+    query: &FeedbackRequestQuery,
+) -> bool {
+    if matches!(query.viewer, FeedbackRequestViewer::Public) {
+        return false;
+    }
+    if query
+        .target_kind
+        .as_deref()
+        .is_some_and(|target_kind| normalize_kind(target_kind) != record.target_kind)
+    {
+        return false;
+    }
+    if query
+        .status
+        .as_deref()
+        .is_some_and(|status| normalize_kind(status) != record.status.as_str())
+    {
+        return false;
+    }
+    if matches!(query.viewer, FeedbackRequestViewer::Member) {
+        return member_request_matches_query(record, query);
+    }
+    true
+}
+
+fn member_request_matches_query(
+    record: &FeedbackRequestRecord,
+    query: &FeedbackRequestQuery,
+) -> bool {
+    query.actor_id.as_deref().is_some_and(|actor_id| {
+        record
+            .member_actor_id
+            .as_deref()
+            .is_some_and(|member_actor_id| member_actor_id == actor_id)
+    }) || query.connection_id.as_deref().is_some_and(|connection_id| {
+        record
+            .connection_id
+            .as_deref()
+            .is_some_and(|record_connection_id| record_connection_id == connection_id)
+    })
+}
+
+fn response_matches_member_query(
+    response: &FeedbackRequestResponseView,
+    query: &FeedbackRequestQuery,
+) -> bool {
+    query.actor_id.as_deref().is_some_and(|actor_id| {
+        response
+            .actor_id
+            .as_deref()
+            .is_some_and(|response_actor_id| response_actor_id == actor_id)
+    }) || query.actor_id.is_none()
+}
+
+fn validate_feedback_request_create(input: &FeedbackRequestCreateRequest) -> Result<()> {
+    require_text("target_kind", &input.target_kind)?;
+    require_text("target_id", &input.target_id)?;
+    require_text("source_kind", &input.source_kind)?;
+    require_text("prompt", &input.prompt)?;
+    require_text("member_context_summary", &input.member_context_summary)?;
+    ensure!(
+        input.member_actor_id.as_deref().is_some_and(has_text)
+            || input.connection_id.as_deref().is_some_and(has_text),
+        "feedback request requires a member actor or connection assignment"
+    );
+    ensure!(
+        matches!(
+            normalize_kind(&input.target_kind).as_str(),
+            "account"
+                | "member"
+                | "trial"
+                | "hosted_trial"
+                | "artifact"
+                | "offer"
+                | "workflow"
+                | "conversation"
+        ),
+        "unsupported feedback request target kind"
+    );
+    ensure_safe_member_text("prompt", &input.prompt)?;
+    ensure_safe_member_text("member_context_summary", &input.member_context_summary)?;
+    validate_evidence_and_provenance(&input.evidence_refs, &input.provenance)
+}
+
+fn validate_feedback_request_response(input: &FeedbackRequestRespondRequest) -> Result<()> {
+    require_text("body_summary", &input.body_summary)?;
+    if let Some(response_kind) = input.response_kind.as_deref() {
+        require_text("response_kind", response_kind)?;
+    }
+    validate_evidence_and_provenance(&input.evidence_refs, &input.provenance)
+}
+
+fn validate_feedback_request_review(input: &FeedbackRequestReviewRequest) -> Result<()> {
+    require_text("review reason", &input.reason)?;
+    ensure!(
+        !input.evidence_refs.is_empty(),
+        "feedback request review requires evidence refs"
+    );
+    ensure!(
+        input
+            .provenance
+            .as_object()
+            .is_some_and(|object| !object.is_empty()),
+        "feedback request review provenance is required"
+    );
+    for tag in &input.tags {
+        require_text("feedback request review tag", tag)?;
+    }
+    Ok(())
+}
+
+fn ensure_safe_member_text(label: &str, value: &str) -> Result<()> {
+    let normalized = value.to_ascii_lowercase().replace(['_', '-', ' '], "");
+    for blocked in [
+        "apikey",
+        "password",
+        "providersecret",
+        "rawprompt",
+        "secret",
+        "staffnote",
+        "policyinternal",
+        "token",
+    ] {
+        ensure!(
+            !normalized.contains(blocked),
+            "{label} contains staff-only or secret-bearing context"
+        );
+    }
+    Ok(())
+}
+
+fn has_text(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
+fn normalize_kind(value: &str) -> String {
+    value.trim().to_ascii_lowercase().replace('-', "_")
+}
+
+fn normalized_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn parse_string_vec(value: &str) -> Vec<String> {
+    serde_json::from_str(value).unwrap_or_default()
 }
 
 fn feedback_from_row(row: &Row<'_>) -> rusqlite::Result<CustomerFeedbackView> {
@@ -781,5 +1899,274 @@ mod tests {
 
         assert_eq!(published.publication_visibility, "public_review");
         assert_eq!(list_public_reviews(&connection).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn feedback_request_loop_keeps_response_private_and_records_reward_eligibility() {
+        let connection = connection();
+        let (request, _) = create_feedback_request_in_connection(
+            &connection,
+            FeedbackRequestCreateRequest {
+                target_kind: "trial".to_string(),
+                target_id: "trial_1".to_string(),
+                member_actor_id: Some("actor_member_1".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                conversation_id: Some("conversation_1".to_string()),
+                source_kind: "support".to_string(),
+                source_id: Some("handoff_1".to_string()),
+                prompt: "What would make Ordo more useful this week?".to_string(),
+                member_context_summary: "Keith is asking for feedback on the NYC pilot trial."
+                    .to_string(),
+                due_at: Some("2026-05-15T10:00:00Z".to_string()),
+                priority: Some("high".to_string()),
+                evidence_refs: vec!["handoff:handoff_1".to_string()],
+                provenance: json!({"source": "test"}),
+                staff_context: json!({"staffNotes": "internal only"}),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap();
+        assert_eq!(request.status, FeedbackRequestStatus::Open);
+
+        let unscoped_member = list_feedback_requests_in_connection(
+            &connection,
+            FeedbackRequestQuery {
+                viewer: FeedbackRequestViewer::Member,
+                ..FeedbackRequestQuery::default()
+            },
+        )
+        .unwrap();
+        assert!(unscoped_member.requests.is_empty());
+
+        let (responded, _) = respond_to_feedback_request_in_connection(
+            &connection,
+            &request.id,
+            FeedbackRequestRespondRequest {
+                response_kind: Some("answer".to_string()),
+                body_summary: "The strategy handoff should say what changed.".to_string(),
+                idempotency_key: Some("member-response-1".to_string()),
+                evidence_refs: vec!["message:member_response_1".to_string()],
+                provenance: json!({"source": "member_chat"}),
+            },
+            Some("actor_member_1"),
+        )
+        .unwrap();
+        assert_eq!(responded.status, FeedbackRequestStatus::Responded);
+        assert_eq!(responded.responses.len(), 1);
+        assert!(responded.responses[0].customer_feedback_id.is_some());
+        assert_eq!(
+            list_private_feedback(&connection, "conversation_1")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(list_public_reviews(&connection).unwrap().len(), 0);
+
+        let (replayed, _) = respond_to_feedback_request_in_connection(
+            &connection,
+            &request.id,
+            FeedbackRequestRespondRequest {
+                response_kind: Some("answer".to_string()),
+                body_summary: "The strategy handoff should say what changed.".to_string(),
+                idempotency_key: Some("member-response-1".to_string()),
+                evidence_refs: vec!["message:member_response_1".to_string()],
+                provenance: json!({"source": "member_chat"}),
+            },
+            Some("actor_member_1"),
+        )
+        .unwrap();
+        assert_eq!(replayed.responses.len(), 1);
+
+        let (reviewed, _) = review_feedback_request_in_connection(
+            &connection,
+            &request.id,
+            FeedbackRequestReviewRequest {
+                decision: FeedbackRequestReviewDecision::Accepted,
+                response_id: None,
+                tags: vec!["strategy".to_string(), "pilot-learning".to_string()],
+                reason: "Support accepted this as actionable pilot feedback.".to_string(),
+                evidence_refs: vec!["support_review:1".to_string()],
+                provenance: json!({"source": "support"}),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap();
+        assert_eq!(reviewed.status, FeedbackRequestStatus::Accepted);
+        assert_eq!(
+            reviewed.reward_eligibility.as_ref().unwrap().state,
+            "pending_qualification"
+        );
+        assert_eq!(list_public_reviews(&connection).unwrap().len(), 0);
+
+        let member_scoped = list_feedback_requests_in_connection(
+            &connection,
+            FeedbackRequestQuery {
+                viewer: FeedbackRequestViewer::Member,
+                actor_id: Some("actor_member_1".to_string()),
+                ..FeedbackRequestQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(member_scoped.requests.len(), 1);
+        let member_request = &member_scoped.requests[0];
+        assert_eq!(member_request.target_kind, "trial");
+        assert!(member_request.target_id.is_empty());
+        assert!(member_request.member_actor_id.is_none());
+        assert!(member_request.connection_id.is_none());
+        assert!(member_request.conversation_id.is_none());
+        assert_eq!(member_request.source_kind, "feedback_request");
+        assert!(member_request.source_id.is_none());
+        assert!(member_request.reviews.is_empty());
+        assert_eq!(member_request.responses.len(), 1);
+        assert!(member_request.responses[0].actor_id.is_none());
+        assert!(member_request.responses[0].customer_feedback_id.is_none());
+        assert!(member_request.responses[0].evidence_refs.is_empty());
+        assert!(member_request
+            .reward_eligibility
+            .as_ref()
+            .unwrap()
+            .actor_id
+            .is_none());
+        assert!(member_request
+            .reward_eligibility
+            .as_ref()
+            .unwrap()
+            .response_id
+            .is_none());
+        assert!(member_request
+            .reward_eligibility
+            .as_ref()
+            .unwrap()
+            .review_id
+            .is_none());
+        assert!(member_request
+            .reward_eligibility
+            .as_ref()
+            .unwrap()
+            .reason
+            .is_none());
+        let serialized = serde_json::to_string(member_request).unwrap();
+        assert!(!serialized.contains("internal only"));
+        assert!(!serialized.contains("Support accepted"));
+        assert!(!serialized.contains("support_review"));
+        assert!(!serialized.contains("handoff_1"));
+        assert!(!serialized.contains("trial_1"));
+        assert!(!serialized.contains("connection_1"));
+        assert!(!serialized.contains("actor_member_1"));
+        assert!(!serialized.contains("customer_feedback_"));
+    }
+
+    #[test]
+    fn feedback_request_validation_rejects_unsafe_context_and_terminal_rereview() {
+        let connection = connection();
+        let unsafe_request = create_feedback_request_in_connection(
+            &connection,
+            FeedbackRequestCreateRequest {
+                target_kind: "trial".to_string(),
+                target_id: "trial_1".to_string(),
+                member_actor_id: Some("actor_member_1".to_string()),
+                connection_id: None,
+                conversation_id: Some("conversation_1".to_string()),
+                source_kind: "support".to_string(),
+                source_id: None,
+                prompt: "Please respond using this providerSecret value.".to_string(),
+                member_context_summary: "NYC pilot trial feedback.".to_string(),
+                due_at: None,
+                priority: None,
+                evidence_refs: vec!["handoff:handoff_1".to_string()],
+                provenance: json!({"source": "test"}),
+                staff_context: json!({}),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap_err();
+        assert!(unsafe_request.to_string().contains("secret-bearing"));
+
+        let invalid_target = create_feedback_request_in_connection(
+            &connection,
+            FeedbackRequestCreateRequest {
+                target_kind: "provider_secret".to_string(),
+                target_id: "secret_1".to_string(),
+                member_actor_id: Some("actor_member_1".to_string()),
+                connection_id: None,
+                conversation_id: Some("conversation_1".to_string()),
+                source_kind: "support".to_string(),
+                source_id: None,
+                prompt: "What should improve?".to_string(),
+                member_context_summary: "NYC pilot trial feedback.".to_string(),
+                due_at: None,
+                priority: None,
+                evidence_refs: vec!["handoff:handoff_1".to_string()],
+                provenance: json!({"source": "test"}),
+                staff_context: json!({}),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap_err();
+        assert!(invalid_target.to_string().contains("unsupported"));
+
+        let (request, _) = create_feedback_request_in_connection(
+            &connection,
+            FeedbackRequestCreateRequest {
+                target_kind: "conversation".to_string(),
+                target_id: "conversation_1".to_string(),
+                member_actor_id: Some("actor_member_1".to_string()),
+                connection_id: Some("connection_1".to_string()),
+                conversation_id: Some("conversation_1".to_string()),
+                source_kind: "support".to_string(),
+                source_id: None,
+                prompt: "What should improve?".to_string(),
+                member_context_summary: "NYC pilot conversation feedback.".to_string(),
+                due_at: None,
+                priority: None,
+                evidence_refs: vec!["conversation:conversation_1".to_string()],
+                provenance: json!({"source": "test"}),
+                staff_context: json!({}),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap();
+        respond_to_feedback_request_in_connection(
+            &connection,
+            &request.id,
+            FeedbackRequestRespondRequest {
+                response_kind: Some("answer".to_string()),
+                body_summary: "Make the request shorter.".to_string(),
+                idempotency_key: None,
+                evidence_refs: vec!["message:member_response_2".to_string()],
+                provenance: json!({"source": "member_chat"}),
+            },
+            Some("actor_member_1"),
+        )
+        .unwrap();
+        review_feedback_request_in_connection(
+            &connection,
+            &request.id,
+            FeedbackRequestReviewRequest {
+                decision: FeedbackRequestReviewDecision::Rejected,
+                response_id: None,
+                tags: vec!["not-actionable".to_string()],
+                reason: "Not enough detail.".to_string(),
+                evidence_refs: vec!["support_review:2".to_string()],
+                provenance: json!({"source": "support"}),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap();
+        let rereview = review_feedback_request_in_connection(
+            &connection,
+            &request.id,
+            FeedbackRequestReviewRequest {
+                decision: FeedbackRequestReviewDecision::Accepted,
+                response_id: None,
+                tags: vec!["later".to_string()],
+                reason: "Try to reverse a terminal decision.".to_string(),
+                evidence_refs: vec!["support_review:3".to_string()],
+                provenance: json!({"source": "support"}),
+            },
+            Some("actor_keith"),
+        )
+        .unwrap_err();
+        assert!(rereview.to_string().contains("terminal review"));
     }
 }

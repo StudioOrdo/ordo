@@ -11,6 +11,7 @@ chacha20poly1305.workspace = true
 chrono.workspace = true
 clap.workspace = true
 constant_time_eq.workspace = true
+cron.workspace = true
 diffy.workspace = true
 jsonschema.workspace = true
 markdown.workspace = true

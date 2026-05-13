@@ -318,6 +318,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "handoff.inbox.write",
     ),
     protected(
+        HttpMethod::Get,
+        "/handoff/inbox/:item_id",
+        "/handoff/inbox/handoff_item_1",
+        PolicyAction::Inspect,
+        "handoff.inbox.list",
+    ),
+    protected(
+        HttpMethod::Put,
+        "/handoff/inbox/:item_id",
+        "/handoff/inbox/handoff_item_1",
+        PolicyAction::Update,
+        "handoff.inbox.write",
+    ),
+    protected(
         HttpMethod::Put,
         "/handoff/inbox/:item_id/resolve",
         "/handoff/inbox/handoff_item_1/resolve",

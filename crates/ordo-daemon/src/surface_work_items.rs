@@ -462,7 +462,9 @@ fn project_visitor_sessions(transaction: &Transaction<'_>, projected_at: &str) -
 fn project_handoffs(transaction: &Transaction<'_>, projected_at: &str) -> Result<usize> {
     let mut statement = transaction.prepare(
         "SELECT id, source_kind, source_id, approval_requirement, delivery_state,
-                created_by_actor_id, created_at, updated_at
+                created_by_actor_id, created_at, updated_at, reason, requested_action,
+                urgency, assignee_actor_id, due_at, next_action_hint, evidence_refs_json,
+                visibility
          FROM handoff_inbox_items",
     )?;
     let mut projected = 0;
@@ -476,6 +478,14 @@ fn project_handoffs(transaction: &Transaction<'_>, projected_at: &str) -> Result
             row.get::<_, Option<String>>(5)?,
             row.get::<_, String>(6)?,
             row.get::<_, String>(7)?,
+            row.get::<_, String>(8)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, String>(10)?,
+            row.get::<_, Option<String>>(11)?,
+            row.get::<_, Option<String>>(12)?,
+            row.get::<_, Option<String>>(13)?,
+            row.get::<_, String>(14)?,
+            row.get::<_, String>(15)?,
         ))
     })?;
     for row in rows {
@@ -488,7 +498,18 @@ fn project_handoffs(transaction: &Transaction<'_>, projected_at: &str) -> Result
             created_by_actor_id,
             created_at,
             updated_at,
+            reason,
+            requested_action,
+            urgency,
+            assignee_actor_id,
+            due_at,
+            next_action_hint,
+            evidence_refs_json,
+            visibility,
         ) = row?;
+        let mut evidence_refs = vec![format!("handoff_inbox_item:{id}")];
+        evidence_refs
+            .extend(serde_json::from_str::<Vec<String>>(&evidence_refs_json).unwrap_or_default());
         insert_item(
             transaction,
             projected_at,
@@ -499,21 +520,27 @@ fn project_handoffs(transaction: &Transaction<'_>, projected_at: &str) -> Result
                 source_id: id.clone(),
                 object_kind: "handoff_inbox_item",
                 object_id: id.clone(),
-                title: "Support handoff request".to_string(),
+                title: reason.clone(),
                 summary: format!(
-                    "A {source_kind} handoff is {delivery_state} and requires {approval_requirement}."
+                    "A {urgency} priority {source_kind} handoff is {delivery_state}; requested action: {requested_action}."
                 ),
                 status: delivery_state.clone(),
                 priority: handoff_priority(&delivery_state),
                 actor_context: json!({
                     "createdByActorId": created_by_actor_id,
+                    "assigneeActorId": assignee_actor_id,
                     "sourceKind": source_kind,
                     "sourceId": source_id,
+                    "urgency": urgency,
+                    "requestedAction": requested_action,
+                    "dueAt": due_at,
+                    "nextActionHint": next_action_hint,
+                    "approvalRequirement": approval_requirement,
                 }),
                 connection_context: json!({}),
-                evidence_refs: vec![format!("handoff_inbox_item:{id}")],
+                evidence_refs,
                 actions: handoff_actions(&delivery_state),
-                visibility: "staff".to_string(),
+                visibility,
                 created_at,
                 updated_at,
             },
@@ -984,6 +1011,7 @@ fn handoff_priority(status: &str) -> i64 {
     match status {
         "pending_owner_approval" => 80,
         "queued" => 75,
+        "assigned" => 78,
         "continue_screening" => 50,
         "declined" => 20,
         _ => 35,
@@ -992,9 +1020,18 @@ fn handoff_priority(status: &str) -> i64 {
 
 fn handoff_actions(status: &str) -> Vec<String> {
     match status {
-        "pending_owner_approval" | "queued" => {
-            vec!["review_handoff".to_string(), "resolve_handoff".to_string()]
-        }
+        "pending_owner_approval" | "queued" => vec![
+            "review_handoff".to_string(),
+            "assign_handoff".to_string(),
+            "resolve_handoff".to_string(),
+            "decline_handoff".to_string(),
+        ],
+        "assigned" => vec![
+            "review_handoff".to_string(),
+            "return_to_ordo".to_string(),
+            "resolve_handoff".to_string(),
+            "decline_handoff".to_string(),
+        ],
         "continue_screening" => vec!["return_to_ordo".to_string(), "resolve_handoff".to_string()],
         _ => vec!["inspect_handoff".to_string()],
     }
@@ -1092,6 +1129,17 @@ mod tests {
         assert!(!handoff_json.contains("rawPrompt"));
         assert_eq!(handoff.surface_kind, "support");
         assert_eq!(handoff.visibility, "staff");
+        assert_eq!(handoff.title, "Trial user asked for strategy help");
+        assert!(handoff.summary.contains("high priority conversation"));
+        assert!(handoff
+            .actions
+            .iter()
+            .any(|action| action == "assign_handoff"));
+        assert!(handoff
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == "conversation:conversation_1"));
+        assert_eq!(handoff.actor_context["assigneeActorId"], "actor_keith");
     }
 
     #[test]
@@ -1312,12 +1360,16 @@ mod tests {
             .execute(
                 "INSERT INTO handoff_inbox_items (
                     id, source_kind, source_id, destination_kind, destination_id, request_json,
-                    evidence_json, approval_requirement, delivery_state, created_at, updated_at
+                    evidence_json, approval_requirement, delivery_state, created_at, updated_at,
+                    reason, requested_action, urgency, assignee_actor_id, due_at,
+                    next_action_hint, evidence_refs_json, visibility
                  ) VALUES (
                     'handoff_1', 'conversation', 'conversation_1', 'staff', 'keith',
                     '{\"message\":\"strategy help\",\"rawPrompt\":\"do not leak\"}',
                     '{\"providerSecret\":\"do not leak\"}', 'owner_approval_required',
-                    'pending_owner_approval', ?1, ?1
+                    'pending_owner_approval', ?1, ?1, 'Trial user asked for strategy help',
+                    'Schedule Keith review', 'high', 'actor_keith', '2026-05-14T15:00:00Z',
+                    'Review conversation brief first', '[\"conversation:conversation_1\"]', 'staff'
                  )",
                 [NOW],
             )

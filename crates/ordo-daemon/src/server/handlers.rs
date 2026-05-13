@@ -16,13 +16,14 @@ use crate::answer_drafts::{
     AnswerDraftRequest, AnswerDraftResponse,
 };
 use crate::availability::{
-    create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox,
-    list_handoff_receipts, read_availability_state, resolve_handoff_inbox_item,
-    update_availability_schedule, update_operator_presence, AvailabilityScheduleView,
-    AvailabilityScheduleWriteRequest, AvailabilityStateResponse, HandoffEligibilityRequest,
-    HandoffEligibilityView, HandoffInboxCreateRequest, HandoffInboxItemView,
-    HandoffInboxListResponse, HandoffInboxResolveRequest, HandoffReceiptListResponse,
-    OperatorPresenceView, OperatorPresenceWriteRequest,
+    create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox_with_query,
+    list_handoff_receipts, read_availability_state, read_handoff_inbox_item,
+    resolve_handoff_inbox_item, update_availability_schedule, update_handoff_inbox_item,
+    update_operator_presence, AvailabilityScheduleView, AvailabilityScheduleWriteRequest,
+    AvailabilityStateResponse, HandoffEligibilityRequest, HandoffEligibilityView,
+    HandoffInboxCreateRequest, HandoffInboxItemView, HandoffInboxListQuery,
+    HandoffInboxListResponse, HandoffInboxResolveRequest, HandoffInboxUpdateRequest,
+    HandoffReceiptListResponse, OperatorPresenceView, OperatorPresenceWriteRequest,
 };
 use crate::backups::{
     create_backup, list_backup_restore_jobs, run_restore_preflight, BackupRestoreResponse,
@@ -884,6 +885,7 @@ pub(crate) async fn handoff_inbox_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     State(state): State<AppState>,
+    Query(query): Query<HandoffInboxListQuery>,
 ) -> Result<Json<HandoffInboxListResponse>, (StatusCode, Json<ErrorResponse>)> {
     authorize_protected_daemon_route(
         &state.access_policy,
@@ -894,9 +896,32 @@ pub(crate) async fn handoff_inbox_handler(
         ResourceRef::new(ResourceKind::DaemonRoute, "/handoff/inbox"),
         Some("handoff.inbox.list"),
     )?;
-    list_handoff_inbox(&state.db_path)
+    list_handoff_inbox_with_query(&state.db_path, query)
         .map(Json)
         .map_err(internal_error)
+}
+
+pub(crate) async fn handoff_inbox_read_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+) -> Result<Json<HandoffInboxItemView>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/handoff/inbox/{item_id}"),
+        ),
+        Some("handoff.inbox.list"),
+    )?;
+    read_handoff_inbox_item(&state.db_path, &item_id)
+        .map(Json)
+        .map_err(invalid_request_error)
 }
 
 pub(crate) async fn handoff_inbox_create_handler(
@@ -941,6 +966,32 @@ pub(crate) async fn handoff_inbox_resolve_handler(
     )?;
     let (item, event) =
         resolve_handoff_inbox_item(&state.db_path, &item_id, request, actor_id(&decision))
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(item))
+}
+
+pub(crate) async fn handoff_inbox_update_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(item_id): AxumPath<String>,
+    Json(request): Json<HandoffInboxUpdateRequest>,
+) -> Result<Json<HandoffInboxItemView>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Update,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/handoff/inbox/{item_id}"),
+        ),
+        Some("handoff.inbox.write"),
+    )?;
+    let (item, event) =
+        update_handoff_inbox_item(&state.db_path, &item_id, request, actor_id(&decision))
             .map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
     Ok(Json(item))
@@ -2828,6 +2879,7 @@ mod tests {
             ("/availability", "availability.read"),
             ("/handoff/eligibility", "handoff.eligibility.evaluate"),
             ("/handoff/inbox", "handoff.inbox.list"),
+            ("/handoff/inbox/handoff_item_1", "handoff.inbox.list"),
             (
                 "/handoff/inbox/handoff_item_1/receipts",
                 "handoff.receipts.list",
@@ -2848,6 +2900,7 @@ mod tests {
         for route in [
             "/availability/schedule",
             "/availability/presence",
+            "/handoff/inbox/handoff_item_1",
             "/handoff/inbox/handoff_item_1/resolve",
         ] {
             let allowed = authorize_protected_daemon_route(
@@ -2855,7 +2908,11 @@ mod tests {
                 &db_path,
                 &headers,
                 socket_addr("127.0.0.1:4000"),
-                PolicyAction::Create,
+                if route == "/handoff/inbox/handoff_item_1" {
+                    PolicyAction::Update
+                } else {
+                    PolicyAction::Create
+                },
                 ResourceRef::new(ResourceKind::DaemonRoute, route),
                 Some(if route.starts_with("/availability") {
                     "availability.write"
@@ -2878,7 +2935,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(audit_count, 8);
+        assert_eq!(audit_count, 10);
     }
 
     #[test]

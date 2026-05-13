@@ -161,6 +161,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_surface_work_item_projection_schema",
         apply: add_surface_work_item_projection_schema,
     },
+    SchemaMigration {
+        version: 31,
+        name: "add_support_handoff_queue_fields",
+        apply: add_support_handoff_queue_fields,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -443,6 +448,61 @@ fn add_surface_work_item_projection_schema(connection: &Connection) -> Result<()
             ON surface_work_items(visibility, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_surface_work_items_status
             ON surface_work_items(status, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_support_handoff_queue_fields(connection: &Connection) -> Result<()> {
+    ensure_column(
+        connection,
+        "handoff_inbox_items",
+        "reason",
+        "TEXT NOT NULL DEFAULT 'Support review requested'",
+    )?;
+    ensure_column(
+        connection,
+        "handoff_inbox_items",
+        "requested_action",
+        "TEXT NOT NULL DEFAULT 'review'",
+    )?;
+    ensure_column(
+        connection,
+        "handoff_inbox_items",
+        "urgency",
+        "TEXT NOT NULL DEFAULT 'normal'",
+    )?;
+    ensure_column(
+        connection,
+        "handoff_inbox_items",
+        "assignee_actor_id",
+        "TEXT",
+    )?;
+    ensure_column(connection, "handoff_inbox_items", "due_at", "TEXT")?;
+    ensure_column(
+        connection,
+        "handoff_inbox_items",
+        "next_action_hint",
+        "TEXT",
+    )?;
+    ensure_column(
+        connection,
+        "handoff_inbox_items",
+        "evidence_refs_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "handoff_inbox_items",
+        "visibility",
+        "TEXT NOT NULL DEFAULT 'staff'",
+    )?;
+    connection.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_handoff_inbox_items_assignee
+            ON handoff_inbox_items(assignee_actor_id, delivery_state, urgency, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_handoff_inbox_items_visibility
+            ON handoff_inbox_items(visibility, updated_at DESC);
         "#,
     )?;
     Ok(())

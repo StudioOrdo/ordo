@@ -186,6 +186,7 @@ impl TryFrom<&str> for ApprovalRequirement {
 pub enum DeliveryState {
     PendingOwnerApproval,
     Queued,
+    Assigned,
     Declined,
     ContinueScreening,
     ApprovedLocalOnly,
@@ -196,10 +197,15 @@ impl DeliveryState {
         match self {
             Self::PendingOwnerApproval => "pending_owner_approval",
             Self::Queued => "queued",
+            Self::Assigned => "assigned",
             Self::Declined => "declined",
             Self::ContinueScreening => "continue_screening",
             Self::ApprovedLocalOnly => "approved_local_only",
         }
+    }
+
+    fn is_terminal(self) -> bool {
+        matches!(self, Self::Declined | Self::ApprovedLocalOnly)
     }
 }
 
@@ -210,6 +216,7 @@ impl TryFrom<&str> for DeliveryState {
         match value {
             "pending_owner_approval" => Ok(Self::PendingOwnerApproval),
             "queued" => Ok(Self::Queued),
+            "assigned" => Ok(Self::Assigned),
             "declined" => Ok(Self::Declined),
             "continue_screening" => Ok(Self::ContinueScreening),
             "approved_local_only" => Ok(Self::ApprovedLocalOnly),
@@ -306,6 +313,17 @@ pub struct HandoffInboxListResponse {
     pub items: Vec<HandoffInboxItemView>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HandoffInboxListQuery {
+    pub delivery_state: Option<DeliveryState>,
+    pub assignee_actor_id: Option<String>,
+    pub source_kind: Option<String>,
+    pub source_id: Option<String>,
+    pub visibility: Option<String>,
+    pub limit: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HandoffInboxItemView {
@@ -314,6 +332,14 @@ pub struct HandoffInboxItemView {
     pub source_id: Option<String>,
     pub destination_kind: String,
     pub destination_id: Option<String>,
+    pub reason: String,
+    pub requested_action: String,
+    pub urgency: String,
+    pub assignee_actor_id: Option<String>,
+    pub due_at: Option<String>,
+    pub next_action_hint: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub visibility: String,
     pub request: Value,
     pub evidence: Value,
     pub approval_requirement: ApprovalRequirement,
@@ -378,9 +404,34 @@ pub struct HandoffInboxCreateRequest {
     pub source_id: Option<String>,
     pub destination_kind: String,
     pub destination_id: Option<String>,
+    pub reason: Option<String>,
+    pub requested_action: Option<String>,
+    pub urgency: Option<String>,
+    pub assignee_actor_id: Option<String>,
+    pub due_at: Option<String>,
+    pub next_action_hint: Option<String>,
+    pub evidence_refs: Option<Vec<String>>,
+    pub visibility: Option<String>,
     pub request: Option<Value>,
     pub evidence: Option<Value>,
     pub approval_requirement: Option<ApprovalRequirement>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HandoffInboxUpdateRequest {
+    pub reason: Option<String>,
+    pub requested_action: Option<String>,
+    pub urgency: Option<String>,
+    pub assignee_actor_id: Option<String>,
+    pub clear_assignee: Option<bool>,
+    pub due_at: Option<String>,
+    pub clear_due_at: Option<bool>,
+    pub next_action_hint: Option<String>,
+    pub evidence_refs: Option<Vec<String>>,
+    pub visibility: Option<String>,
+    pub delivery_state: Option<DeliveryState>,
+    pub evidence: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -421,6 +472,14 @@ struct HandoffInboxItemRecord {
     source_id: Option<String>,
     destination_kind: String,
     destination_id: Option<String>,
+    reason: String,
+    requested_action: String,
+    urgency: String,
+    assignee_actor_id: Option<String>,
+    due_at: Option<String>,
+    next_action_hint: Option<String>,
+    evidence_refs: Vec<String>,
+    visibility: String,
     request: Value,
     evidence: Value,
     approval_requirement: ApprovalRequirement,
@@ -607,11 +666,20 @@ pub fn evaluate_handoff_eligibility(
 }
 
 pub fn list_handoff_inbox(db_path: &Path) -> Result<HandoffInboxListResponse> {
+    list_handoff_inbox_with_query(db_path, HandoffInboxListQuery::default())
+}
+
+pub fn list_handoff_inbox_with_query(
+    db_path: &Path,
+    query: HandoffInboxListQuery,
+) -> Result<HandoffInboxListResponse> {
     let connection = Connection::open(db_path)?;
     let mut statement = connection.prepare(
         "SELECT id, source_kind, source_id, destination_kind, destination_id, request_json,
                 evidence_json, approval_requirement, delivery_state, owner_decision,
-                decision_reason, created_by_actor_id, created_at, updated_at, resolved_at
+                decision_reason, created_by_actor_id, created_at, updated_at, resolved_at,
+                reason, requested_action, urgency, assignee_actor_id, due_at, next_action_hint,
+                evidence_refs_json, visibility
          FROM handoff_inbox_items
          ORDER BY updated_at DESC, id DESC",
     )?;
@@ -619,7 +687,22 @@ pub fn list_handoff_inbox(db_path: &Path) -> Result<HandoffInboxListResponse> {
         .query_map([], handoff_item_from_row)?
         .map(|row| row.map(HandoffInboxItemRecord::into_view))
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(HandoffInboxListResponse { items })
+    let limit = query.limit.unwrap_or(100).min(500);
+    Ok(HandoffInboxListResponse {
+        items: items
+            .into_iter()
+            .filter(|item| handoff_query_matches_item(&query, item))
+            .take(limit)
+            .collect(),
+    })
+}
+
+pub fn read_handoff_inbox_item(db_path: &Path, item_id: &str) -> Result<HandoffInboxItemView> {
+    let connection = Connection::open(db_path)?;
+    let item_id = require_identifier(item_id, "Handoff item id")?;
+    find_handoff_item_by_id(&connection, &item_id)?
+        .map(HandoffInboxItemRecord::into_view)
+        .ok_or_else(|| anyhow::anyhow!("Handoff inbox item was not found: {item_id}"))
 }
 
 pub fn create_handoff_inbox_item(
@@ -627,10 +710,20 @@ pub fn create_handoff_inbox_item(
     request: HandoffInboxCreateRequest,
     actor_id: Option<&str>,
 ) -> Result<(HandoffInboxItemView, RealtimeEvent)> {
-    let source_kind = require_identifier(&request.source_kind, "Source kind")?;
+    let source_kind = require_support_source_kind(&request.source_kind)?;
     let destination_kind = require_identifier(&request.destination_kind, "Destination kind")?;
     let source_id = normalize_identifier_option(request.source_id, "Source id")?;
     let destination_id = normalize_identifier_option(request.destination_id, "Destination id")?;
+    let reason = normalize_required_text(request.reason, "Reason", "Support review requested")?;
+    let requested_action =
+        normalize_required_text(request.requested_action, "Requested action", "review")?;
+    let urgency = normalize_urgency(request.urgency)?;
+    let assignee_actor_id =
+        normalize_identifier_option(request.assignee_actor_id, "Assignee actor id")?;
+    let due_at = normalize_optional_due_at(request.due_at)?;
+    let next_action_hint = normalize_optional_string(request.next_action_hint);
+    let evidence_refs = normalize_evidence_refs(request.evidence_refs)?;
+    let visibility = normalize_handoff_visibility(request.visibility)?;
     let approval_requirement = request
         .approval_requirement
         .unwrap_or(ApprovalRequirement::OwnerApprovalRequired);
@@ -642,8 +735,11 @@ pub fn create_handoff_inbox_item(
         "INSERT INTO handoff_inbox_items (
             id, source_kind, source_id, destination_kind, destination_id, request_json,
             evidence_json, approval_requirement, delivery_state, owner_decision,
-            decision_reason, created_by_actor_id, created_at, updated_at, resolved_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_owner_approval', NULL, NULL, ?9, ?10, ?10, NULL)",
+            decision_reason, created_by_actor_id, created_at, updated_at, resolved_at,
+            reason, requested_action, urgency, assignee_actor_id, due_at, next_action_hint,
+            evidence_refs_json, visibility
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_owner_approval', NULL, NULL, ?9, ?10, ?10, NULL,
+                   ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         params![
             id,
             source_kind,
@@ -655,6 +751,14 @@ pub fn create_handoff_inbox_item(
             approval_requirement.as_str(),
             actor_id,
             now,
+            reason,
+            requested_action,
+            urgency,
+            assignee_actor_id,
+            due_at,
+            next_action_hint,
+            serde_json::to_string(&evidence_refs)?,
+            visibility,
         ],
     )?;
     append_handoff_event_tx(
@@ -665,6 +769,10 @@ pub fn create_handoff_inbox_item(
             "handoffItemId": id,
             "approvalRequirement": approval_requirement.as_str(),
             "deliveryState": DeliveryState::PendingOwnerApproval.as_str(),
+            "sourceKind": source_kind,
+            "urgency": urgency,
+            "assigneeActorId": assignee_actor_id,
+            "visibility": visibility,
         }),
         &now,
     )?;
@@ -676,6 +784,10 @@ pub fn create_handoff_inbox_item(
                 "handoffItemId": id,
                 "approvalRequirement": approval_requirement.as_str(),
                 "deliveryState": DeliveryState::PendingOwnerApproval.as_str(),
+                "sourceKind": source_kind,
+                "urgency": urgency,
+                "assigneeActorId": assignee_actor_id,
+                "visibility": visibility,
             }),
         ),
     )?;
@@ -694,6 +806,7 @@ pub fn resolve_handoff_inbox_item(
     let transaction = connection.transaction()?;
     let existing = find_handoff_item_by_id(&transaction, item_id)?
         .ok_or_else(|| anyhow::anyhow!("Handoff inbox item was not found: {item_id}"))?;
+    ensure_handoff_mutable(existing.delivery_state)?;
     let now = Utc::now().to_rfc3339();
     let delivery_state = request.decision.delivery_state();
     let decision_reason = normalize_optional_string(request.decision_reason);
@@ -720,6 +833,7 @@ pub fn resolve_handoff_inbox_item(
             "handoffItemId": item_id,
             "ownerDecision": request.decision.as_str(),
             "deliveryState": delivery_state.as_str(),
+            "decidedByActorId": actor_id,
             "externalDelivery": false,
         }),
         &now,
@@ -732,13 +846,137 @@ pub fn resolve_handoff_inbox_item(
                 "handoffItemId": item_id,
                 "ownerDecision": request.decision.as_str(),
                 "deliveryState": delivery_state.as_str(),
+                "decidedByActorId": actor_id,
                 "externalDelivery": false,
             }),
         ),
     )?;
     transaction.commit()?;
     let item = find_handoff_item_by_id(&connection, item_id)?.expect("handoff item just updated");
-    let _ = actor_id;
+    Ok((item.into_view(), event))
+}
+
+pub fn update_handoff_inbox_item(
+    db_path: &Path,
+    item_id: &str,
+    request: HandoffInboxUpdateRequest,
+    actor_id: Option<&str>,
+) -> Result<(HandoffInboxItemView, RealtimeEvent)> {
+    let mut connection = Connection::open(db_path)?;
+    let transaction = connection.transaction()?;
+    let existing = find_handoff_item_by_id(&transaction, item_id)?
+        .ok_or_else(|| anyhow::anyhow!("Handoff inbox item was not found: {item_id}"))?;
+    ensure_handoff_mutable(existing.delivery_state)?;
+
+    let reason = request
+        .reason
+        .map(|value| normalize_required_text(Some(value), "Reason", "Support review requested"))
+        .transpose()?
+        .unwrap_or(existing.reason);
+    let requested_action = request
+        .requested_action
+        .map(|value| normalize_required_text(Some(value), "Requested action", "review"))
+        .transpose()?
+        .unwrap_or(existing.requested_action);
+    let urgency = request
+        .urgency
+        .map(|value| normalize_urgency(Some(value)))
+        .transpose()?
+        .unwrap_or(existing.urgency);
+    let assignee_actor_id = if request.clear_assignee.unwrap_or(false) {
+        None
+    } else {
+        normalize_identifier_option(request.assignee_actor_id, "Assignee actor id")?
+            .or(existing.assignee_actor_id)
+    };
+    let due_at = if request.clear_due_at.unwrap_or(false) {
+        None
+    } else {
+        normalize_optional_due_at(request.due_at)?.or(existing.due_at)
+    };
+    let next_action_hint = request
+        .next_action_hint
+        .and_then(|value| normalize_optional_string(Some(value)))
+        .or(existing.next_action_hint);
+    let evidence_refs = request
+        .evidence_refs
+        .map(Some)
+        .map(normalize_evidence_refs)
+        .transpose()?
+        .unwrap_or(existing.evidence_refs);
+    let visibility = request
+        .visibility
+        .map(|value| normalize_handoff_visibility(Some(value)))
+        .transpose()?
+        .unwrap_or(existing.visibility);
+    let delivery_state = request.delivery_state.unwrap_or_else(|| {
+        if assignee_actor_id.is_some()
+            && matches!(
+                existing.delivery_state,
+                DeliveryState::PendingOwnerApproval | DeliveryState::Queued
+            )
+        {
+            DeliveryState::Assigned
+        } else {
+            existing.delivery_state
+        }
+    });
+    ensure_update_delivery_state(delivery_state)?;
+    let merged_evidence = merge_evidence(existing.evidence, request.evidence);
+    let now = Utc::now().to_rfc3339();
+    transaction.execute(
+        "UPDATE handoff_inbox_items
+         SET reason = ?1, requested_action = ?2, urgency = ?3,
+             assignee_actor_id = ?4, due_at = ?5, next_action_hint = ?6,
+             evidence_refs_json = ?7, visibility = ?8, delivery_state = ?9,
+             evidence_json = ?10, updated_at = ?11,
+             resolved_at = CASE WHEN ?9 IN ('approved_local_only', 'declined') THEN ?11 ELSE resolved_at END
+         WHERE id = ?12",
+        params![
+            reason,
+            requested_action,
+            urgency,
+            assignee_actor_id,
+            due_at,
+            next_action_hint,
+            serde_json::to_string(&evidence_refs)?,
+            visibility,
+            delivery_state.as_str(),
+            merged_evidence.to_string(),
+            now,
+            item_id,
+        ],
+    )?;
+    let event_type =
+        handoff_update_event_type(existing.delivery_state, delivery_state, &assignee_actor_id);
+    append_handoff_event_tx(
+        &transaction,
+        item_id,
+        event_type,
+        json!({
+            "handoffItemId": item_id,
+            "deliveryState": delivery_state.as_str(),
+            "assigneeActorId": assignee_actor_id,
+            "updatedByActorId": actor_id,
+            "externalDelivery": false,
+        }),
+        &now,
+    )?;
+    let event = append_realtime_event_tx(
+        &transaction,
+        &system_event(
+            event_type,
+            json!({
+                "handoffItemId": item_id,
+                "deliveryState": delivery_state.as_str(),
+                "assigneeActorId": assignee_actor_id,
+                "updatedByActorId": actor_id,
+                "externalDelivery": false,
+            }),
+        ),
+    )?;
+    transaction.commit()?;
+    let item = find_handoff_item_by_id(&connection, item_id)?.expect("handoff item just updated");
     Ok((item.into_view(), event))
 }
 
@@ -841,7 +1079,9 @@ fn find_handoff_item_by_id(
         .query_row(
             "SELECT id, source_kind, source_id, destination_kind, destination_id, request_json,
                     evidence_json, approval_requirement, delivery_state, owner_decision,
-                    decision_reason, created_by_actor_id, created_at, updated_at, resolved_at
+                    decision_reason, created_by_actor_id, created_at, updated_at, resolved_at,
+                    reason, requested_action, urgency, assignee_actor_id, due_at, next_action_hint,
+                    evidence_refs_json, visibility
              FROM handoff_inbox_items WHERE id = ?1",
             [item_id],
             handoff_item_from_row,
@@ -894,12 +1134,21 @@ fn handoff_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<HandoffInb
     let approval_requirement: String = row.get(7)?;
     let delivery_state: String = row.get(8)?;
     let owner_decision: Option<String> = row.get(9)?;
+    let evidence_refs_json: String = row.get(21)?;
     Ok(HandoffInboxItemRecord {
         id: row.get(0)?,
         source_kind: row.get(1)?,
         source_id: row.get(2)?,
         destination_kind: row.get(3)?,
         destination_id: row.get(4)?,
+        reason: row.get(15)?,
+        requested_action: row.get(16)?,
+        urgency: row.get(17)?,
+        assignee_actor_id: row.get(18)?,
+        due_at: row.get(19)?,
+        next_action_hint: row.get(20)?,
+        evidence_refs: serde_json::from_str(&evidence_refs_json).unwrap_or_default(),
+        visibility: row.get(22)?,
         request: serde_json::from_str(&request_json).unwrap_or_else(|_| json!({})),
         evidence: serde_json::from_str(&evidence_json).unwrap_or_else(|_| json!({})),
         approval_requirement: ApprovalRequirement::try_from(approval_requirement.as_str())
@@ -980,6 +1229,14 @@ impl HandoffInboxItemRecord {
             source_id: self.source_id,
             destination_kind: self.destination_kind,
             destination_id: self.destination_id,
+            reason: self.reason,
+            requested_action: self.requested_action,
+            urgency: self.urgency,
+            assignee_actor_id: self.assignee_actor_id,
+            due_at: self.due_at,
+            next_action_hint: self.next_action_hint,
+            evidence_refs: self.evidence_refs,
+            visibility: self.visibility,
             request: self.request,
             evidence: self.evidence,
             approval_requirement: self.approval_requirement,
@@ -1034,6 +1291,28 @@ fn threshold_allows_intent(
     }
 }
 
+fn handoff_query_matches_item(query: &HandoffInboxListQuery, item: &HandoffInboxItemView) -> bool {
+    query
+        .delivery_state
+        .is_none_or(|state| item.delivery_state == state)
+        && query
+            .assignee_actor_id
+            .as_deref()
+            .is_none_or(|assignee| item.assignee_actor_id.as_deref() == Some(assignee))
+        && query
+            .source_kind
+            .as_deref()
+            .is_none_or(|source_kind| item.source_kind == source_kind)
+        && query
+            .source_id
+            .as_deref()
+            .is_none_or(|source_id| item.source_id.as_deref() == Some(source_id))
+        && query
+            .visibility
+            .as_deref()
+            .is_none_or(|visibility| item.visibility == visibility)
+}
+
 fn validate_windows(windows: &[AvailabilityWindow]) -> Result<()> {
     for window in windows {
         if !(1..=7).contains(&window.day_of_week) {
@@ -1044,6 +1323,105 @@ fn validate_windows(windows: &[AvailabilityWindow]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn require_support_source_kind(value: &str) -> Result<String> {
+    let source_kind = require_identifier(value, "Source kind")?;
+    match source_kind.as_str() {
+        "account" | "member" | "actor" | "visitor" | "visitor_session" | "trial" | "connection"
+        | "conversation" | "job" | "artifact" | "request" | "offer_acceptance" | "feedback" => {
+            Ok(source_kind)
+        }
+        _ => bail!("Source kind is not supported for the Support handoff queue: {source_kind}"),
+    }
+}
+
+fn normalize_required_text(
+    value: Option<String>,
+    label: &str,
+    default_value: &str,
+) -> Result<String> {
+    let normalized = normalize_optional_string(value).unwrap_or_else(|| default_value.to_string());
+    if normalized.len() > 500 {
+        bail!("{label} must be 500 characters or fewer.");
+    }
+    Ok(normalized)
+}
+
+fn normalize_urgency(value: Option<String>) -> Result<String> {
+    let urgency = normalize_optional_string(value).unwrap_or_else(|| "normal".to_string());
+    match urgency.as_str() {
+        "low" | "normal" | "high" | "urgent" => Ok(urgency),
+        _ => bail!("Urgency must be low, normal, high, or urgent."),
+    }
+}
+
+fn normalize_handoff_visibility(value: Option<String>) -> Result<String> {
+    let visibility = normalize_optional_string(value).unwrap_or_else(|| "staff".to_string());
+    match visibility.as_str() {
+        "staff" | "owner" | "system" => Ok(visibility),
+        _ => bail!("Support handoff visibility must be staff, owner, or system."),
+    }
+}
+
+fn normalize_optional_due_at(value: Option<String>) -> Result<Option<String>> {
+    value
+        .map(|value| {
+            let value = require_identifier(&value, "Due at").or_else(|_| {
+                normalize_optional_string(Some(value))
+                    .ok_or_else(|| anyhow::anyhow!("Due at is required."))
+            })?;
+            Ok(DateTime::parse_from_rfc3339(&value)?
+                .with_timezone(&Utc)
+                .to_rfc3339())
+        })
+        .transpose()
+}
+
+fn normalize_evidence_refs(value: Option<Vec<String>>) -> Result<Vec<String>> {
+    value
+        .unwrap_or_default()
+        .into_iter()
+        .map(|evidence_ref| require_identifier(&evidence_ref, "Evidence ref"))
+        .collect()
+}
+
+fn ensure_handoff_mutable(delivery_state: DeliveryState) -> Result<()> {
+    if delivery_state.is_terminal() {
+        bail!(
+            "Handoff inbox item is already terminal and cannot be mutated: {}",
+            delivery_state.as_str()
+        );
+    }
+    Ok(())
+}
+
+fn ensure_update_delivery_state(delivery_state: DeliveryState) -> Result<()> {
+    match delivery_state {
+        DeliveryState::PendingOwnerApproval
+        | DeliveryState::Queued
+        | DeliveryState::Assigned
+        | DeliveryState::ContinueScreening => Ok(()),
+        DeliveryState::Declined | DeliveryState::ApprovedLocalOnly => {
+            bail!("Use the resolve route for terminal handoff decisions.")
+        }
+    }
+}
+
+fn handoff_update_event_type(
+    previous_state: DeliveryState,
+    delivery_state: DeliveryState,
+    assignee_actor_id: &Option<String>,
+) -> &'static str {
+    if delivery_state == DeliveryState::ContinueScreening {
+        "handoff.inbox.returned_to_ordo"
+    } else if delivery_state == DeliveryState::Assigned
+        || (assignee_actor_id.is_some() && previous_state != DeliveryState::Assigned)
+    {
+        "handoff.inbox.assigned"
+    } else {
+        "handoff.inbox.updated"
+    }
 }
 
 fn parse_optional_datetime(value: Option<&str>) -> Result<DateTime<Utc>> {
@@ -1212,6 +1590,14 @@ mod tests {
                 source_id: Some("session_1".to_string()),
                 destination_kind: "owner".to_string(),
                 destination_id: Some("actor_local_owner".to_string()),
+                reason: None,
+                requested_action: None,
+                urgency: None,
+                assignee_actor_id: None,
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: None,
+                visibility: None,
                 request: Some(json!({ "summary": "needs review" })),
                 evidence: Some(json!({ "intent": "urgent" })),
                 approval_requirement: None,
@@ -1259,6 +1645,14 @@ mod tests {
                 source_id: Some("connection_1".to_string()),
                 destination_kind: "owner".to_string(),
                 destination_id: None,
+                reason: None,
+                requested_action: None,
+                urgency: None,
+                assignee_actor_id: None,
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: None,
+                visibility: None,
                 request: None,
                 evidence: None,
                 approval_requirement: Some(ApprovalRequirement::OwnerApprovalRequired),
@@ -1282,5 +1676,220 @@ mod tests {
         assert_eq!(items.items.len(), 1);
         assert_eq!(items.items[0].delivery_state, DeliveryState::Declined);
         assert_eq!(items.items[0].owner_decision, Some(OwnerDecision::Decline));
+    }
+
+    #[test]
+    fn support_queue_fields_filter_assignment_and_return_are_durable() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (item, _) = create_handoff_inbox_item(
+            &db_path,
+            HandoffInboxCreateRequest {
+                source_kind: "conversation".to_string(),
+                source_id: Some("conversation_1".to_string()),
+                destination_kind: "support".to_string(),
+                destination_id: Some("support_queue".to_string()),
+                reason: Some("Trial user asked for strategy help".to_string()),
+                requested_action: Some("Schedule Keith review".to_string()),
+                urgency: Some("high".to_string()),
+                assignee_actor_id: Some("actor_keith".to_string()),
+                due_at: Some("2026-05-14T15:00:00Z".to_string()),
+                next_action_hint: Some("Review conversation brief first".to_string()),
+                evidence_refs: Some(vec![
+                    "conversation:conversation_1".to_string(),
+                    "message:message_1".to_string(),
+                ]),
+                visibility: Some("staff".to_string()),
+                request: Some(json!({ "summary": "needs strategy follow-up" })),
+                evidence: Some(json!({ "intent": "strategy_session" })),
+                approval_requirement: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        assert_eq!(item.reason, "Trial user asked for strategy help");
+        assert_eq!(item.requested_action, "Schedule Keith review");
+        assert_eq!(item.urgency, "high");
+        assert_eq!(item.assignee_actor_id.as_deref(), Some("actor_keith"));
+        assert_eq!(item.due_at.as_deref(), Some("2026-05-14T15:00:00+00:00"));
+        assert_eq!(
+            item.next_action_hint.as_deref(),
+            Some("Review conversation brief first")
+        );
+        assert_eq!(
+            item.evidence_refs,
+            vec![
+                "conversation:conversation_1".to_string(),
+                "message:message_1".to_string()
+            ]
+        );
+        assert_eq!(item.visibility, "staff");
+
+        let assigned_items = list_handoff_inbox_with_query(
+            &db_path,
+            HandoffInboxListQuery {
+                assignee_actor_id: Some("actor_keith".to_string()),
+                source_kind: Some("conversation".to_string()),
+                delivery_state: Some(DeliveryState::PendingOwnerApproval),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(assigned_items.items.len(), 1);
+        assert_eq!(assigned_items.items[0].id, item.id);
+
+        let (assigned, assigned_event) = update_handoff_inbox_item(
+            &db_path,
+            &item.id,
+            HandoffInboxUpdateRequest {
+                assignee_actor_id: Some("actor_staff".to_string()),
+                delivery_state: Some(DeliveryState::Assigned),
+                evidence: Some(json!({ "assignmentReason": "staff owns NYC pilot" })),
+                ..Default::default()
+            },
+            Some("actor_staff"),
+        )
+        .unwrap();
+        assert_eq!(assigned.delivery_state, DeliveryState::Assigned);
+        assert_eq!(assigned.assignee_actor_id.as_deref(), Some("actor_staff"));
+        assert_eq!(assigned_event.event_type, "handoff.inbox.assigned");
+
+        let (returned, returned_event) = update_handoff_inbox_item(
+            &db_path,
+            &item.id,
+            HandoffInboxUpdateRequest {
+                delivery_state: Some(DeliveryState::ContinueScreening),
+                next_action_hint: Some("Ask one more qualifying question".to_string()),
+                evidence: Some(json!({ "returnReason": "needs more context" })),
+                ..Default::default()
+            },
+            Some("actor_staff"),
+        )
+        .unwrap();
+        assert_eq!(returned.delivery_state, DeliveryState::ContinueScreening);
+        assert_eq!(
+            returned.next_action_hint.as_deref(),
+            Some("Ask one more qualifying question")
+        );
+        assert_eq!(returned_event.event_type, "handoff.inbox.returned_to_ordo");
+    }
+
+    #[test]
+    fn support_queue_rejects_public_visibility_and_unsupported_sources() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+
+        let public_visibility = create_handoff_inbox_item(
+            &db_path,
+            HandoffInboxCreateRequest {
+                source_kind: "conversation".to_string(),
+                source_id: Some("conversation_1".to_string()),
+                destination_kind: "support".to_string(),
+                destination_id: None,
+                reason: Some("needs help".to_string()),
+                requested_action: None,
+                urgency: None,
+                assignee_actor_id: None,
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: None,
+                visibility: Some("public".to_string()),
+                request: None,
+                evidence: None,
+                approval_requirement: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        );
+        assert!(public_visibility.is_err());
+
+        let provider_source = create_handoff_inbox_item(
+            &db_path,
+            HandoffInboxCreateRequest {
+                source_kind: "provider_secret".to_string(),
+                source_id: Some("secret_1".to_string()),
+                destination_kind: "support".to_string(),
+                destination_id: None,
+                reason: Some("needs help".to_string()),
+                requested_action: None,
+                urgency: None,
+                assignee_actor_id: None,
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: None,
+                visibility: None,
+                request: None,
+                evidence: None,
+                approval_requirement: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        );
+        assert!(provider_source.is_err());
+    }
+
+    #[test]
+    fn terminal_support_queue_items_cannot_be_mutated_again() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let (item, _) = create_handoff_inbox_item(
+            &db_path,
+            HandoffInboxCreateRequest {
+                source_kind: "connection".to_string(),
+                source_id: Some("connection_1".to_string()),
+                destination_kind: "support".to_string(),
+                destination_id: None,
+                reason: Some("needs review".to_string()),
+                requested_action: None,
+                urgency: None,
+                assignee_actor_id: None,
+                due_at: None,
+                next_action_hint: None,
+                evidence_refs: None,
+                visibility: None,
+                request: None,
+                evidence: None,
+                approval_requirement: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        resolve_handoff_inbox_item(
+            &db_path,
+            &item.id,
+            HandoffInboxResolveRequest {
+                decision: OwnerDecision::Decline,
+                decision_reason: Some("not a fit".to_string()),
+                evidence: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let update = update_handoff_inbox_item(
+            &db_path,
+            &item.id,
+            HandoffInboxUpdateRequest {
+                assignee_actor_id: Some("actor_staff".to_string()),
+                ..Default::default()
+            },
+            Some("actor_staff"),
+        );
+        assert!(update.is_err());
+
+        let resolve_again = resolve_handoff_inbox_item(
+            &db_path,
+            &item.id,
+            HandoffInboxResolveRequest {
+                decision: OwnerDecision::Accept,
+                decision_reason: Some("changed mind".to_string()),
+                evidence: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        );
+        assert!(resolve_again.is_err());
     }
 }

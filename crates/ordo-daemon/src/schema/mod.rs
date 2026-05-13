@@ -105,7 +105,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 30;
+pub const CURRENT_SCHEMA_VERSION: i64 = 31;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -204,10 +204,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30,
+                24, 25, 26, 27, 28, 29, 30, 31,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 30);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 31);
     }
 
     #[test]
@@ -716,6 +716,28 @@ mod tests {
             &connection,
             "handoff_inbox_items",
             "delivery_state"
+        ));
+        assert!(column_exists(&connection, "handoff_inbox_items", "reason"));
+        assert!(column_exists(
+            &connection,
+            "handoff_inbox_items",
+            "requested_action"
+        ));
+        assert!(column_exists(&connection, "handoff_inbox_items", "urgency"));
+        assert!(column_exists(
+            &connection,
+            "handoff_inbox_items",
+            "assignee_actor_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "handoff_inbox_items",
+            "evidence_refs_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "handoff_inbox_items",
+            "visibility"
         ));
         assert!(table_exists(&connection, "handoff_events"));
         assert!(column_exists(&connection, "handoff_events", "event_type"));

@@ -68,6 +68,28 @@ The threshold values are intentionally conservative:
 Each decision is persisted with evidence so future UI and briefs can explain why
 owner access is or is not currently available.
 
+## Support Queue Fields
+
+The handoff inbox is also the first durable Support queue. It is not a CRM or
+external ticketing system; it is the local owner-attention spine that Support
+can project into briefs and actions.
+
+Each queue item records:
+
+- source object kind and id, such as account, member, visitor session, trial,
+  connection, conversation, job, artifact, or request;
+- reason and requested action;
+- urgency;
+- assignee actor id when a staff operator owns the next step;
+- due time and next-action hint when supplied;
+- evidence refs that can be safely projected into Support work items;
+- visibility limited to staff, owner, or system.
+
+Public and member surfaces must not read this table directly. When handoff
+status is shown outside Support, it must come through a role-safe projection and
+must not reveal staff routing, notes, provider details, policy internals, or
+owner-only evidence.
+
 ## Inbox And Receipts
 
 Handoff inbox items start in `pending_owner_approval`. Owner decisions transition
@@ -75,6 +97,10 @@ them to `approved_local_only`, `declined`, `queued`, or `continue_screening`.
 Accepting an item remains local-only and records `externalDelivery: false` in
 the event and receipt payload. This gives the backend an auditable decision
 spine without adding delivery transports.
+
+Support updates can also assign an item, return it to Ordo for continued
+screening, or refresh queue metadata. Terminal decisions are made through the
+resolve route so declined and locally approved items remain auditable.
 
 ## Non-Goals
 

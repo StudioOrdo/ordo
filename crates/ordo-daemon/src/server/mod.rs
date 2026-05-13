@@ -119,6 +119,10 @@ pub async fn serve(
         .route("/handoff/inbox", get(handoff_inbox_handler))
         .route("/handoff/inbox", post(handoff_inbox_create_handler))
         .route(
+            "/handoff/inbox/:item_id",
+            get(handoff_inbox_read_handler).put(handoff_inbox_update_handler),
+        )
+        .route(
             "/handoff/inbox/:item_id/resolve",
             put(handoff_inbox_resolve_handler),
         )

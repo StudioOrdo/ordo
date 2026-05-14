@@ -221,6 +221,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_surface_object_timeline_projection",
         apply: add_surface_object_timeline_projection,
     },
+    SchemaMigration {
+        version: 43,
+        name: "add_product_request_spine_projection",
+        apply: add_product_request_spine_projection,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3090,6 +3095,51 @@ fn add_surface_object_timeline_projection(connection: &Connection) -> Result<()>
             ON surface_object_timeline(visibility, occurred_at DESC);
         CREATE INDEX IF NOT EXISTS idx_surface_object_timeline_event_type
             ON surface_object_timeline(event_type, occurred_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_product_request_spine_projection(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS product_request_spine (
+            id TEXT PRIMARY KEY,
+            request_kind TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            object_kind TEXT NOT NULL,
+            object_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            status TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            actor_kind TEXT,
+            actor_id TEXT,
+            connection_id TEXT,
+            visibility TEXT NOT NULL,
+            due_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            safe_context_json TEXT NOT NULL DEFAULT '{}',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            actions_json TEXT NOT NULL DEFAULT '[]',
+            projected_at TEXT NOT NULL,
+            UNIQUE(request_kind, source_kind, source_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_request_spine_priority
+            ON product_request_spine(priority DESC, COALESCE(due_at, updated_at), updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_product_request_spine_source
+            ON product_request_spine(source_kind, source_id);
+        CREATE INDEX IF NOT EXISTS idx_product_request_spine_kind_status
+            ON product_request_spine(request_kind, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_product_request_spine_visibility
+            ON product_request_spine(visibility, priority DESC, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_product_request_spine_actor
+            ON product_request_spine(actor_kind, actor_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_product_request_spine_connection
+            ON product_request_spine(connection_id, updated_at DESC);
         "#,
     )?;
     Ok(())

@@ -35,6 +35,7 @@ pub mod live_eval_runner;
 pub mod live_journey_report;
 pub mod llm_accounting;
 pub mod llm_gateway;
+pub mod llm_method_contracts;
 pub mod local_sessions;
 pub mod markdown_artifacts;
 pub mod mcp;

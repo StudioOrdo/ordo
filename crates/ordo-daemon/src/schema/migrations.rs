@@ -231,6 +231,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_confirmed_graph_kernel",
         apply: add_confirmed_graph_kernel,
     },
+    SchemaMigration {
+        version: 45,
+        name: "add_llm_method_contract_registry",
+        apply: add_llm_method_contract_registry,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3250,6 +3255,60 @@ fn add_confirmed_graph_kernel(connection: &Connection) -> Result<()> {
             ON graph_edge_evidence(evidence_ref);
         CREATE INDEX IF NOT EXISTS idx_graph_candidate_promotions_candidate
             ON graph_candidate_promotions(candidate_kind, candidate_id, decision);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_llm_method_contract_registry(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS llm_method_contracts (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            family TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            purpose TEXT NOT NULL,
+            authority TEXT NOT NULL,
+            viewer_context TEXT NOT NULL,
+            input_schema_json TEXT NOT NULL,
+            output_schema_json TEXT NOT NULL,
+            visibility_ceiling TEXT NOT NULL,
+            policy_checks_json TEXT NOT NULL DEFAULT '[]',
+            evidence_required INTEGER NOT NULL,
+            limitations_required INTEGER NOT NULL,
+            access_mode TEXT NOT NULL,
+            provider_expectation TEXT NOT NULL,
+            live_call_allowed INTEGER NOT NULL DEFAULT 0,
+            execution_status TEXT NOT NULL,
+            events_emitted_json TEXT NOT NULL DEFAULT '[]',
+            artifact_behavior_json TEXT NOT NULL DEFAULT '{}',
+            graph_behavior_json TEXT NOT NULL DEFAULT '{}',
+            deterministic_fixtures_json TEXT NOT NULL DEFAULT '{}',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            content_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(name, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS llm_method_contract_lookup_audit (
+            id TEXT PRIMARY KEY,
+            method_name TEXT NOT NULL,
+            viewer_context_json TEXT NOT NULL DEFAULT '{}',
+            input_hash TEXT NOT NULL,
+            output_hash TEXT NOT NULL,
+            result_status TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_llm_method_contracts_family
+            ON llm_method_contracts(family, name, version DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_method_contracts_visibility
+            ON llm_method_contracts(visibility_ceiling, access_mode);
+        CREATE INDEX IF NOT EXISTS idx_llm_method_contract_lookup_audit_method
+            ON llm_method_contract_lookup_audit(method_name, created_at DESC);
         "#,
     )?;
     Ok(())

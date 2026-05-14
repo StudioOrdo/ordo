@@ -291,12 +291,17 @@ test("Login and register keep the public top rail and enter the authenticated sh
   await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Studio Ordo");
   await expect(page.getByLabel("Studio Ordo home").locator("img")).toHaveAttribute("src", "/logo.png");
   await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Register");
-  await page.getByRole("link", { name: "Continue" }).click();
+  await page.getByLabel("Email").fill("system-smoke@example.com");
+  await page.getByLabel("Password").fill("local-only-pass");
+  await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("navigation", { name: "Ordo room labels" })).toBeVisible();
 
   await page.goto("/register");
   await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Studio Ordo");
-  await page.getByRole("link", { name: "Create account" }).click();
+  await page.getByLabel("Name").fill("System Smoke");
+  await page.getByLabel("Email").fill("system-smoke-register@example.com");
+  await page.getByLabel("Password").fill("local-only-pass");
+  await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("navigation", { name: "Ordo room labels" })).toBeVisible();
 });
 

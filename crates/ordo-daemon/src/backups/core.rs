@@ -4,12 +4,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use super::types::*;
 use crate::kernel::append_job_event;
-use crate::schema::db::ConnectionExt;
 use uuid::Uuid;
 
 pub(crate) fn complete_backup_job(

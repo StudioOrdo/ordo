@@ -75,6 +75,44 @@ models expose only:
 - whether the key is locked by env/file configuration;
 - a redacted placeholder when configured.
 
+`GET /providers` also returns a provider readiness summary for owner/system UI.
+The summary reports the configured provider mode from `ORDO_LIVE_LLM_PROVIDER`,
+the requested/default provider ids, whether credentials are present, missing
+credential provider ids, and the live invocation guard state. The guard is
+reported as read-only status; this slice does not enable live provider calls.
+
+The OpenAI readiness resolver is included under the provider readiness summary.
+It reports a redacted decision such as `disabled`, `missing_key`,
+`unsupported_model`, `missing_budget`, `ready_but_live_disabled`, or
+`ready_for_guarded_smoke`. The resolver checks the selected model against the
+daemon catalog, resolves base URL, timeout, max case, budget, key source, live
+eval opt-in, and network opt-in, and never returns raw key values. A
+`ready_for_guarded_smoke` decision means the manual smoke-run guards are
+satisfied. Conversation gateway live provider invocation still requires the
+separate owner/developer app guard `ORDO_APP_LIVE_LLM=1`.
+
+Default local app chat routes `providerId: "local"` through the daemon-owned
+Ollama adapter at `http://127.0.0.1:11434/api` unless `ORDO_OLLAMA_BASE_URL` or
+`OLLAMA_BASE_URL` overrides it. The default local model is `qwen2.5-coder:7b`
+unless `ORDO_OLLAMA_MODEL` or `OLLAMA_MODEL` is set. The deterministic
+`local_fake/fake-chat` adapter remains available only as an explicit fallback
+for tests and eval fixtures. When `ORDO_APP_LIVE_LLM=1` is set and OpenAI
+readiness is `ready_for_guarded_smoke`, `llm.run.request` uses the configured
+OpenAI-compatible adapter and resolves the key only at the last moment from
+env, secret-file, or vault sources. Unsupported providers, missing guards,
+missing readiness, or model mismatches return safe `command.rejected` frames
+without exposing raw prompts or secrets.
+
+The browser member chat composer does not call a direct Next.js OpenAI stream
+route. It submits human messages and assistant run requests through `/chat/ws`;
+the direct `/api/chat/stream` route is retained only as a fail-closed boundary
+so provider keys cannot bypass daemon policy.
+
+Provider read models include catalog-backed model options for future UI
+selection. The browser should render model choices from the daemon response
+instead of hard-coding provider model ids. Provider updates reject model ids that
+are not in the daemon catalog for catalog-backed providers.
+
 Provider updates can store local metadata and local API keys. Local API keys are
 stored as encrypted vault items. Environment or secret-file values take
 precedence for secret presence. If an env/file API key is configured for a

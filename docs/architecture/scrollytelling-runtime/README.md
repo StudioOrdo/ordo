@@ -39,11 +39,12 @@ Preserve the source context.
 Do not lose the lead.
 ```
 
-The QR moment is central. At an event, the owner should be able to advance to a
-QR slide, show a code, and know which business context generated that code:
+The QR moment is central. At an event, in an offer, inside a request, attached
+to an artifact, or within a scrollytelling frame, the owner should be able to
+show a code and know which business context generated that code:
 
 - event or room;
-- offer, ask, artifact, or campaign;
+- offer, ask, request, artifact, or campaign;
 - owner/user who generated it;
 - approximate location context when deliberately supplied;
 - destination slide or surface;
@@ -52,7 +53,9 @@ QR slide, show a code, and know which business context generated that code:
 
 Ordo should learn from that path without cookie-heavy ad tracking or hidden
 surveillance. The goal is not enterprise analytics. The goal is relationship
-continuity for a solopreneur, where each lead may matter.
+continuity for a solopreneur, where each lead may matter. When time or
+location context is useful, it should be supplied, permitted, and stored as
+bounded server-side context behind an opaque entry point.
 
 ## First-Class MVP
 
@@ -176,6 +179,8 @@ entry point, provenance, and attribution context should be daemon-owned.
 - `VisitorSession`: existing durable record created after scan/entry.
 - `AttributionContext`: public-safe context copied into sessions, offer
   acceptances, outcomes, and briefs.
+- `RewardEvent`: candidate or qualified reward evidence copied into Growth
+  when a referral, feedback submission, or other program rule qualifies.
 - `BusinessOutcome`: durable outcome such as trial started, conversion,
   referral, ask response, partnership, or declined/lost.
 
@@ -511,9 +516,10 @@ Initial Ordo homepage target:
 4. Proof: local-first trust boundary and governed work
 5. Offer: 30-day OrdoStudio trial
 6. QR/Event: scan to open a relationship landing page for this context
-7. Ask: referrals, affiliates, collaborators, feedback
-8. Latest: published artifact/feed proof
-9. Chat CTA: ask Ordo what fits
+7. Reward: qualified referrals or accepted feedback can earn hosted time
+8. Ask: referrals, affiliates, collaborators, feedback
+9. Latest: published artifact/feed proof
+10. Chat CTA: ask Ordo what fits
 ```
 
 Each slide should have:

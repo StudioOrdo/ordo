@@ -7,6 +7,8 @@ And LLM Chat, which connects local account entry, chat bootstrap, browser
 `/chat/ws`, deterministic LLM chat, guarded live-provider testing, UI run
 states, and smoke evidence before broader onboarding surfaces resume.
 
+Current canon: [Current Product Canon](../../business/current-product-canon.md)
+
 The conversation UI should feel fast, polished, and emotionally legible while
 remaining operational. It should be the primary working surface, not a landing
 page and not a support widget pasted into the appliance.
@@ -14,8 +16,9 @@ page and not a support widget pasted into the appliance.
 ## Experience Principles
 
 - Default to a narrative brief/detail, not a generic dashboard panel.
-- Preserve the product split: clients participate, staff work handoffs and
-  business queues, admins operate the appliance.
+- Preserve the product split: members participate; Studio, Support, Knowledge,
+  Growth, and Systems operators work from their respective surfaces; roles only
+  control permissions and projections.
 - Local echo immediately; daemon truth reconciles quietly.
 - Every state has a visual answer: pending, sent, delivered, read, failed,
   edited, deleted, streaming, waiting for approval, offline, recovered.
@@ -44,29 +47,20 @@ Menu -> Area evidence list -> Selected record brief
 Desktop:
 
 ```text
-Top rail + staff/admin rail + evidence list + narrative brief/detail
+Surface rail + room tabs + evidence list + narrative brief/detail
 ```
 
-The top rail is visible to public/member/client/affiliate/staff users:
+The canonical product surfaces are:
 
 ```text
-Studio Ordo | Chat | Home | Offers | Asks | Latest | Account
+Member View | Studio | Support | Knowledge | Growth | Systems
 ```
 
-The staff rail is role-gated business movement:
-
-```text
-Today | Conversations | Connections | Offers | Asks | Customer Feedback | Affiliates | Artifacts | Jobs | Reports
-```
-
-Owner/admin adds appliance operation:
-
-```text
-System | Knowledge | Events | Logs | Backup | Settings
-```
-
-Non-staff users must never see the staff/admin rail. Ordinary business staff
-should not see Logs, Backup, Events, readiness, or low-level appliance internals
+Roles control which surfaces, rooms, records, and actions are visible.
+Non-staff users must never see Support queues, Studio production controls,
+Knowledge internals, Growth operator evidence, or Systems appliance internals
+unless a specific grant creates a safe projection. Ordinary business staff
+should not see logs, backup, events, readiness, or low-level appliance internals
 as primary navigation.
 
 ## Primary Surfaces
@@ -112,9 +106,9 @@ Client-facing labels should be plain:
 - A Studio Ordo team member is reviewing this.
 - Ordo Assistant is available.
 
-### Staff Conversation Queues
+### Support Conversation Queues
 
-Staff should not default to an all-conversation surveillance feed.
+Support operators should not default to an all-conversation surveillance feed.
 
 Primary views:
 
@@ -123,7 +117,7 @@ Primary views:
 - `All Conversations`
 
 Business staff default to `My Handoffs`. Manager/admin roles may default to
-`Team Queue`. Owners may default to Today Brief or Team Queue. `All
+`Team Queue`. Owners may default to a Systems brief or Team Queue. `All
 Conversations` is available only to roles with the right scope.
 
 ### Affiliate Chat And Account Tools
@@ -440,7 +434,9 @@ reasoning.
 ## Non-Goals For Initial UI
 
 - No marketing hero page.
-- No voice/video controls.
+- No voice/video controls in the initial UI. Future voice, phone, and
+  SMS/Twilio controls should sit on the same text-first conversation, request,
+  artifact, and approval contracts.
 - No decorative chat gimmicks that obscure state.
 - No public multi-operator inbox before mediated conversation basics are solid.
 - No persistent draft sync until privacy and retention rules are explicit.

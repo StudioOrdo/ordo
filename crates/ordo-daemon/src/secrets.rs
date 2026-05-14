@@ -27,6 +27,7 @@ mod tests {
     #[test]
     fn secret_debug_redacts_value() {
         let secret = secret_string("sk-test-secret-value");
+
         let debug = format!("{secret:?}");
 
         assert!(debug.contains("[REDACTED]"));

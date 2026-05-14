@@ -4,6 +4,8 @@ import { createLocalSession, parseLocalSessionCookie } from "@/lib/local-session
 
 test.describe("local appliance session scaffold", () => {
   const now = new Date("2026-05-12T12:00:00.000Z");
+  const LIVE_STREAM_DEGRADED_REASON =
+    "Conversation gateway unavailable; live replies stream through the server without gateway persistence.";
 
   test("register creates a client-safe local session read model", () => {
     const result = createLocalSession(
@@ -106,7 +108,7 @@ test.describe("local appliance session scaffold", () => {
       authenticated: true,
       bootstrap: null,
       status: "degraded",
-      degradedReason: "Daemon chat bootstrap route unavailable; using local preview chat.",
+      degradedReason: LIVE_STREAM_DEGRADED_REASON,
     });
     expect(serialized).not.toContain("ava@example.com");
     expect(serialized).not.toContain("local-only-pass");
@@ -115,7 +117,70 @@ test.describe("local appliance session scaffold", () => {
     expect(serialized).not.toContain("prompt");
   });
 
+  test("direct chat stream route fails closed", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("ava@example.com");
+    await page.getByLabel("Password").fill("local-only-pass");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page).toHaveURL(/\/my\/chat/);
+
+    const payload = await page.evaluate(async () => {
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientMessageId: "browser_test_1", message: "   " }),
+      });
+      return { status: response.status, body: await response.json() };
+    });
+    const serialized = JSON.stringify(payload);
+
+    expect(payload).toMatchObject({
+      status: 400,
+      body: {
+        error: "Enter a message before streaming a reply.",
+      },
+    });
+    expect(serialized).not.toContain("ava@example.com");
+    expect(serialized).not.toContain("local-only-pass");
+    expect(serialized).not.toContain("OPENAI_API_KEY");
+    expect(serialized).not.toContain("sk-");
+  });
+
   test("member chat surfaces safe degraded run state when daemon is unavailable", async ({ page }) => {
+    await page.route("/api/chat/bootstrap", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          bootstrap: null,
+          status: "degraded",
+          degradedReason: LIVE_STREAM_DEGRADED_REASON,
+        }),
+      });
+    });
+    let streamRequests = 0;
+    await page.route("**/api/chat/stream", async (route) => {
+      streamRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          "event: typing",
+          'data: {"clientMessageId":"browser_test_stream"}',
+          "",
+          "event: delta",
+          'data: {"clientMessageId":"browser_test_stream","delta":"Live "}',
+          "",
+          "event: delta",
+          'data: {"clientMessageId":"browser_test_stream","delta":"answer"}',
+          "",
+          "event: completed",
+          'data: {"clientMessageId":"browser_test_stream","ok":true}',
+          "",
+        ].join("\n"),
+      });
+    });
+
     await page.goto("/login");
     await page.getByLabel("Email").fill("ava@example.com");
     await page.getByLabel("Password").fill("local-only-pass");
@@ -123,21 +188,49 @@ test.describe("local appliance session scaffold", () => {
     await expect(page).toHaveURL(/\/my\/chat/);
     await page.goto("/my/chat?role=client&mobile=content");
 
-    await expect(page.getByText("Daemon chat bootstrap route unavailable; using local preview chat.")).toBeVisible();
+    await expect(page.getByText(LIVE_STREAM_DEGRADED_REASON)).toBeVisible();
     await page.getByRole("textbox", { name: "Message Ordo" }).fill("Can I use this locally?");
     await page.getByRole("button", { name: "Send message" }).click();
 
-    const runState = page.getByLabel("Local chat run state");
+    const runState = page.getByLabel("Live chat run state");
     await expect(runState.getByText("Can I use this locally?")).toBeVisible();
-    await expect(runState.getByText("Local preview only. Start the daemon to send this through the conversation gateway.")).toBeVisible();
+    await expect(runState.getByText(LIVE_STREAM_DEGRADED_REASON)).toBeVisible();
+    await expect(runState.getByText("Live answer")).toBeVisible();
+    await expect(runState.getByText("complete")).toBeVisible();
+    expect(streamRequests).toBe(1);
     await expect(page.getByText("ava@example.com")).toHaveCount(0);
     await expect(page.getByText("local-only-pass")).toHaveCount(0);
     await expect(page.getByText("OPENAI_API_KEY")).toHaveCount(0);
     await expect(page.getByText("sk-")).toHaveCount(0);
   });
 
-  test("member chat sends one message through the browser websocket adapter", async ({ page }) => {
+  test("member chat persists through websocket and streams live reply through the server", async ({ page }) => {
+    let streamRequests = 0;
+    await page.route("**/api/chat/stream", async (route) => {
+      streamRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          "event: typing",
+          'data: {"clientMessageId":"browser_test_stream"}',
+          "",
+          "event: delta",
+          'data: {"clientMessageId":"browser_test_stream","delta":"Drafting "}',
+          "",
+          "event: delta",
+          'data: {"clientMessageId":"browser_test_stream","delta":"answer"}',
+          "",
+          "event: completed",
+          'data: {"clientMessageId":"browser_test_stream","ok":true}',
+          "",
+        ].join("\n"),
+      });
+    });
+
     await page.addInitScript(() => {
+      (window as unknown as { __ordoSentGatewayFrames: unknown[] }).__ordoSentGatewayFrames = [];
+
       class MockChatWebSocket extends EventTarget {
         static CONNECTING = 0;
         static OPEN = 1;
@@ -164,6 +257,7 @@ test.describe("local appliance session scaffold", () => {
 
         send(value: string) {
           const frame = JSON.parse(value);
+          (window as unknown as { __ordoSentGatewayFrames: unknown[] }).__ordoSentGatewayFrames.push(frame);
           if (frame.type === "gateway.identify") {
             this.emitFrame({
               schemaVersion: "conversation.gateway.v1",
@@ -219,88 +313,6 @@ test.describe("local appliance session scaffold", () => {
               occurredAt: "2026-05-12T12:00:04.000Z",
             });
           }
-          if (frame.type === "llm.run.request") {
-            const runId = frame.payload.runId;
-            this.emitFrame({
-              schemaVersion: "conversation.gateway.v1",
-              op: "ack",
-              type: "llm.run.request.ack",
-              clientId: frame.clientId,
-              conversationId: frame.conversationId,
-              durability: "ephemeral",
-              scope: "user",
-              payload: {
-                runId,
-                finalMessageId: "message_assistant_1",
-                providerId: "local_fake",
-                modelId: "fake-chat",
-              },
-              occurredAt: "2026-05-12T12:00:05.000Z",
-            });
-            this.emitFrame({
-              schemaVersion: "conversation.gateway.v1",
-              op: "dispatch",
-              type: "llm.text.delta",
-              clientId: frame.clientId,
-              conversationId: frame.conversationId,
-              durability: "ephemeral",
-              scope: "run",
-              payload: { runId, delta: "Drafting " },
-              occurredAt: "2026-05-12T12:00:06.000Z",
-            });
-            this.emitFrame({
-              schemaVersion: "conversation.gateway.v1",
-              op: "dispatch",
-              type: "llm.text.delta",
-              clientId: frame.clientId,
-              conversationId: frame.conversationId,
-              durability: "ephemeral",
-              scope: "run",
-              payload: { runId, delta: "answer" },
-              occurredAt: "2026-05-12T12:00:07.000Z",
-            });
-            this.emitFrame({
-              schemaVersion: "conversation.gateway.v1",
-              op: "dispatch",
-              type: "llm.text.completed",
-              conversationId: frame.conversationId,
-              sequence: 2,
-              cursor: 11,
-              durability: "durable",
-              scope: "conversation",
-              payload: { runId, messageId: "message_assistant_1", contentHash: "sha256:reply" },
-              occurredAt: "2026-05-12T12:00:08.000Z",
-            });
-            this.emitFrame({
-              schemaVersion: "conversation.gateway.v1",
-              op: "dispatch",
-              type: "llm.run.completed",
-              conversationId: frame.conversationId,
-              sequence: 3,
-              cursor: 12,
-              durability: "durable",
-              scope: "conversation",
-              payload: { runId, messageId: "message_assistant_1" },
-              occurredAt: "2026-05-12T12:00:09.000Z",
-            });
-            this.emitFrame({
-              schemaVersion: "conversation.gateway.v1",
-              op: "dispatch",
-              type: "message.created",
-              serverId: "conversation_member_1:4",
-              conversationId: frame.conversationId,
-              sequence: 4,
-              cursor: 13,
-              durability: "durable",
-              scope: "conversation",
-              payload: {
-                messageId: "message_assistant_1",
-                participantId: frame.payload.assistantParticipantId,
-                clientMessageId: `llm:${runId}:assistant`,
-              },
-              occurredAt: "2026-05-12T12:00:10.000Z",
-            });
-          }
         }
 
         close() {
@@ -344,7 +356,6 @@ test.describe("local appliance session scaffold", () => {
         }),
       });
     });
-
     await page.goto("/login");
     await page.getByLabel("Email").fill("ava@example.com");
     await page.getByLabel("Password").fill("local-only-pass");
@@ -352,20 +363,44 @@ test.describe("local appliance session scaffold", () => {
     await expect(page).toHaveURL(/\/my\/chat/);
     await page.goto("/my/chat?role=client&mobile=content");
 
-    await expect(page.getByText("Ordo - connected to /chat/ws")).toBeVisible();
+    await expect(page.getByText("Ordo - connected to /chat/ws; live replies stream through the server")).toBeVisible();
     await page.getByRole("textbox", { name: "Message Ordo" }).fill("Please save this test message.");
     await page.getByRole("button", { name: "Send message" }).click();
 
-    const runState = page.getByLabel("Local chat run state");
+    const runState = page.getByLabel("Live chat run state");
     await expect(runState.getByText("Please save this test message.")).toBeVisible();
     await expect(runState.getByText("saved by /chat/ws")).toBeVisible();
     await expect(runState.getByText("Drafting answer")).toBeVisible();
-    await expect(runState.getByText("deterministic reply saved")).toBeVisible();
+    await expect(runState.getByText("complete")).toBeVisible();
+
+    await page.waitForFunction(() => {
+      const frames = (window as unknown as { __ordoSentGatewayFrames?: Array<{ type?: string }> }).__ordoSentGatewayFrames ?? [];
+      return frames.some((frame) => frame.type === "message.submit");
+    });
+    const sentFrames = await page.evaluate(() => {
+      const frames = (window as unknown as {
+        __ordoSentGatewayFrames?: Array<{
+          type?: string;
+          payload?: Record<string, unknown>;
+        }>;
+      }).__ordoSentGatewayFrames ?? [];
+      return frames;
+    });
+    expect(sentFrames.find((frame) => frame.type === "message.submit")).toMatchObject({
+      type: "message.submit",
+      payload: {
+        bodyMarkdown: "Please save this test message.",
+        messageKind: "human",
+        visibility: "participants",
+      },
+    });
+    expect(sentFrames.some((frame) => frame.type === "llm.run.request")).toBe(false);
+    expect(streamRequests).toBe(1);
+
     await expect(page.getByText("ava@example.com")).toHaveCount(0);
     await expect(page.getByText("local-only-pass")).toHaveCount(0);
     await expect(page.getByText("OPENAI_API_KEY")).toHaveCount(0);
     await expect(page.getByText("sk-test-secret")).toHaveCount(0);
-    await expect(page.getByText("Client asked for a local deterministic reply.")).toHaveCount(0);
     await expect(page.getByText("prompt")).toHaveCount(0);
   });
 });

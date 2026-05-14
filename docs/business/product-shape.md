@@ -2,17 +2,28 @@
 
 Status: Product direction, not fully implemented
 
+Current canon: [Current Product Canon](current-product-canon.md)
+
 Ordo is a local-first operating system for one-person businesses. The current
 repo proves the appliance spine. The full product shape is broader: Ordo should
 become a trusted business boundary that can speak, qualify, protect attention,
 run governed work, and exchange evidence without surrendering owner control.
 
-The product should feel like a browser-like runtime for AI work and business
-presence: one place to interact, inspect, approve, remember, publish, hand off,
-and move artifacts across governed capabilities.
+The product should feel like a governed workforce substrate, not a toolbox.
+The owner should be able to direct work conversationally, inspect evidence,
+approve outcomes, publish, hand off, remember, and move artifacts across
+governed capabilities without becoming a workflow engineer.
 
 The durable core is described in [Ordo Core](ordo-core.md). The workflow-driven
-roadmap is described in [Product Roadmap](product-roadmap.md).
+roadmap is described in [Product Roadmap](product-roadmap.md). The workforce
+stance is described in [Workforce Substrate](workforce-substrate.md). The
+backend discipline is described in
+[Appliance Operating Discipline](../architecture/appliance-operating-discipline.md).
+
+The product borrows from enterprise SaaS where enterprise systems are right:
+commands, read models, events, audit, RBAC, grants, workflows, retries,
+approval gates, provenance, observability, analytics, and extension contracts.
+It rejects the enterprise habit of making the user operate the machinery.
 
 ## Core Loop
 
@@ -30,7 +41,8 @@ Tracked entry point -> public Ordo conversation -> offer, ask, handoff, or conne
 
 ## Implemented Today
 
-The current product surface is the System appliance shell:
+The implemented surface closest to the current canon is the Systems appliance
+shell:
 
 - Brief
 - Health
@@ -41,67 +53,70 @@ The current product surface is the System appliance shell:
 - Logs
 - Reports
 
-These surfaces help the operator inspect the appliance, understand what
+These rooms help the operator inspect the appliance, understand what
 happened, prepare local diagnostic reports, and verify that work is grounded in
 evidence.
 
-## Planned Product Surfaces
+## Canonical Product Surfaces
 
-The main business product should organize around owner, public, and connection
-surfaces. These are planned surfaces, not implemented in the current repo.
+The current product stance is surface-first:
 
-### Chat
+```text
+Member View
+Studio
+Support
+Knowledge
+Growth
+Systems
+```
 
-Chat is the primary operating interface. The owner should be able to ask Ordo to
-inspect, plan, create, revise, schedule, and explain work from one place.
+Roles are permission context and projection policy. Roles are not the primary
+navigation model.
 
-Chat should not bypass governance. It should route intent through capabilities,
-jobs, evidence, and approvals.
+### Member View
 
-### About
+Member View is the customer-safe participation surface. The member talks to
+Ordo, sees Activity, accepts Offers, uses Access, responds to Requests, and
+participates in Referrals. Members should not see staff routing, provider
+mechanics, raw policy state, or unrelated customer data.
 
-About is the public business story. It should explain who the business serves,
-what it believes, what evidence supports its claims, and where visitors should
-go next.
+### Studio
 
-This should become a scrollytelling business narrative, not a generic page
-builder.
+Studio is the production surface. It owns repeatable jobs, DAGs, templates,
+media work, artifact generation, review loops, and publication prep. Studio is
+conversational first: the operator talks to Ordo, reviews results, gives
+feedback, approves, rejects, or redirects. Structured controls can support
+inspection and repair, but they should not become the default happy path.
 
-### Offers
+### Support
 
-Offers describe what can be bought, joined, booked, requested, accepted, or
-trialed.
+Support is the relationship and human-attention surface. It owns conversations,
+handoffs, customer requests, QA, feedback, review triage, and staff-visible
+decision work.
 
-An offer should be durable business data, not only marketing copy. It should
-connect to audience, visibility, fulfillment, evidence, follow-up, tracked entry
-points, attribution, and measurement.
+### Knowledge
 
-### Asks And Wants
+Knowledge is the grounded memory surface. It owns corpus sources, provenance,
+content packs, retrieval readiness, generated knowledge artifacts, and
+access-aware RAG boundaries.
 
-A Want is an owner-expressed need, opportunity, request, or desired connection.
-An Ask is a Want that has been approved for a visible audience.
+### Growth
 
-Asks let the business say what it is looking for: clients, collaborators,
-guests, referrals, sponsors, contractors, venues, testers, support, or evidence.
+Growth is the business-value surface. It owns offers, asks, QR paths,
+campaigns, attribution, referrals, content performance, value events, rewards,
+benefit grants, and business learning.
 
-### Feed
+### Systems
 
-Feed is the public stream of composite artifacts: articles, podcast outputs,
-images, clips, briefs, updates, and syndicated machine-readable content.
+Systems is the appliance operation surface. It owns runtime health, providers,
+local install state, hosted instances, backups, restores, logs, events, policy,
+access/RBAC, diagnostics, audit, and low-level runtime operations.
 
-The feed should support short-form content marketing while preserving provenance
-and source grounding.
+### Public Story
 
-### Connections
-
-Connections are trusted relationships with scope, grants, history, and
-revocability. A Connection may represent a person, another Ordo, Studio Ordo
-Support, an affiliate, a client, a worker, a service provider, a device, or a
-future peer node.
-
-Connections should not feel like a social network. They are the trust-and-work
-surface for handoffs, packets, receipts, affiliate introductions, support, and
-future peer exchange.
+Home/About, public Offers, public Asks, Latest, and public Chat are public
+projections of the same underlying surfaces. Public claims must be backed by
+published public truth or clearly marked as aspiration.
 
 ## Content Visibility
 
@@ -121,7 +136,7 @@ may use deeper material according to policy.
 
 Visibility, publication state, and connection grants are separate controls.
 
-## Owner Operating Room
+## Briefing Surface
 
 Briefs are how Ordo explains what matters. The owner should not have to inspect
 raw tables, logs, or workflow internals first.
@@ -170,7 +185,22 @@ Connection -> tracked entry point -> visitor -> Ordo conversation -> offer -> tr
 
 Default commercial proofs should include a become-affiliate offer and a 30-day
 Ordo trial offer. Attribution should track who arrived, talked to Ordo, accepted
-the offer, started a trial, and converted.
+the offer, started a trial, converted, and earned qualified credit.
+
+## Rewards And Benefits
+
+Rewards should be a reusable Growth function:
+
+```text
+tracked action -> qualification -> reward ledger -> benefit grant -> Access
+```
+
+Examples include referral-hosted-time credits, feedback-hosted-time credits,
+community QA credits, leaderboard points, render minutes, and pack unlocks.
+
+The important split is that Growth qualifies and records the reward, while
+Access enforces the benefit. A reward program should never silently extend a
+trial or unlock a capability without ledger evidence.
 
 ## Build-Measure-Learn Loop
 
@@ -186,14 +216,20 @@ Ordo should help a solopreneur experiment faster:
 The goal is not just content generation. The goal is lower business overhead
 and faster learning.
 
-## Knowledge And Packs
+## Knowledge, Access, And Packs
 
-Future Ordo should support curated knowledge and capability packs with
+Future Ordo should support curated knowledge and workforce packs with
 provenance. A user should be able to build approved content packs from source
 material and generated artifacts, then load those packs into another Ordo.
 
 This is not implemented yet. The near-term prerequisite is access-aware
 knowledge/RAG with clear corpus provenance.
+
+In product language, offers unlock Access. Access may include content,
+capabilities, templates, request types, artifact types, usage limits,
+visibility rules, and approval gates. Internal implementation can use
+capability packs, workforce packs, grants, and entitlements, but the
+member-facing surface should remain concrete about what the user can use now.
 
 Customization should come from MCP tools, process templates, adapters, prompts,
 and domain packs that register into the same capability, policy, artifact,
@@ -208,7 +244,14 @@ Customize the work, not the trust boundary.
 ## Network Direction
 
 Ordo should be useful alone. Later, Ordos may exchange governed artifacts and
-requests.
+requests. The direction is many sovereign appliances, not one giant SaaS
+database. Agent-to-agent networking should project Ordo requests, jobs,
+artifacts, receipts, offers, and asks through policy instead of exposing raw
+internals.
+
+The first network wedge should be an approved support packet or worker
+assignment, because both can be bounded by artifacts, receipts, and explicit
+egress approval.
 
 The first likely network use case is support: a local Ordo prepares a local
 issue report, the operator approves sending it, and Studio Ordo Support receives

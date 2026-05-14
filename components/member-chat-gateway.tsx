@@ -4,10 +4,10 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   CONVERSATION_GATEWAY_SCHEMA_VERSION,
+  type ConversationGatewayDurability,
   type ConversationGatewayEnvelope,
   type ConversationGatewayOp,
   type ConversationGatewayScope,
-  type ConversationGatewayDurability,
 } from "@/lib/conversation-protocol";
 
 interface ChatBootstrapTransport {
@@ -36,47 +36,46 @@ interface PreviewMessage {
   speaker: "You" | "Ordo";
   tone: "member" | "ordo" | "safe_status";
   body: string;
-  status?:
-    | "local"
-    | "acknowledged"
-    | "persisted"
-    | "llm_requested"
-    | "llm_streaming"
-    | "llm_completed"
-    | "llm_failed";
+  status?: "local" | "acknowledged" | "persisted" | "llm_requested" | "llm_streaming" | "llm_completed" | "llm_failed";
   messageId?: string;
 }
 
 type RunState = "checking" | "degraded" | "connecting" | "connected" | "failed";
 
 interface GatewayAckPayload {
-  conversationId?: string;
   messageId?: string;
-  runId?: string;
-  finalMessageId?: string;
 }
 
 interface MessageCreatedPayload {
   messageId?: string;
-  participantId?: string;
   clientMessageId?: string;
+}
+
+interface LlmDeltaPayload {
+  runId?: string;
+  delta?: unknown;
 }
 
 interface LlmRunPayload {
   runId?: string;
-  delta?: string;
-  message?: string;
-  messageId?: string;
+  code?: unknown;
+  message?: unknown;
 }
 
-const OFFLINE_REASON = "Daemon chat bootstrap route unavailable; using local preview chat.";
+interface ChatStreamEventPayload {
+  delta?: unknown;
+  message?: unknown;
+  error?: unknown;
+}
+
+const OFFLINE_REASON = "Conversation gateway unavailable; reconnecting to the local daemon.";
+const CHAT_BOOTSTRAP_RETRY_MS = 2_500;
 
 export function MemberChatGatewayComposer() {
   const socketRef = useRef<WebSocket | null>(null);
   const bootstrapRef = useRef<ChatBootstrapReadModel | null>(null);
   const submittedMessagesRef = useRef(new Map<string, string>());
-  const requestedRunsRef = useRef(new Set<string>());
-  const llmClientRunsRef = useRef(new Map<string, string>());
+  const messageSequenceRef = useRef(0);
   const [runState, setRunState] = useState<RunState>("checking");
   const [bootstrap, setBootstrap] = useState<ChatBootstrapReadModel | null>(null);
   const [degradedReason, setDegradedReason] = useState<string | null>(null);
@@ -85,77 +84,66 @@ export function MemberChatGatewayComposer() {
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function scheduleBootstrapRetry() {
+      if (cancelled || retryTimer) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        bootstrapChat();
+      }, CHAT_BOOTSTRAP_RETRY_MS);
+    }
 
     async function bootstrapChat() {
       try {
         const response = await fetch("/api/chat/bootstrap", { method: "POST" });
         const payload = (await response.json()) as ChatBootstrapResponse;
-
         if (cancelled) return;
         if (!response.ok || payload.status !== "ready" || !payload.bootstrap?.transport.url) {
           setRunState("degraded");
           setDegradedReason(payload.degradedReason ?? OFFLINE_REASON);
+          scheduleBootstrapRetry();
           return;
         }
 
         setBootstrap(payload.bootstrap);
-  bootstrapRef.current = payload.bootstrap;
+        bootstrapRef.current = payload.bootstrap;
         setRunState("connecting");
         const socket = new WebSocket(payload.bootstrap.transport.url);
         socketRef.current = socket;
 
         socket.addEventListener("open", () => {
-          socket.send(
-            JSON.stringify(
-              gatewayEnvelope("identify", "gateway.identify", null, {
-                actorId: payload.bootstrap?.actorId,
-                participantId: payload.bootstrap?.participantId,
-              }),
-            ),
-          );
-          socket.send(
-            JSON.stringify(
-              gatewayEnvelope("command", "conversation.subscribe", payload.bootstrap?.conversationId ?? null, {
-                afterSequence: 0,
-                afterCursor: 0,
-                limit: 50,
-              }),
-            ),
-          );
+          socket.send(JSON.stringify(gatewayEnvelope("identify", "gateway.identify", null, { actorId: payload.bootstrap?.actorId, participantId: payload.bootstrap?.participantId })));
+          socket.send(JSON.stringify(gatewayEnvelope("command", "conversation.subscribe", payload.bootstrap?.conversationId ?? null, { afterSequence: 0, afterCursor: 0, limit: 50 })));
           setRunState("connected");
           setDegradedReason(null);
         });
 
         socket.addEventListener("message", (event) => {
           const frame = parseGatewayFrame(event.data);
-          if (frame?.op === "ack") {
-            handleAckFrame(frame);
-            return;
-          }
-          if (frame?.op === "dispatch") {
-            handleDispatchFrame(frame);
-            return;
-          }
-          if (frame?.op === "error") {
-            handleErrorFrame(frame);
-          }
+          if (frame?.op === "ack") handleAckFrame(frame);
+          else if (frame?.op === "dispatch") handleDispatchFrame(frame);
+          else if (frame?.op === "error") handleErrorFrame(frame);
         });
 
         socket.addEventListener("close", () => {
           if (!cancelled) {
+            socketRef.current = null;
             setRunState("degraded");
-            setDegradedReason("Conversation gateway disconnected; using local preview chat.");
+            setDegradedReason(OFFLINE_REASON);
+            scheduleBootstrapRetry();
           }
         });
-
         socket.addEventListener("error", () => {
           setRunState("failed");
-          setDegradedReason("Conversation gateway is unavailable; using local preview chat.");
+          setDegradedReason(OFFLINE_REASON);
+          scheduleBootstrapRetry();
         });
       } catch {
         if (!cancelled) {
           setRunState("degraded");
           setDegradedReason(OFFLINE_REASON);
+          scheduleBootstrapRetry();
         }
       }
     }
@@ -163,6 +151,7 @@ export function MemberChatGatewayComposer() {
     bootstrapChat();
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       socketRef.current?.close();
       socketRef.current = null;
       bootstrapRef.current = null;
@@ -174,20 +163,22 @@ export function MemberChatGatewayComposer() {
     const body = draft.trim();
     if (!body) return;
 
-    const clientMessageId = `browser_message_${Date.now()}`;
+    messageSequenceRef.current += 1;
+    const clientMessageId = `browser_message_${Date.now()}_${messageSequenceRef.current}`;
     submittedMessagesRef.current.set(clientMessageId, body);
     setDraft("");
-    setMessages((current) => [
-      ...current,
-      { id: clientMessageId, speaker: "You", tone: "member", body, status: "local" },
-    ]);
+    setMessages((current) => [...current, { id: clientMessageId, speaker: "You", tone: "member", body, status: "local" }]);
 
     const socket = socketRef.current;
-    if (runState === "connected" && bootstrap && socket?.readyState === WebSocket.OPEN) {
+    const activeBootstrap = bootstrapRef.current ?? bootstrap;
+    const runId = `llm_run_${clientMessageId}`;
+    setMessages((current) => (current.some((message) => message.id === runId) ? current : [...current, { id: runId, speaker: "Ordo", tone: "safe_status", body: "", status: "llm_requested" }]));
+
+    if (runState === "connected" && activeBootstrap && socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify(
-          gatewayEnvelope("command", "message.submit", bootstrap.conversationId, {
-            participantId: bootstrap.participantId,
+          gatewayEnvelope("command", "message.submit", activeBootstrap.conversationId, {
+            participantId: activeBootstrap.participantId,
             bodyMarkdown: body,
             clientMessageId,
             messageKind: "human",
@@ -195,18 +186,11 @@ export function MemberChatGatewayComposer() {
           }),
         ),
       );
-      return;
-    }
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: `${clientMessageId}_offline`,
-        speaker: "Ordo",
-        tone: "safe_status",
-        body: "Local preview only. Start the daemon to send this through the conversation gateway.",
-      },
-    ]);
+      void streamAssistantReply(runId, body, false);
+    } else {
+      void streamAssistantReply(runId, body, true);
+    }
   }
 
   function handleAckFrame(frame: ConversationGatewayEnvelope) {
@@ -217,198 +201,173 @@ export function MemberChatGatewayComposer() {
     }
 
     const payload = frame.payload as GatewayAckPayload;
-    if (frame.type === "llm.run.request.ack" && frame.clientId) {
-      const runId = payload.runId ?? llmClientRunsRef.current.get(frame.clientId);
-      if (!runId) return;
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === runId
-            ? {
-                ...message,
-                status: "llm_requested",
-                messageId: payload.finalMessageId ?? message.messageId,
-              }
-            : message,
-        ),
-      );
-      return;
+    if (frame.type === "message.submit.ack" && frame.clientId) {
+      setMessages((current) => current.map((message) => (message.id === frame.clientId ? { ...message, status: "acknowledged", messageId: payload.messageId } : message)));
     }
 
-    if (frame.type !== "message.submit.ack" || !frame.clientId) return;
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === frame.clientId
-          ? {
-              ...message,
-              status: "acknowledged",
-              messageId: payload.messageId,
-            }
-          : message,
-      ),
-    );
+    if (frame.type === "llm.run.request.ack") {
+      const runId = (frame.payload as LlmRunPayload).runId;
+      if (typeof runId === "string") {
+        setMessages((current) => current.map((message) => (message.id === runId ? { ...message, status: "llm_requested" } : message)));
+      }
+    }
   }
 
   function handleDispatchFrame(frame: ConversationGatewayEnvelope) {
-    if (frame.type.startsWith("llm.")) {
-      handleLlmDispatchFrame(frame);
+    if (frame.type === "command.rejected") {
+      handleErrorFrame(frame);
+      return;
+    }
+
+    if (frame.type === "llm.text.delta") {
+      const payload = frame.payload as LlmDeltaPayload;
+      if (typeof payload.runId === "string" && typeof payload.delta === "string") appendAssistantDelta(payload.runId, payload.delta);
+      return;
+    }
+
+    if (frame.type === "llm.text.completed" || frame.type === "llm.run.completed") {
+      const runId = (frame.payload as LlmRunPayload).runId;
+      if (typeof runId === "string") completeAssistantRun(runId);
+      return;
+    }
+
+    if (frame.type === "llm.run.failed") {
+      const payload = frame.payload as LlmRunPayload;
+      if (typeof payload.runId === "string") failAssistantRun(payload.runId, safeErrorMessage(payload));
       return;
     }
 
     if (frame.type !== "message.created") return;
     const payload = frame.payload as MessageCreatedPayload;
     if (!payload.clientMessageId) return;
-    const assistantRunId = assistantRunIdFromClientMessageId(payload.clientMessageId);
-    if (assistantRunId) {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === assistantRunId
-            ? {
-                ...message,
-                status: "llm_completed",
-                messageId: payload.messageId ?? message.messageId,
-              }
-            : message,
-        ),
-      );
-      return;
-    }
-    maybeRequestDeterministicReply(payload);
+    setMessages((current) => current.map((message) => (message.id === payload.clientMessageId ? { ...message, status: "persisted", messageId: payload.messageId ?? message.messageId } : message)));
+  }
 
+  function handleErrorFrame(frame: ConversationGatewayEnvelope) {
+    setRunState("failed");
+    setDegradedReason(safeErrorMessage(frame.payload));
+  }
+
+  function appendAssistantDelta(runId: string, delta: string) {
+    setMessages((current) => current.map((message) => (message.id === runId ? { ...message, tone: "ordo", status: "llm_streaming", body: `${message.body}${delta}` } : message)));
+  }
+
+  function completeAssistantRun(runId: string) {
     setMessages((current) =>
       current.map((message) =>
-        message.id === payload.clientMessageId
+        message.id === runId
           ? {
               ...message,
-              status: "persisted",
-              messageId: payload.messageId ?? message.messageId,
+              status: message.body.trim() ? "llm_completed" : "llm_failed",
+              tone: message.body.trim() ? message.tone : "safe_status",
+              body: message.body.trim() ? message.body : "No live reply returned. Try again from this conversation.",
             }
           : message,
       ),
     );
   }
 
-  function handleLlmDispatchFrame(frame: ConversationGatewayEnvelope) {
-    const payload = frame.payload as LlmRunPayload;
-    const runId = payload.runId;
-    if (!runId) return;
-
-    if (frame.type === "llm.text.delta") {
-      const delta = typeof payload.delta === "string" ? payload.delta : "";
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === runId
-            ? {
-                ...message,
-                tone: "ordo",
-                status: "llm_streaming",
-                body: message.status === "llm_requested" ? delta : `${message.body}${delta}`,
-              }
-            : message,
-        ),
-      );
-      return;
-    }
-
-    if (frame.type === "llm.run.failed") {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === runId
-            ? {
-                ...message,
-                tone: "safe_status",
-                status: "llm_failed",
-                body: "Deterministic local reply failed safely. Try again after reconnecting the daemon.",
-              }
-            : message,
-        ),
-      );
-      return;
-    }
-
-    if (frame.type === "llm.text.completed" || frame.type === "llm.run.completed") {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === runId
-            ? {
-                ...message,
-                status: "llm_completed",
-                messageId: payload.messageId ?? message.messageId,
-              }
-            : message,
-        ),
-      );
-    }
-  }
-
-  function handleErrorFrame(frame: ConversationGatewayEnvelope) {
-    const runId = frame.clientId ? llmClientRunsRef.current.get(frame.clientId) : null;
-    if (runId) {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === runId
-            ? {
-                ...message,
-                tone: "safe_status",
-                status: "llm_failed",
-                body: "Deterministic local reply failed safely. Try again after reconnecting the daemon.",
-              }
-            : message,
-        ),
-      );
-      return;
-    }
-
-    setRunState("failed");
-    setDegradedReason(safeErrorMessage(frame.payload));
-  }
-
-  function maybeRequestDeterministicReply(payload: MessageCreatedPayload) {
-    const bootstrap = bootstrapRef.current;
-    const socket = socketRef.current;
-    if (!bootstrap || socket?.readyState !== WebSocket.OPEN) return;
-    if (payload.participantId !== bootstrap.participantId || !payload.clientMessageId) return;
-    if (requestedRunsRef.current.has(payload.clientMessageId)) return;
-
-    const userMessage = submittedMessagesRef.current.get(payload.clientMessageId);
-    if (!userMessage) return;
-
-    requestedRunsRef.current.add(payload.clientMessageId);
-    const runId = `llm_run_${payload.clientMessageId}`;
-    const envelope = gatewayEnvelope("command", "llm.run.request", bootstrap.conversationId, {
-      runId,
-      assistantParticipantId: bootstrap.assistantParticipantId,
-      providerId: "local_fake",
-      modelId: "fake-chat",
-      userMessage,
+  function failAssistantRun(runId: string, error: string) {
+    setMessages((current) => {
+      const body = safeErrorMessage({ message: error });
+      const next = current.map((message) => (message.id === runId ? { ...message, tone: "safe_status" as const, status: "llm_failed" as const, body } : message));
+      return next.some((message) => message.id === runId) ? next : [...next, { id: runId, speaker: "Ordo", tone: "safe_status", status: "llm_failed", body }];
     });
-    if (envelope.clientId) {
-      llmClientRunsRef.current.set(envelope.clientId, runId);
+  }
+
+  async function streamAssistantReply(runId: string, body: string, failOnUnavailable: boolean) {
+    try {
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: body }),
+      });
+
+      if (!response.ok || !response.body) {
+        if (failOnUnavailable) {
+          failAssistantRun(runId, degradedReason ?? OFFLINE_REASON);
+        }
+        return;
+      }
+
+      await readChatStream(response, runId);
+    } catch {
+      if (failOnUnavailable) {
+        failAssistantRun(runId, degradedReason ?? OFFLINE_REASON);
+      }
     }
-    setMessages((current) => [
-      ...current,
-      {
-        id: runId,
-        speaker: "Ordo",
-        tone: "safe_status",
-        body: "Preparing a deterministic local reply.",
-        status: "llm_requested",
-      },
-    ]);
-    socket.send(JSON.stringify(envelope));
+  }
+
+  async function readChatStream(response: Response, runId: string) {
+    const reader = response.body?.getReader();
+    if (!reader) return;
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      const frames = buffer.split(/\n\n/);
+      buffer = frames.pop() ?? "";
+
+      for (const frame of frames) {
+        handleChatStreamFrame(frame, runId);
+      }
+
+      if (done) break;
+    }
+
+    if (buffer.trim()) {
+      handleChatStreamFrame(buffer, runId);
+    }
+  }
+
+  function handleChatStreamFrame(frame: string, runId: string) {
+    const lines = frame.split(/\n/);
+    const event = lines.find((line) => line.startsWith("event:"))?.slice("event:".length).trim() ?? "message";
+    const data = lines
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trim())
+      .join("\n");
+    const payload = parseChatStreamPayload(data);
+
+    if (event === "delta" && typeof payload.delta === "string") {
+      appendAssistantDelta(runId, payload.delta);
+      return;
+    }
+
+    if (event === "completed") {
+      completeAssistantRun(runId);
+      return;
+    }
+
+    if (event === "error") {
+      failAssistantRun(runId, safeErrorMessage(payload));
+    }
   }
 
   return (
     <section className="member-stage-composer-wrap" aria-label="Message Ordo">
       <p>{statusLabel(runState, degradedReason)}</p>
       {messages.length ? (
-        <div className="member-chat-preview-run" aria-label="Local chat run state">
+        <div className="member-chat-preview-run" aria-label="Live chat run state">
+          {runState === "degraded" && degradedReason ? <p className="member-chat-safe-status">{degradedReason}</p> : null}
           {messages.map((message) => (
             <div key={message.id} className={`member-conversation-message member-conversation-message-${message.tone}`}>
               <div className="member-conversation-message-header">
                 <strong>{message.speaker}</strong>
                 {message.status ? <span>{messageStatusLabel(message.status)}</span> : null}
               </div>
-              <p>{message.body}</p>
+              {message.status === "llm_requested" ? (
+                <p className="member-chat-typing-indicator" aria-label="Drafting answer">
+                  <span />
+                  <span />
+                  <span />
+                </p>
+              ) : (
+                <p>{message.body}</p>
+              )}
             </div>
           ))}
         </div>
@@ -420,13 +379,7 @@ export function MemberChatGatewayComposer() {
         <label className="visually-hidden" htmlFor="member-message-ordo">
           Message Ordo
         </label>
-        <input
-          id="member-message-ordo"
-          type="text"
-          placeholder="Message Ordo"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-        />
+        <input id="member-message-ordo" type="text" placeholder="Message Ordo" value={draft} onChange={(event) => setDraft(event.target.value)} />
         <button type="button" aria-label="Voice input">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Z" />
@@ -443,41 +396,63 @@ export function MemberChatGatewayComposer() {
   );
 }
 
-function gatewayEnvelope(
-  op: ConversationGatewayOp,
-  type: string,
-  conversationId: string | null,
-  payload: Record<string, unknown>,
-): ConversationGatewayEnvelope {
+function gatewayEnvelope(op: ConversationGatewayOp, type: string, conversationId: string | null, payload: Record<string, unknown>): ConversationGatewayEnvelope {
   return {
     schemaVersion: CONVERSATION_GATEWAY_SCHEMA_VERSION,
     op,
     type,
     clientId: payload.clientMessageId && typeof payload.clientMessageId === "string" ? payload.clientMessageId : `browser_${type.replace(/[^a-z0-9]+/gi, "_")}_${Date.now()}`,
     conversationId: conversationId ?? undefined,
-    durability: op === "identify" ? "ephemeral" : ("durable" as ConversationGatewayDurability),
-    scope: op === "identify" ? ("user" as ConversationGatewayScope) : ("conversation" as ConversationGatewayScope),
+    durability: durabilityForOp(op),
+    scope: scopeForOp(op),
     payload,
     occurredAt: new Date().toISOString(),
   };
 }
 
-function parseGatewayFrame(value: unknown): ConversationGatewayEnvelope | null {
-  if (typeof value !== "string") return null;
+function parseGatewayFrame(data: unknown): ConversationGatewayEnvelope | null {
+  if (typeof data !== "string") return null;
   try {
-    return JSON.parse(value) as ConversationGatewayEnvelope;
+    const parsed = JSON.parse(data) as ConversationGatewayEnvelope;
+    return parsed.schemaVersion === CONVERSATION_GATEWAY_SCHEMA_VERSION ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function safeErrorMessage(payload: unknown): string {
-  return "Conversation gateway rejected the command; using local preview chat.";
+function parseChatStreamPayload(data: string): ChatStreamEventPayload {
+  if (!data) return {};
+  try {
+    const parsed = JSON.parse(data) as ChatStreamEventPayload;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
-function assistantRunIdFromClientMessageId(clientMessageId: string): string | null {
-  const match = /^llm:(.+):assistant$/.exec(clientMessageId);
-  return match?.[1] ?? null;
+function safeErrorMessage(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "Live reply failed safely. Try again from this conversation.";
+  const record = payload as Record<string, unknown>;
+  const candidate = typeof record.message === "string" && record.message.trim() ? record.message : typeof record.error === "string" && record.error.trim() ? record.error : "";
+  if (!candidate) return "Live reply failed safely. Try again from this conversation.";
+  return sanitizeSafeMessage(candidate);
+}
+
+function sanitizeSafeMessage(message: string): string {
+  const trimmed = message.trim();
+  if (!trimmed) return "Live reply failed safely. Try again from this conversation.";
+  if (/(sk-[a-z0-9_-]+|OPENAI_API_KEY|API__OPENAI_API_KEY|Authorization|Bearer|provider payload|raw prompt|prompt)/i.test(trimmed)) {
+    return "Live reply failed safely. Try again from this conversation.";
+  }
+  return trimmed.length > 240 ? `${trimmed.slice(0, 237)}...` : trimmed;
+}
+
+function durabilityForOp(op: ConversationGatewayOp): ConversationGatewayDurability {
+  return op === "command" ? "ephemeral" : "durable";
+}
+
+function scopeForOp(op: ConversationGatewayOp): ConversationGatewayScope {
+  return op === "command" ? "user" : "conversation";
 }
 
 function messageStatusLabel(status: NonNullable<PreviewMessage["status"]>): string {
@@ -489,13 +464,13 @@ function messageStatusLabel(status: NonNullable<PreviewMessage["status"]>): stri
     case "persisted":
       return "saved by /chat/ws";
     case "llm_requested":
-      return "deterministic reply requested";
+      return "typing";
     case "llm_streaming":
-      return "drafting deterministic reply";
+      return "streaming";
     case "llm_completed":
-      return "deterministic reply saved";
+      return "complete";
     case "llm_failed":
-      return "deterministic reply failed";
+      return "live reply failed";
   }
 }
 
@@ -506,9 +481,9 @@ function statusLabel(runState: RunState, degradedReason: string | null): string 
     case "connecting":
       return "Ordo - connecting to /chat/ws";
     case "connected":
-      return "Ordo - connected to /chat/ws";
+      return "Ordo - connected to /chat/ws; live replies stream through the server";
     case "failed":
-      return degradedReason ?? "Conversation gateway is unavailable; using local preview chat.";
+      return degradedReason ?? OFFLINE_REASON;
     case "degraded":
       return degradedReason ?? OFFLINE_REASON;
   }

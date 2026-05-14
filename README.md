@@ -1,346 +1,346 @@
 # Ordo
 
-Ordo is a local-first operating system for one-person businesses.
+Ordo is an AGPL local-first appliance for organizational intelligence.
 
-The owner works in conversation. Behind the conversation, Ordo remembers
-context, routes work, keeps evidence, runs governed production loops, and brings
-results back with enough proof to trust, revise, or reject them.
-
-Ordo is not a chat widget, dashboard bundle, or tool marketplace.
+It is not mainly a chatbot, SaaS dashboard, CRM clone, or tool marketplace. It
+is an attempt to make AI-mediated work observable, governable, portable,
+reviewable, and useful for independent businesses and independent software
+developers.
 
 The product principle is:
 
-> Human decides. Assistant operates. Process governs.
-
-## What Ordo Is For
-
-Small expert businesses often know what needs to happen, but the work is spread
-across chat, files, tools, notes, follow-ups, content, offers, and
-relationships.
-
-Ordo exists to absorb operational drag while preserving human authority.
-
-It is built for operators who need:
-
-- durable memory and context;
-- governed work instead of ad hoc prompting;
-- evidence-backed outputs;
-- relationship continuity;
-- public and private offers;
-- content and media production with QA;
-- a clear view of what needs attention next.
-
-## Product Shape
-
-Chat is the operating interface.
-
-The UI is the governance layer.
-
-A typical loop is:
-
-1. State the intent in conversation.
-2. Ground the request in evidence and context.
-3. Turn it into governed work.
-4. Produce an artifact, offer, content item, or relationship outcome.
-5. Run QA when the output needs review.
-6. Publish, share, send privately, or follow up.
-7. Measure what happened.
-8. Recommend the next useful action.
-
-## Project Philosophy
-
-Ordo is not trying to become another SaaS dashboard. It is an open appliance for
-observable AI work: intent, evidence, capability, decision, artifact, and review
-should be inspectable by the people using the system.
-
-If the browser made the web usable, Ordo is trying to make AI work governable.
-The code is one expression of that philosophy; the durable goal is a repeatable,
-auditable system of work that people can run, study, modify, and leave with.
-
-Ordo is happily self-funded and community-first. AI-assisted development gives
-the project unusual velocity, but the limiting factor is intentionally human:
-manual QA, code review, functional review, public evidence, and judgment.
-Velocity without verification is waste.
-
-## Technical Direction
-
-Ordo is being designed as a sovereign appliance:
-
-- one Docker image;
-- SQLite for durable local-first state;
-- Next.js for product routes, UI, auth, policy, and read models;
-- Rust for realtime fanout, native execution, backup/restore, media, and local
-  search work;
-- local files for generated artifacts, backups, and media;
-- no required external infrastructure for the core product.
-
-Managed hosting should be convenience, not captivity.
-
-The first release target was
-[Ordo 0.1.0 Appliance Specimen](docs/process/release-0.1.0.md): a small,
-working proof of the core architecture before product depth. The backend
-readiness map is
-[Backend Handoff Package 0.1.2](docs/process/backend-handoff-package-0.1.2.md),
-and the conversation product spine is captured in
-[Conversation Realtime Architecture](docs/architecture/conversation-realtime/README.md).
-
-Read the [system architecture contract](docs/architecture/system-architecture.md)
-for the 0.1.0 design.
-
-## Current Build
-
-The current repository contains the local appliance foundation, not the full
-business product yet.
-
-Implemented now:
-
-- one Docker appliance image with a Rust daemon supervising a Next.js management
-  UI;
-- SQLite state with ordered schema migrations;
-- a reusable process/job/task kernel with durable events and artifacts;
-- System Brief, Health, Backup And Restore, Schedules, Preferences, Events,
-  Logs, and Reports surfaces in the System shell;
-- structured diagnostic logs and local issue report preparation;
-- backup creation and restore preflight safety;
-- a capability catalog and local MCP JSON-RPC projection with policy tiers;
-- a resource/provenance policy spine and durable local access foundation for
-  system and owner resources;
-- persisted realtime event replay plus WebSocket projection;
-- protected local backend route contracts for install/provider state, business
-  facts, entry points, offers/trials, connections, availability/handoff,
-  reports/support packets, corpus retrieval, answer drafts, and MCP pack
-  metadata;
-- public-safe daemon read models for About, Offers, Asks, Feed, public entry
-  point resolution, visitor session creation, and public offer acceptance;
-- the first conversation realtime spine: durable conversations, messages,
-  edit/undo, receipts/read state, reactions, presence, handoffs, modes,
-  episodes/segments, `/chat/ws`, replay, premium `/chat` and `/conversations`
-  UI, artifact/deliverable cards, surface brief jobs, and staff-only ethical
-  persuasion guidance;
-- daemon-owned LLM foundations for deterministic provider runs, prompt slots,
-  tool approval, privacy egress, token ledger accounting, analysis candidates,
-  knowledge graph candidates, attribution evidence, and the
-  `ethical_business_persuasion` prompt slot;
-- deterministic and guarded-live eval foundations for product workflows,
-  transcript artifact packets, replay fixtures, an OpenAI-compatible
-  non-streaming provider adapter, opt-in live eval guards, persona-backed
-  QR-to-trial/review-return/referral/admin journeys, artifact review, and
-  cross-journey reports.
-
-Not implemented yet:
-
-- production-ready public Chat, About, Offers, Asks, and Feed portals;
-- authentication UI, hosted identity, public portals, and product-depth access
-  enforcement;
-- broad live-provider orchestration, embeddings, vector search,
-  provider-backed answer generation, chat retrieval UI, and content packs;
-- hosted trial orchestration;
-- Worker Ordos, A2A networking, external report submission, support packet
-  transport, and arbitrary third-party MCP execution.
-
-Reports are local evidence packages today. Ordo can prepare, preview, copy, and
-export a markdown report from appliance diagnostics, but it does not submit
-reports to GitHub, support systems, or other Ordos yet.
-
-## Near-Term Product Direction
-
-The next product layer should connect the completed eval proof loop to usable
-onboarding surfaces:
-
-- Chat becomes the primary interface: clients get one persistent relationship
-  conversation, staff work handoff queues and briefs, and admins operate the
-  appliance.
-- About becomes the public business story.
-- Offers describe what can be bought.
-- Asks, referrals, outcomes, artifacts, and conversations become measurable
-  parts of the business loop instead of disconnected content.
-- Feed publishes composite public artifacts for people and machines.
-- Future product-depth RBAC keeps public, signed-in, owner/admin, and per-user
-  private data separate on top of the local access foundation.
-- Knowledge/RAG grounds answers in approved corpus material with provenance.
-- Brief-first surfaces and evidence-backed recommendations guide the next useful
-  action without becoming a generic CRM, dashboard, or support inbox.
-- QR/event landing, OrdoStudio 30-day trial acceptance, review-return links,
-  affiliate/referral landing, and the first staff/admin review cockpit become
-  real product paths validated against journey eval evidence.
-- Content packs become portable, human-approved knowledge products.
-- Worker Ordos and A2A remain future architecture for scaling bounded work while
-  one Home Ordo owns canonical truth.
-
-## Software Manufacturing
-
-This repository builds Ordo in public using the same process Ordo asks the
-product to use:
-
 ```text
-evidence -> issue -> accepted scope -> branch -> pull request -> checks -> review -> merge -> release evidence
+Human decides. Assistant operates. Process governs. Evidence decides what can
+be claimed.
 ```
 
-Markdown owns durable doctrine.
+Ordo is open because the problem is larger than one company. The code matters,
+but the code is not the whole project. The project is a way to test a different
+software manufacturing model: doctrine in docs, visible work in GitHub,
+evidence in pull requests, validation in tests and evals, and human judgment at
+the gates.
 
-GitHub issues own visible work.
+## Why This Exists
 
-Pull requests own implementation evidence.
+AI makes software and business operations faster to attempt. It does not make
+them automatically trustworthy.
 
-Nothing is called done without proof.
+The scarce resources are now judgment, QA, security, useful distribution,
+evidence, and economic alignment. Ordo exists to explore a different pattern:
+independent developers building sovereign software appliances that preserve
+local truth, create durable artifacts, and help operators make better decisions
+without surrendering their business memory to an opaque platform.
 
-Read [docs/process/ordo_process.md](docs/process/ordo_process.md) for the
-working process.
+The investor this project is trying to convince first is the developer: the
+person who believes software should let independent people make real impact,
+benefit from each other's feedback, and create new ways to earn without forcing
+everyone into one captive SaaS database.
 
-## Repository Status
+## What Class Of Software This Is
 
-This repository has completed the 0.1.0 Appliance Specimen pass, the 0.1.1
-appliance trust-boundary stabilization pass, the 0.1.2 backend readiness
-foundation, the 0.1.3 Conversation Realtime Spine, the 0.1.4 product workflow
-eval foundation, and the 0.1.5 live product journey eval arc. The current work
-is still not production business automation; it is the inspectable local
-appliance, conversation, eval, and journey evidence foundation that product
-onboarding surfaces and later hosted surfaces will use.
+Ordo is exploring several connected ideas:
+
+- local-first organizational intelligence;
+- sovereign AI appliances;
+- governed workforce substrates;
+- AI-assisted software manufacturing;
+- business growth loops based on conversations, offers, asks, artifacts,
+  briefs, QA, and feedback;
+- portable systems that can be hosted for convenience without becoming
+  captivity.
+
+The durable spine is:
+
+```text
+Capability Catalog
+-> Process Template
+-> Job
+-> Task DAG
+-> Event
+-> Artifact
+-> Brief
+```
+
+Conversation is the operating interface. The system behind conversation owns
+the hard parts: policy, state, evidence, jobs, artifacts, access, visibility,
+and review.
+
+## How This Project Is Built
+
+Ordo is solo-developed and heavily AI-assisted. ChatGPT is used for planning,
+strategy, writing, image generation, and product exploration. Coding agents are
+used for implementation, QA, landing, and research under explicit GitHub, test,
+and evidence rules.
+
+At this stage, the project is being built on a roughly $200/month AI tool
+budget. That is part of the thesis: disciplined AI-assisted software
+manufacturing can let independent developers attempt infrastructure-scale ideas
+before a company exists around them.
+
+The point is not that AI writes perfect software. It does not. The point is
+that speed only becomes useful when paired with public evidence, QA, review,
+security boundaries, and merge-backed truth.
+
+GitHub is the public manufacturing ledger:
+
+```text
+docs -> issue -> test-plan issue -> branch -> commit -> QA -> PR -> merge
+-> issue closeout -> state docs
+```
+
+Read [Agent Development Workflow](docs/process/agent-development-workflow.md)
+for the Research, Execute, QA, and Land operating modes.
+
+## Current Reality
+
+The repository has a strong local appliance foundation, not the full business
+product yet.
+
+Implemented foundations include:
+
+- Rust daemon and Next.js appliance runtime;
+- SQLite source of truth with ordered migrations;
+- process/job/task/event/artifact/brief foundations;
+- scheduler, health, readiness, WebSocket projection, and System shell;
+- backup creation and restore-preflight safety;
+- capability catalog and governed MCP projection;
+- public read models, tracked entry points, offers, trials, hosted trial slot
+  capacity, waitlist, and reset guard foundations;
+- conversation realtime, LLM gateway, privacy egress, token accounting,
+  deterministic evals, guarded live evals, reports, and artifact review.
+
+Not built yet:
+
+- Docker/Traefik hosted instance orchestration;
+- hosted instance records and control-plane UI;
+- transactional email and reminder delivery;
+- scheduled Growth rollups from conversations;
+- final backup email and return invitation;
+- full decommissioning receipts;
+- reward ledger, benefit grants, quotas, and affiliate payout automation;
+- governed A2A networking and Studio Ordo Prime implementation;
+- premium media production executors;
+- production public portals.
 
 The product is not ready for production use yet.
 
-## Current Commands
+## Active MVP
 
-The Rust appliance daemon starts in `crates/ordo-daemon`. Database startup runs
-ordered SQLite migrations and seeders; repeat `init-db` or `serve` runs are
-idempotent.
+The active product target is Studio Ordo as the hosted appliance control plane
+for AGPL Ordo appliances.
+
+The first loop is:
+
+```text
+meet Keith
+-> scan QR
+-> ask Ordo for a trial
+-> capacity or waitlist
+-> hosted Ordo appliance
+-> route assignment
+-> under-construction onboarding
+-> conversation rollups
+-> Growth brief
+-> feedback and referrals
+-> backup and return invitation
+-> decommission only after evidence
+```
+
+Studio Ordo should win by support, premium capabilities, network effects,
+trust, and convenience, not by making it hard to leave.
+
+Read:
+
+- [Studio Ordo Hosted Appliance MVP](docs/business/studio-ordo-mvp.md)
+- [Hosted Ordo Control Plane](docs/architecture/hosted-ordo-control-plane.md)
+- [Hosted Ordo Lifecycle](docs/architecture/hosted-ordo-lifecycle.md)
+- [Notifications And Transactional Email](docs/architecture/notifications-and-transactional-email.md)
+- [A2A Studio Ordo Prime](docs/architecture/a2a-studio-prime.md)
+
+## Security And Rapid Response
+
+Ordo treats security as part of the appliance architecture.
+
+AI increases the speed of software creation and the speed of software abuse.
+The long-term goal is proactive rapid reaction: automatic QA, deterministic
+evals, local diagnostic reports, backup and restore safety, governed egress,
+A2A support packets, and member-visible evidence loops.
+
+This is a direction, not a claim that the project already has a mature security
+program.
+
+Read [Security And Rapid Response](docs/security-and-rapid-response.md).
+
+## How Developers Can Help
+
+The project currently needs QA more than random feature expansion.
+
+Useful contributions include:
+
+- running the appliance and filing evidence-backed issues;
+- reviewing public claims against source and tests;
+- improving deterministic evals and smoke coverage;
+- testing backup, restore, reports, and chat behavior;
+- reviewing security, privacy, egress, and redaction boundaries;
+- improving docs where product direction is unclear;
+- helping turn broad ideas into small issue/test-plan pairs;
+- eventually building governed capabilities, packs, support services, and
+  production tools around the AGPL appliance.
+
+Read [Contributing](CONTRIBUTING.md) and
+[QA And Verification](docs/qa-and-verification.md).
+
+## Business Model
+
+The business model is not hostage SaaS.
+
+The model is AGPL appliance ownership plus optional hosting, support, premium
+production tools, capability packs, governed networks, and services that make
+the appliance easier and more valuable to run.
+
+Managed hosting is convenience, not captivity. The user should be able to
+inspect, modify, host, back up, and leave with the system that holds their
+business memory.
+
+Read [Open Source Business Model](docs/business/open-source-business-model.md).
+
+## Local Development
+
+Requirements:
+
+- Node.js compatible with the current Next.js version;
+- npm;
+- Rust toolchain compatible with the workspace;
+- Docker and Docker Compose for appliance runtime proof;
+- Playwright browser dependencies for UI smoke tests.
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Initialize local daemon state:
+
+```bash
+cargo run -p ordo-daemon -- init-db --db-path .data/local.db
+cargo run -p ordo-daemon -- ready-json --db-path .data/local.db
+```
+
+Run the appliance development runtime:
+
+```bash
+npm run dev
+```
+
+`npm run dev` starts the Rust daemon and lets the daemon supervise Next.js. It
+preflights toolchains, checks ports, loads `.env.local` without printing secret
+values, verifies local Ollama by default, initializes SQLite, and prints daemon
+and UI URLs.
+
+Run raw Next.js only when deliberately bypassing daemon integration:
+
+```bash
+npm run dev:next
+```
+
+Run the daemon separately only when testing daemon APIs without Next.js:
+
+```bash
+cargo run -p ordo-daemon -- serve --db-path .data/local.db
+```
+
+## Common Commands
+
+Rust daemon:
 
 ```bash
 cargo run -p ordo-daemon -- health-json
 cargo run -p ordo-daemon -- init-db --db-path .data/local.db
 cargo run -p ordo-daemon -- ready-json --db-path .data/local.db
 cargo run -p ordo-daemon -- list-capabilities-json --db-path .data/local.db
-cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/list
-cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/call --params-json '{"name":"system.status.read","arguments":{}}'
 cargo run -p ordo-daemon -- latest-system-brief-json --db-path .data/local.db
 cargo run -p ordo-daemon -- generate-system-brief-json --db-path .data/local.db
 cargo run -p ordo-daemon -- create-backup-json --db-path .data/local.db
 cargo run -p ordo-daemon -- list-backups-json --db-path .data/local.db
-cargo run -p ordo-daemon -- restore-preflight-json --db-path .data/local.db --backup-id <backup_id> --confirmation "RESTORE <backup_id>"
-cargo run -p ordo-daemon -- serve --db-path .data/local.db
+```
+
+MCP projection:
+
+```bash
+cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/list
+cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/call --params-json '{"name":"system.status.read","arguments":{}}'
+```
+
+Project export for external review tools:
+
+```bash
 npm run export
 ```
 
-`npm run export` writes an ignored `project-export.txt` context bundle for
-external AI/code review tools. See [Project Export](docs/process/project-export.md)
-for when to use it and what it intentionally excludes.
-
-The current System shell is a Next.js management UI over the local daemon.
-
-```bash
-npm install
-npm run dev
-npm run typecheck
-npm run build
-npm run smoke:ui
-```
+`npm run export` writes ignored `project-export.txt`. Review it before sharing
+outside your machine.
 
 ## Docker Appliance Runtime
 
-The Phase 5 appliance packages the Rust daemon and Next.js management UI in one
-image. The daemon is the top-level process and starts the Next standalone server
-as a child process.
-
-Build the image:
-
-```bash
-docker compose build
-```
-
-Run the appliance:
-
-```bash
-docker compose up
-```
-
-Compose reads `.env.local` at container runtime when the file exists. Copy the
-safe template first, then fill only local secrets on your machine:
+Create local runtime env only when needed:
 
 ```bash
 cp .env.example .env.local
 ```
 
-`.env.local` is ignored by git and excluded from the Docker build context. It
-is not baked into the image; Compose passes it to the running container through
-`env_file`. The daemon and the supervised Next.js process both inherit those
-environment variables.
+Do not commit `.env.local`. Compose reads it at runtime through `env_file`, and
+the Docker build does not bake it into image layers.
 
-Then open `http://localhost:3000` for the UI. The daemon is exposed at
-`http://localhost:17760` for health, readiness, API routes, and WebSocket
-projection.
-
-The daemon also exposes the capability catalog. MCP is protected by the daemon
-access boundary: local CLI calls work directly, while HTTP calls to `/mcp` from
-outside the daemon network namespace need `ORDO_DAEMON_ACCESS_TOKEN` and a
-matching `Authorization: Bearer <token>` or `X-Ordo-Daemon-Token: <token>`
-header.
+Build and run:
 
 ```bash
-curl http://localhost:17760/capabilities
-curl 'http://localhost:17760/events?after=0&limit=100'
-cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/list
-cargo run -p ordo-daemon -- mcp-json --db-path .data/local.db --method tools/call --params-json '{"name":"system.status.read","arguments":{}}'
+docker compose build
+docker compose up
 ```
 
-For a one-off container run without Compose, pass the same file explicitly:
+Open `http://localhost:3000` for the UI. The daemon listens on
+`http://localhost:17760`.
+
+Persistence lives in the named Compose volume `ordo-data`, mounted at
+`/app/.data`. Use `docker compose down -v` only when you intentionally want to
+delete appliance state.
+
+## Validation
+
+Use validation proportional to the change. For shared behavior, run:
 
 ```bash
-docker run --rm --env-file .env.local -p 127.0.0.1:3000:3000 -p 127.0.0.1:17760:17760 studio-ordo/ordo:0.1.0
-```
-
-`tools/list` returns policy metadata such as `read_only`, `local_mutation`, and
-`operator_confirmed` so read tools and local mutating tools are distinguishable.
-MCP requests are validated as JSON-RPC 2.0 before dispatch, and `tools/call`
-arguments are checked against the catalog input schema before any tool runs.
-`/events` returns persisted job and system lifecycle events after a cursor so
-the UI can recover missed WebSocket events after reconnecting.
-
-Useful runtime commands:
-
-```bash
-docker compose logs -f ordo
-docker compose stop
-docker compose start
-docker compose down
-```
-
-Persistence is handled by the named Compose volume `ordo-data`, mounted at
-`/app/.data` in the container. SQLite lives at `/app/.data/local.db`; backup
-archives and restore safety records are written below `/app/.data/backups`.
-`docker compose down` preserves that volume. `docker compose down -v` removes
-it.
-
-Validation:
-
-```bash
-npm run check
+npm run typecheck
+npm run build
 npm run smoke:ui
 cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+git diff --check
 ```
 
-The UI smoke suite uses Playwright with a lightweight mock daemon on
-`127.0.0.1:19080` and a Next.js test server on `127.0.0.1:3100`. It covers
-desktop and mobile Chromium viewports for daemon-available and daemon-degraded
-shell behavior, System Brief evidence/provenance, Backup And Restore persisted
-jobs, operator controls, and the browser backup creation path.
+For doc-only changes, `git diff --check` and link/path sanity are usually
+enough.
 
 ## Docs
 
 Start here:
 
+- [Public Project Brief](docs/public-project-brief.md)
 - [Docs Index](docs/README.md)
 - [System Overview](docs/system-overview.md)
 - [Developer Guide](docs/developer-guide.md)
+- [LLM Instructions](llm_instructions.md)
 - [LLM Agent Guide](docs/llm-agent-guide.md)
-- [Project State](docs/state-of-the-project.md)
+- [State Of The Project](docs/state-of-the-project.md)
 - [Eval System](docs/evals/README.md)
 - [Issue History](docs/process/issue-history.md)
 - [Business Canon](docs/business/README.md)
 - [Architecture](docs/architecture/README.md)
 - [Process](docs/process/README.md)
 - [Decisions](docs/decisions/README.md)
+- [Backlog](docs/backlog/README.md)
 
 ## License
 

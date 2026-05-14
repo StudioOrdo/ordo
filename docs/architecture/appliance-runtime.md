@@ -4,6 +4,12 @@ Status: Draft contract for Ordo 0.1.1 trust boundary
 
 Ordo runs as one local appliance.
 
+The appliance should package mature operating patterns without requiring
+hosted enterprise infrastructure. SQLite, the Rust daemon, and Next.js are the
+default runtime boundary. Queues, schedulers, read models, event replay, and
+artifact records should remain local unless the operator explicitly installs a
+different execution target.
+
 ## Rust Daemon
 
 The Rust daemon is the top-level runtime process in production.
@@ -99,6 +105,12 @@ The appliance packages one Docker image with `.data` as the durable volume.
 
 The image should not require external queues, external schedulers, hosted
 databases, or hosted realtime infrastructure for core behavior.
+
+Enterprise systems often externalize queues, stream processors, search
+clusters, job workers, and observability stacks. Ordo should first implement
+small appliance-native versions: SQLite-backed jobs, events, projections,
+diagnostics, reports, and artifact envelopes. External services are adapters,
+not prerequisites.
 
 ## Current Runtime Shape
 

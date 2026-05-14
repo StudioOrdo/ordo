@@ -1,19 +1,17 @@
-use anyhow::{bail, Context, Result};
-use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use serde_json::{json, Value};
-use super::types::*;
-use super::evidence::*;
 use super::api::*;
+use super::evidence::*;
+use super::types::*;
+use crate::diagnostics::{diagnostic_log, insert_diagnostic_log_connection};
+use crate::kernel::{append_job_event, create_job_from_template};
+use crate::policy::ResourceClassification;
 use crate::schema::db::ConnectionExt;
 use crate::templates::require_builtin_template;
-use crate::kernel::{append_job_event, create_job_from_template};
-use crate::diagnostics::{insert_diagnostic_log_connection, diagnostic_log};
-use crate::policy::ResourceClassification;
+use anyhow::{bail, Result};
+use chrono::Utc;
+use rusqlite::{params, Connection};
+use serde_json::{json, Value};
+use std::path::Path;
 use uuid::Uuid;
-use sha2::{Digest, Sha256};
 
 pub fn prepare_issue_report(
     db_path: &Path,
@@ -209,7 +207,9 @@ impl NewReportLog {
     }
 }
 
-pub(crate) fn normalize_request(request: IssueReportPrepareRequest) -> Result<NormalizedIssueReportRequest> {
+pub(crate) fn normalize_request(
+    request: IssueReportPrepareRequest,
+) -> Result<NormalizedIssueReportRequest> {
     let description = request.description.trim().to_string();
     if description.is_empty() {
         bail!("Issue report description is required");
@@ -402,4 +402,3 @@ pub(crate) fn insert_issue_report_artifact(
     load_issue_report(connection, &id)?
         .ok_or_else(|| anyhow::anyhow!("Inserted report was not found"))
 }
-

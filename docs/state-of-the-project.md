@@ -1,6 +1,6 @@
 # State Of The Project
 
-Date: 2026-05-12
+Date: 2026-05-13
 
 Ordo has completed the 0.1.0 Appliance Specimen implementation pass, the 0.1.1
 appliance trust-boundary stabilization pass, the 0.1.2 backend readiness
@@ -16,6 +16,10 @@ guarded-live journey evidence, not yet production business automation.
 - The public README, architecture docs, process docs, and release evidence are
   established through GitHub issue and pull request workflow.
 - The process is evidence-backed software manufacturing in public.
+- The active product canon is now surface-first: Member View, Studio, Support,
+  Knowledge, Growth, and Systems. Product direction is recorded in Current
+  Product Canon, Workforce Substrate, Appliance Operating Discipline, and Target
+  Architecture Plan.
 - The Rust daemon initializes SQLite, reports health/readiness, owns the job
   kernel, runs scheduled System Brief generation, creates backups, validates
   restore preflight, exposes WebSocket events, and serves a capability/MCP
@@ -184,15 +188,31 @@ guarded-live journey evidence, not yet production business automation.
   login/register, daemon chat bootstrap, browser `/chat/ws`, deterministic LLM
   chat, guarded OpenAI-compatible local testing, UI run states, and end-to-end
   smoke evidence.
+- The active product landing target is now the Studio Ordo hosted appliance MVP:
+  QR-to-trial, hosted slot capacity, waitlist, commissioning, onboarding
+  reminders, conversation rollup artifacts, final backup, return invitation, and
+  decommissioning. See
+  [studio-ordo-mvp.md](business/studio-ordo-mvp.md),
+  [hosted-ordo-control-plane.md](architecture/hosted-ordo-control-plane.md), and
+  [hosted-ordo-lifecycle.md](architecture/hosted-ordo-lifecycle.md).
 
 ## What Is Not Built Yet
 
 - Broad live-provider orchestration is not built yet. The current LLM gateway
   has an OpenAI-compatible non-streaming adapter and guarded live eval smoke
   path, but default tests remain deterministic and network-free.
-- Full frontend product-depth surfaces such as Studio, Connections, About,
-  Today, full public offer/ask/feed portals, and staff candidate review
-  workbenches are not built yet.
+- Full frontend product-depth surfaces are not built yet. Member View, Studio,
+  Support, Knowledge, Growth, and Systems are the canonical surface direction,
+  but current UI depth is still concentrated in the Systems shell and
+  conversation foundations.
+- Product/workforce packs, unified requests, compiled plans, Job Kernel V2
+  execution, `surface_work_items`, Studio media execution, Growth value/read
+  models, reward programs, benefit grants, opt-in leaderboards, generic quota
+  ledgers, Docker/Traefik hosted instance orchestration, transactional email,
+  reminder delivery, and full trial closeout/decommissioning are not implemented
+  yet. Hosted trial capacity, waitlist, scoped hosted-trial grants, and reset
+  guard foundations exist as backend state, but not as a complete hosted
+  appliance control plane.
 - Authentication UI, hosted identity, OAuth/email login, public portals, and
   multi-user product surfaces are not implemented yet. The active 0.1.8 arc is
   limited to a local appliance account/session scaffold and must not claim
@@ -207,7 +227,8 @@ guarded-live journey evidence, not yet production business automation.
   event evidence only.
 - Offers and trial lifecycle UI, payments, affiliate payout automation, and
   external trial follow-up are not implemented yet; current support is backend
-  state, policy audit, and event evidence only.
+  state, hosted slot/waitlist/reset-guard foundations, policy audit, and event
+  evidence only.
 - Connections UI, public portals, availability/handoff behavior, support packet
   egress, mediated chat, external connection integrations, and affiliate payout
   automation are not implemented yet; current support is backend state, scoped
@@ -232,20 +253,34 @@ guarded-live journey evidence, not yet production business automation.
 ## Current Goal
 
 Use the completed appliance, conversation realtime, and LLM gateway foundations
-to make one inspectable interactive loop real before expanding public product
-surfaces. The next highest-leverage work is 0.1.8 Interactive Account And LLM
-Chat: local login/register scaffold, daemon chat bootstrap, browser `/chat/ws`,
-deterministic LLM chat, guarded OpenAI-compatible local testing, UI run states,
-and focused smoke evidence. The product remains explicitly pre-production:
-hosted identity, OAuth/email login, production multi-user auth, real outbound
-email, payments, external transports, broad live-provider orchestration,
-embeddings/vector search, Worker Ordos, A2A, and public chatbot behavior are
-still future work.
+to land the Studio Ordo hosted appliance MVP. The current target is an
+inspectable QR-to-trial control plane: accept or waitlist, commission a hosted
+Ordo, route it, guide onboarding, roll conversations into Growth artifacts, send
+reminders, produce a final backup and return invitation, and decommission only
+after closeout evidence exists. The immediate chat work remains useful only if
+it becomes the control surface for governed jobs instead of a standalone
+chatbot. The product remains explicitly pre-production: hosted identity,
+OAuth/email login, production multi-user auth, real outbound email, payments,
+external transports, broad live-provider orchestration, embeddings/vector
+search, Worker Ordos, A2A, and public chatbot behavior are still future work.
 
 ## Useful Current References
 
 - [Diagnostics And Reports](architecture/diagnostics-and-reports.md) describes
   the implemented local Logs and Reports surfaces.
+- [Current Product Canon](business/current-product-canon.md) describes the
+  current surface-first product stance.
+- [Workforce Substrate](business/workforce-substrate.md) describes why Ordo
+  packages governed workforces instead of a pile of tools.
+- [Appliance Operating Discipline](architecture/appliance-operating-discipline.md)
+  describes the enterprise-grade operating patterns adapted into the appliance.
+- [Target Architecture Plan](architecture/target-architecture-plan.md) describes
+  the Clean/CQRS-lite implementation shape and slice sequence.
+- [Rewards And Incentives](architecture/rewards-and-incentives.md) describes
+  the reusable Growth reward, referral, feedback, and benefit-grant
+  architecture.
+- [OrdoStudio NYC Pilot](business/ordostudio-nyc-pilot.md) describes the first
+  QR-to-trial, handoff, promo-production, and rewards wedge.
 - [Resource, Provenance, And Policy Spine](architecture/resource-provenance-policy.md)
   describes the implemented policy/provenance foundation.
 - [Access And Local RBAC](architecture/access-rbac.md) describes the implemented

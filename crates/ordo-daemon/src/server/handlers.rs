@@ -8,7 +8,6 @@ use serde::Deserialize;
 use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
-use std::time::Duration as StdDuration;
 use tokio::sync::broadcast;
 
 use crate::answer_drafts::{
@@ -141,8 +140,6 @@ use crate::surface_work_items::{
     list_surface_work_items, SurfaceWorkItemListResponse, SurfaceWorkItemQuery,
 };
 
-const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
-const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
 const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
 
 use super::state::*;
@@ -2608,7 +2605,7 @@ pub(crate) fn protected_daemon_route_decision(
     resource: ResourceRef,
     capability_id: Option<&str>,
 ) -> PolicyDecision {
-    let loopback = remote_addr.ip().is_loopback();
+    let loopback = protected_route_loopback_or_trusted_docker_host(remote_addr.ip());
     let token = policy
         .access_token
         .as_ref()
@@ -2637,6 +2634,23 @@ pub(crate) fn protected_daemon_route_decision(
         capability_id,
         ProtectedAccessEvidence { loopback, token },
     )
+}
+
+fn protected_route_loopback_or_trusted_docker_host(ip: IpAddr) -> bool {
+    if ip.is_loopback() {
+        return true;
+    }
+    if std::env::var("ORDO_DAEMON_TRUST_DOCKER_HOST")
+        .ok()
+        .as_deref()
+        != Some("1")
+    {
+        return false;
+    }
+    match ip {
+        IpAddr::V4(ip) => ip.is_private(),
+        IpAddr::V6(ip) => (ip.segments()[0] & 0xfe00) == 0xfc00,
+    }
 }
 
 fn protected_route_rate_limit_key(ip: IpAddr, resource: &ResourceRef) -> String {

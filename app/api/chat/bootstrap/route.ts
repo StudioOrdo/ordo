@@ -56,7 +56,7 @@ export async function POST() {
       authenticated: true,
       bootstrap: null,
       status: "degraded",
-      degradedReason: "Daemon chat bootstrap route unavailable; using local preview chat.",
+      degradedReason: "Conversation gateway unavailable; live replies stream through the server without gateway persistence.",
     });
   }
 }

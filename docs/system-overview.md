@@ -2,14 +2,16 @@
 
 Status: canonical public map for the current repository
 
-Date: 2026-05-09
+Date: 2026-05-13
 
 This document is the short, current map of Ordo for developers, reviewers, and
 LLM agents. It summarizes what the system is, what is implemented, what remains
 future work, and where to read next.
 
 When this document and another source disagree, trust current code and tests
-first, then [State Of The Project](state-of-the-project.md), then this map.
+first, then [State Of The Project](state-of-the-project.md), then
+[Current Product Canon](business/current-product-canon.md) for product
+vocabulary and IA, then this map.
 
 ## Product Thesis
 
@@ -29,6 +31,26 @@ Human decides. Assistant operates. Process governs.
 Ordo is not a generic chatbot, CRM, dashboard bundle, or arbitrary plugin
 runtime.
 
+The current product direction is surface-first:
+
+```text
+Member View
+Studio
+Support
+Knowledge
+Growth
+Systems
+```
+
+Ordo should feel like a governed workforce substrate. Chat is how the owner
+directs and reviews work; the durable product is the appliance spine underneath
+chat.
+
+The active landing target is the Studio Ordo hosted appliance MVP: Studio Ordo
+acts as the control plane for QR-to-trial, hosted capacity, waitlist,
+commissioning, reminders, conversation rollups, final backup, return invitation,
+and decommissioning of hosted trial Ordos.
+
 ## Runtime Shape
 
 | Layer | Responsibility |
@@ -43,6 +65,12 @@ The durable spine is:
 
 ```text
 Capability Catalog -> Process Template -> Job -> Task DAG -> Event -> Artifact -> Brief
+```
+
+The target product spine extends that into:
+
+```text
+Offer -> Access -> Request -> Compiled Plan -> Job / Task -> Artifact -> Outcome -> Read Model
 ```
 
 The conversation and LLM spine extends that into:
@@ -71,6 +99,10 @@ Conversation Command -> Policy Decision -> Prompt Slots -> Privacy Egress -> Pro
   offers, offer acceptances, trials, outcomes, attribution, feedback, reviews,
   connections, grants, availability, handoff inbox records, and receipts exist
   as backend foundations.
+- Hosted trial capacity policy, hosted trial slots, hosted trial waitlist
+  entries, scoped `hosted_trial/use` grants, and reset guards exist as backend
+  foundations. Docker/Traefik provisioning and full hosted instance lifecycle
+  orchestration remain future work.
 - The capability catalog, local MCP JSON-RPC projection, MCP pack metadata,
   route contracts, policy decisions, local roles, and resource grants are
   implemented as the local governance boundary.
@@ -98,6 +130,16 @@ Conversation Command -> Policy Decision -> Prompt Slots -> Privacy Egress -> Pro
 - Broad live-provider orchestration across all product answers.
 - Embeddings, vector search, provider-backed RAG answer generation, chat
   retrieval UI, and content packs.
+- Canonical Member View, Studio, Support, Knowledge, Growth, and Systems
+  read-model surfaces.
+- Product/workforce packs, request spine, compiled plans, Job Kernel V2
+  execution, and Studio media execution.
+- Complete hosted Ordo control plane: hosted instance records, Docker/Traefik
+  provisioning, per-trial volume manifests, transactional email, reminder
+  delivery, conversation rollup jobs, final backup email, return invitation, and
+  decommissioning.
+- Reward programs, referral/feedback benefit grants, generic usage quotas,
+  opt-in leaderboards, and affiliate payout automation.
 - Real outbound email, payments, affiliate payout automation, and external
   support/report transports.
 - Worker Ordos, A2A networking, hosted trial orchestration, and arbitrary
@@ -140,7 +182,16 @@ For an LLM coding agent:
 For product direction:
 
 1. [Business Canon](business/README.md)
-2. [Product Shape](business/product-shape.md)
-3. [Ordo Core](business/ordo-core.md)
-4. [Product Roadmap](business/product-roadmap.md)
-5. [Conversation Product Doctrine](architecture/conversation-realtime/product-doctrine.md)
+2. [Current Product Canon](business/current-product-canon.md)
+3. [Workforce Substrate](business/workforce-substrate.md)
+4. [Appliance Operating Discipline](architecture/appliance-operating-discipline.md)
+5. [Target Architecture Plan](architecture/target-architecture-plan.md)
+6. [Rewards And Incentives](architecture/rewards-and-incentives.md)
+7. [Studio Ordo Hosted Appliance MVP](business/studio-ordo-mvp.md)
+8. [Hosted Ordo Control Plane](architecture/hosted-ordo-control-plane.md)
+9. [Hosted Ordo Lifecycle](architecture/hosted-ordo-lifecycle.md)
+10. [OrdoStudio NYC Pilot](business/ordostudio-nyc-pilot.md)
+11. [Product Shape](business/product-shape.md)
+12. [Ordo Core](business/ordo-core.md)
+13. [Product Roadmap](business/product-roadmap.md)
+14. [Conversation Product Doctrine](architecture/conversation-realtime/product-doctrine.md)

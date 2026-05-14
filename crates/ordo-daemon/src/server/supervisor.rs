@@ -14,7 +14,6 @@ use crate::health::HealthCheck;
 
 const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
 const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
-const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
 
 use super::handlers::*;
 use super::state::*;

@@ -4,6 +4,12 @@ Status: Draft contract for Ordo 0.1.0
 
 The operation kernel is the reusable execution model for Ordo work.
 
+Current product direction: this kernel should evolve into a small durable job
+runtime with enterprise-grade discipline inside the appliance. It should not
+become a generic workflow-builder UI. Users direct work conversationally; the
+kernel enforces plans, events, leases, retries, requests, artifacts, and
+outcomes.
+
 ## Vocabulary
 
 | Term | Meaning |
@@ -53,6 +59,18 @@ Supported task statuses for 0.1.0:
 - skipped;
 - canceled.
 
+Future V2 task execution should add:
+
+- lease owner and lease expiration;
+- idempotency key;
+- executor target;
+- retry policy snapshot;
+- cancellation reason;
+- structured result envelope;
+- artifact refs;
+- evidence refs;
+- metrics and limitations.
+
 A task is ready when all required dependencies have succeeded or been skipped
 by an explicit policy.
 
@@ -76,3 +94,15 @@ the source of progress truth.
 - `system.health.check` records appliance health evidence.
 
 These jobs prove the kernel before broader product workflows are added.
+
+## CQRS-Lite Direction
+
+The kernel should preserve a clean split:
+
+```text
+Command -> canonical mutation -> event -> projection
+```
+
+Jobs and tasks are canonical execution records. Surface worklists, Studio run
+views, Support queues, Growth dashboards, and Systems briefs are projections.
+They should be rebuildable from canonical state and events.

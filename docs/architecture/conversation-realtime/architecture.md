@@ -15,8 +15,9 @@ The conversation layer should support:
 - one canonical client-visible relationship conversation per user or visitor
   identity, with internal episodes/segments for topics, sessions, handoffs, and
   provider runs;
-- role-aware surfaces where clients participate, staff operate handoff queues,
-  and admins operate the appliance;
+- surface-aware projections where members participate, operators run Studio,
+  Support, Knowledge, Growth, and Systems work, and roles only decide what each
+  actor may see or do;
 - brief-first read models where the default detail surface answers what is
   happening, what changed, what to do next, why it matters, evidence, and
   limitations;
@@ -184,20 +185,27 @@ Anonymous visitors should receive a conversation tied to `visitor_sessions`.
 When they become a known connection, the conversation should attach the new
 connection identity without losing the visitor session history.
 
-## Role-Aware Product Surfaces
+## Canonical Product Surfaces
 
-Navigation and read models must separate participation, business work, and
-appliance operation.
+Current product canon: [Current Product
+Canon](../../business/current-product-canon.md).
 
 | Surface | Intended audience | Canonical shape |
 | --- | --- | --- |
-| Top rail | Public users, clients, members, affiliates, staff, owners | `Studio Ordo`, Chat, Home, Offers, Asks, Latest, Account. |
-| Business staff rail | Staff and owner roles | Today, Conversations, Connections, Offers, Asks, Customer Feedback, Affiliates, Artifacts, Jobs, Reports. |
-| Admin/system rail | Owner/admin roles | System, Knowledge, Events, Logs, Backup, Settings. |
+| Member View | Customers, members, affiliates, trial users | Ordo, Activity, Offers, Access, Requests, Referrals. |
+| Studio | Owner, producer, operator | Jobs, DAGs, templates, media work, artifacts, review loops, publication prep. |
+| Support | Staff, owner acting as staff | Handoffs, Conversations, Requests, Reviews, Members. |
+| Knowledge | Owner, curator, educator | Sources, Corpus, Packs, Provenance, Retrieval, Knowledge Artifacts. |
+| Growth | Owner, growth operator | Overview, QR/word of mouth, Offers, Affiliates, Content, Rewards, Reports. |
+| Systems | Owner, admin, system operator | Health, Events, Hosted instances, Jobs, Backups, Providers, Access, Settings. |
+
+Public Home/About, Offers, Asks, Latest, and Chat are public projections of the
+same underlying system. Roles control permission and projection safety; they are
+not the primary navigation model.
 
 Ordinary staff should not see health, logs, backup, readiness, events, or other
-appliance internals as primary navigation. Staff conversation defaults should be
-work queues:
+appliance internals as primary navigation. Support conversation defaults should
+be work queues:
 
 - `My Handoffs`;
 - `Team Queue`;
@@ -403,7 +411,10 @@ the primary UI.
 
 ## Non-Goals For The First Slice
 
-- No voice or video.
+- No voice or video in the first slice. Future voice, phone, and SMS/Twilio
+  interfaces should project the same text-first conversation, request, job,
+  artifact, and approval contracts rather than creating a separate product
+  model.
 - No direct provider calls from Next.js.
 - No hosted realtime service dependency.
 - No arbitrary model/tool execution through MCP.

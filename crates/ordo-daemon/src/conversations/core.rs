@@ -1,11 +1,11 @@
 use super::*;
-use anyhow::{ensure, Result};
-use anyhow::bail;
-use rusqlite::{params, Connection, OptionalExtension, Transaction, Row};
-use uuid::Uuid;
-use serde_json::{json, Value};
-use chrono::{DateTime, Utc};
 use crate::schema::db::ConnectionExt;
+use anyhow::bail;
+use anyhow::{ensure, Result};
+use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
+use serde_json::{json, Value};
+use uuid::Uuid;
 
 pub struct ConversationService;
 
@@ -416,7 +416,8 @@ pub fn client_conversation_summaries(
 ) -> Result<Vec<ConversationSummary>> {
     require_text("subject_kind", subject_kind)?;
     require_text("subject_id", subject_id)?;
-    connection.query_many("SELECT id, surface, subject_kind, subject_id, connection_id, status, unread_count,
+    connection.query_many(
+        "SELECT id, surface, subject_kind, subject_id, connection_id, status, unread_count,
                 action_count, last_meaningful_change, updated_at
          FROM conversations
          WHERE subject_kind = ?1 AND subject_id = ?2 AND archived_at IS NULL
@@ -431,12 +432,16 @@ pub fn staff_episode_details(
     conversation_id: &str,
 ) -> Result<Vec<ConversationSegmentView>> {
     require_text("conversation_id", conversation_id)?;
-    connection.query_many("SELECT id, conversation_id, title, segment_kind, status, candidate_state, confidence,
+    connection.query_many(
+        "SELECT id, conversation_id, title, segment_kind, status, candidate_state, confidence,
                 evidence_refs_json, provenance_json, created_by_job_id, source_kind, source_id,
                 created_at, updated_at
          FROM conversation_segments
          WHERE conversation_id = ?1
-         ORDER BY started_at DESC", [conversation_id], segment_from_row)
+         ORDER BY started_at DESC",
+        [conversation_id],
+        segment_from_row,
+    )
 }
 
 pub fn create_conversation_handoff(
@@ -1539,7 +1544,10 @@ pub(crate) fn load_conversation_summary(
         .map_err(Into::into)
 }
 
-pub(crate) fn load_segment(connection: &Connection, segment_id: &str) -> Result<ConversationSegmentView> {
+pub(crate) fn load_segment(
+    connection: &Connection,
+    segment_id: &str,
+) -> Result<ConversationSegmentView> {
     connection
         .query_row(
             "SELECT id, conversation_id, title, segment_kind, status, candidate_state, confidence,
@@ -1553,7 +1561,10 @@ pub(crate) fn load_segment(connection: &Connection, segment_id: &str) -> Result<
         .map_err(Into::into)
 }
 
-pub(crate) fn load_handoff(connection: &Connection, handoff_id: &str) -> Result<ConversationHandoffView> {
+pub(crate) fn load_handoff(
+    connection: &Connection,
+    handoff_id: &str,
+) -> Result<ConversationHandoffView> {
     connection
         .query_row(
             "SELECT id, conversation_id, segment_id, connection_id, requested_by_actor_id,
@@ -1600,7 +1611,10 @@ pub(crate) fn load_participant(
         .map_err(Into::into)
 }
 
-pub(crate) fn load_message(connection: &Connection, message_id: &str) -> Result<ConversationMessageView> {
+pub(crate) fn load_message(
+    connection: &Connection,
+    message_id: &str,
+) -> Result<ConversationMessageView> {
     connection
         .query_row(
             "SELECT id, conversation_id, segment_id, participant_id, message_kind, status,
@@ -1751,15 +1765,19 @@ pub(crate) fn update_read_counts_for_conversation_tx(
     conversation_id: &str,
 ) -> Result<()> {
     let states = {
-        transaction.query_many("SELECT participant_id, last_read_message_id, manual_unread_from_message_id
+        transaction.query_many(
+            "SELECT participant_id, last_read_message_id, manual_unread_from_message_id
              FROM conversation_read_states
-             WHERE conversation_id = ?1", [conversation_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        })?
+             WHERE conversation_id = ?1",
+            [conversation_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )?
     };
 
     for (participant_id, last_read_message_id, manual_unread_from_message_id) in states {
@@ -1862,7 +1880,10 @@ pub(crate) fn active_reaction(
         .map_err(Into::into)
 }
 
-pub(crate) fn load_reaction(connection: &Connection, reaction_id: &str) -> Result<ConversationReactionView> {
+pub(crate) fn load_reaction(
+    connection: &Connection,
+    reaction_id: &str,
+) -> Result<ConversationReactionView> {
     connection
         .query_row(
             "SELECT id, message_id, participant_id, reaction_key, reaction_kind,
@@ -1914,7 +1935,8 @@ pub(crate) fn list_presence_snapshots(
     conversation_id: &str,
     requesting_participant_id: &str,
 ) -> Result<Vec<ConversationPresenceSnapshotView>> {
-    connection.query_many("SELECT participant_id, conversation_id, status, visibility, status_message,
+    connection.query_many(
+        "SELECT participant_id, conversation_id, status, visibility, status_message,
                 device_class, metadata_json, updated_at, expires_at
          FROM conversation_presence_snapshots
          WHERE conversation_id = ?1
@@ -2043,7 +2065,10 @@ pub(crate) fn append_conversation_event_tx(
     Ok(())
 }
 
-pub(crate) fn next_conversation_sequence(connection: &Connection, conversation_id: &str) -> Result<i64> {
+pub(crate) fn next_conversation_sequence(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<i64> {
     let current: i64 = connection.query_row(
         "SELECT COALESCE(MAX(sequence), 0) FROM conversation_events WHERE conversation_id = ?1",
         [conversation_id],
@@ -2064,7 +2089,9 @@ pub(crate) fn next_conversation_sequence_tx(
     Ok(current + 1)
 }
 
-pub(crate) fn conversation_summary_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationSummary> {
+pub(crate) fn conversation_summary_from_row(
+    row: &Row<'_>,
+) -> rusqlite::Result<ConversationSummary> {
     Ok(ConversationSummary {
         id: row.get(0)?,
         surface: row.get(1)?,
@@ -2282,7 +2309,9 @@ pub(crate) fn reaction_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationR
     })
 }
 
-pub(crate) fn presence_from_row(row: &Row<'_>) -> rusqlite::Result<ConversationPresenceSnapshotView> {
+pub(crate) fn presence_from_row(
+    row: &Row<'_>,
+) -> rusqlite::Result<ConversationPresenceSnapshotView> {
     let metadata_json: String = row.get(6)?;
     Ok(ConversationPresenceSnapshotView {
         participant_id: row.get(0)?,
@@ -2346,4 +2375,3 @@ pub(crate) fn to_sql_error(error: anyhow::Error) -> rusqlite::Error {
         )),
     )
 }
-

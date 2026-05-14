@@ -1,21 +1,21 @@
-use crate::policy::*;
-use crate::events::*;
 use crate::conversation_analysis::*;
+use crate::events::*;
+use crate::policy::*;
 
-pub mod types;
 pub mod core;
+pub mod types;
 
-pub use types::*;
 pub use core::*;
+pub use types::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::{Connection, OptionalExtension, Row};
-    use serde_json::json;
-    use chrono::{DateTime, Utc};
     use crate::capabilities::seed_builtin_capabilities;
     use crate::schema::init_schema;
+    use chrono::{DateTime, Utc};
+    use rusqlite::{Connection, Row};
+    use serde_json::json;
 
     fn test_connection() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
@@ -713,9 +713,11 @@ mod tests {
         let client = create_client_participant(&connection, &conversation.id);
         create_message_from(&connection, &conversation.id, &client.id, "client_msg_1");
         let before_messages: i64 = connection
-            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |row: &Row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages",
+                [],
+                |row: &Row| row.get(0),
+            )
             .unwrap();
 
         let presence = ConversationService::update_presence(
@@ -744,9 +746,11 @@ mod tests {
         assert_eq!(client_view.presence[0].participant_id, client.id);
 
         let after_messages: i64 = connection
-            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |row: &Row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages",
+                [],
+                |row: &Row| row.get(0),
+            )
             .unwrap();
         assert_eq!(before_messages, after_messages);
     }

@@ -38,12 +38,13 @@ For meaningful work, the system should preserve:
 The goal is not opaque automation. The goal is repeatable, auditable,
 trustworthy systems of work.
 
-## Browser-Like Runtime For AI Work
+## Workforce Substrate For AI Work
 
 The browser made the web usable by giving people a common place for navigation,
 sessions, forms, downloads, permissions, history, and extensions.
 
-Ordo is trying to play a similar role for AI work:
+Ordo is trying to play a similar governance role for AI work, but the product
+experience should feel less like a toolbox and more like a workforce:
 
 - chat as interaction;
 - briefs as navigation;
@@ -55,6 +56,8 @@ Ordo is trying to play a similar role for AI work:
 - packs and future Ordo-to-Ordo exchange as portability.
 
 If the browser made the web usable, Ordo is trying to make AI work governable.
+The owner should direct, review, approve, and learn from work without being
+forced to become a workflow engineer.
 
 ## Governance Belongs In The Workbench
 

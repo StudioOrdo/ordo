@@ -377,6 +377,80 @@ export interface GrowthPilotReportSnapshot {
   degradedReason: string | null;
 }
 
+export interface ProviderReadinessSummary {
+  configuredProviderMode: string;
+  requestedProviderId: string | null;
+  defaultProviderId: string | null;
+  liveModeRequested: boolean;
+  liveInvocationEnabled: boolean;
+  liveInvocationGuard: string;
+  credentialsPresent: boolean;
+  credentialSource: string;
+  missingCredentialProviderIds: string[];
+  openai: OpenAiProviderReadiness;
+}
+
+export interface OpenAiProviderReadiness {
+  providerId: string;
+  decision: string;
+  modelId: string | null;
+  modelSource: string;
+  baseUrl: string;
+  baseUrlSource: string;
+  timeoutMs: number | null;
+  timeoutGuard: string;
+  budgetMicros: number | null;
+  budgetGuard: string;
+  maxCases: number | null;
+  apiKeyConfigured: boolean;
+  apiKeySource: string;
+  liveEvalGuard: string;
+  networkGuard: string;
+  liveInvocationGuard: string;
+  readyForGuardedSmoke: boolean;
+  reasons: string[];
+}
+
+export interface RedactedSecretField {
+  configured: boolean;
+  source: string;
+  locked: boolean;
+  redacted: string | null;
+}
+
+export interface ProviderConfigView {
+  providerId: string;
+  providerName: string;
+  enabled: boolean;
+  defaultProvider: boolean;
+  model: string | null;
+  availableModels: ProviderModelOption[];
+  baseUrl: string | null;
+  nonSecretConfig: Record<string, unknown>;
+  apiKey: RedactedSecretField;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderModelOption {
+  id: string;
+  label: string;
+  default: boolean;
+}
+
+interface ProviderListResponse {
+  readiness: ProviderReadinessSummary;
+  providers: ProviderConfigView[];
+}
+
+export interface ProviderSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  readiness: ProviderReadinessSummary | null;
+  providers: ProviderConfigView[];
+  degradedReason: string | null;
+}
+
 interface BackupRestoreResponse {
   jobs: BackupRestoreJobSummary[];
 }
@@ -744,6 +818,20 @@ export async function getGrowthPilotReportSnapshot(): Promise<GrowthPilotReportS
     report: reportResult.data,
     generatedAt: reportResult.data?.generatedAt ?? null,
     degradedReason: reportResult.error,
+  };
+}
+
+export async function getProviderSnapshot(): Promise<ProviderSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const providerResult = await readEndpoint<ProviderListResponse>(baseUrl, "/providers");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    readiness: providerResult.data?.readiness ?? null,
+    providers: providerResult.data?.providers ?? [],
+    degradedReason: providerResult.error,
   };
 }
 

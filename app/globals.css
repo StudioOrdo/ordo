@@ -962,6 +962,170 @@ input:focus-visible {
   color: transparent;
 }
 
+.scrolly-runtime {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), transparent 42%),
+    #f4f6f3;
+}
+
+.scrolly-track {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  scroll-snap-type: y mandatory;
+}
+
+.story-progress {
+  position: fixed;
+  top: 50%;
+  right: 28px;
+  z-index: 15;
+  display: grid;
+  transform: translateY(-50%);
+  align-content: center;
+  gap: 8px;
+  justify-items: center;
+}
+
+.story-progress-count {
+  border: 1px solid rgba(25, 24, 22, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--muted);
+  padding: 8px 11px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.story-progress a {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid rgba(25, 24, 22, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: transparent;
+  font-size: 0;
+}
+
+.story-progress a:hover,
+.story-progress a:focus-visible {
+  background: #2f3a32;
+  border-color: #2f3a32;
+}
+
+.story-progress a span {
+  color: transparent;
+}
+
+.scrolly-slide {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(240px, 0.44fr);
+  gap: clamp(20px, 6vw, 84px);
+  min-height: 100%;
+  align-items: center;
+  scroll-snap-align: start;
+  overflow: hidden;
+  padding: 64px clamp(64px, 7vw, 120px) 28px;
+}
+
+.scrolly-copy {
+  display: grid;
+  gap: 18px;
+  max-width: 900px;
+  min-width: 0;
+}
+
+.scrolly-copy h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(42px, 6vw, 96px);
+  line-height: 0.92;
+  letter-spacing: 0;
+}
+
+.scrolly-copy p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(17px, 1.8vw, 23px);
+  line-height: 1.42;
+}
+
+.reduced-motion-copy {
+  display: none;
+}
+
+.story-source-line {
+  color: #354038;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.story-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 760px;
+}
+
+.story-evidence span {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 30px;
+  align-items: center;
+  border: 1px solid rgba(25, 24, 22, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  padding: 0 10px;
+}
+
+.scrolly-media {
+  display: grid;
+  position: relative;
+  min-height: min(60vh, 620px);
+  place-items: center;
+  border: 1px solid rgba(25, 24, 22, 0.08);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.02)),
+    radial-gradient(circle at 24% 20%, rgba(15, 118, 110, 0.2), transparent 35%),
+    #121411;
+  color: #f7f4ec;
+}
+
+.scrolly-media span {
+  font-size: clamp(72px, 13vw, 180px);
+  font-weight: 850;
+}
+
+.scrolly-media small {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  color: rgba(247, 244, 236, 0.72);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.scrolly-runtime[data-source-state="fallback"] .scrolly-media {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02)),
+    #25312a;
+}
+
 .public-chat-fab {
   position: fixed;
   right: clamp(18px, 3vw, 34px);
@@ -4215,6 +4379,26 @@ input:focus-visible {
     font-size: 11px;
   }
 
+  .story-progress {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    grid-auto-flow: column;
+    align-content: center;
+    justify-content: center;
+    width: auto;
+    height: 66px;
+    border-top: 1px solid rgba(25, 24, 22, 0.1);
+    border-right: 0;
+    background: rgba(246, 248, 246, 0.86);
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .story-progress-count {
+    font-size: 11px;
+  }
+
   .public-chat-fab {
     right: 16px;
     bottom: 82px;
@@ -4229,6 +4413,26 @@ input:focus-visible {
 
   .public-surface-slide {
     padding: 58px 16px 66px;
+  }
+
+  .scrolly-slide {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    min-height: 100%;
+    padding: 58px 16px 82px;
+  }
+
+  .scrolly-copy h1 {
+    font-size: 42px;
+    line-height: 0.98;
+  }
+
+  .scrolly-copy p {
+    font-size: 17px;
+  }
+
+  .scrolly-media {
+    min-height: 190px;
   }
 
   .surface-count {
@@ -4270,6 +4474,21 @@ input:focus-visible {
 
   .feed-tile {
     min-height: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scrolly-track {
+      scroll-behavior: auto;
+      scroll-snap-type: none;
+    }
+
+    .scrolly-slide {
+      scroll-snap-align: none;
+    }
+
+    .reduced-motion-copy {
+      display: block;
+    }
   }
 
   .feed-shell {

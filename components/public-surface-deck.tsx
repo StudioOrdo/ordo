@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { OrdoFrame } from "@/components/ordo-frame";
 import { OrdoChatPrototype } from "@/components/ordo-chat-prototype";
+import { ScrollytellingHomepageRuntime } from "@/components/scrollytelling-homepage-runtime";
 import { type PublicEntryContext } from "@/lib/public-entry-context";
 import {
   appSpaceLabel,
@@ -19,6 +20,8 @@ interface PublicSurfaceDeckProps {
   configuredHomeMode?: PublicHomeMode;
   surfaceMode?: PublicHomeMode;
   entryContext?: PublicEntryContext;
+  entryPointSlug?: string;
+  visitorSessionId?: string;
 }
 
 export type PublicHomeMode = "story" | "chat";
@@ -28,6 +31,8 @@ export function PublicSurfaceDeck({
   configuredHomeMode = "story",
   surfaceMode = configuredHomeMode,
   entryContext,
+  entryPointSlug,
+  visitorSessionId,
 }: PublicSurfaceDeckProps) {
   const surfaces = surfaceMode === "chat" ? [surfaceDefinitions.chat] : [surfaceDefinitions.about, surfaceDefinitions.feed];
 
@@ -39,34 +44,18 @@ export function PublicSurfaceDeck({
     >
       <div className="public-deck-shell" data-role={role} data-home-mode={configuredHomeMode} data-surface-mode={surfaceMode}>
         {surfaceMode === "story" ? (
-          <nav className="public-progress-rail" aria-label="Surface progress">
-            <span className="public-progress-count">01 / {String(surfaces.length).padStart(2, "0")}</span>
-            {surfaces.map((surface, index) => (
-              <a key={surface.id} href={`#${surface.id}`} aria-label={surface.label} title={surface.label}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-              </a>
-            ))}
-          </nav>
+          <ScrollytellingHomepageRuntime role={role} entryPointSlug={entryPointSlug} visitorSessionId={visitorSessionId} />
         ) : null}
 
-        <main className="public-surface-track" aria-label="Studio Ordo surface deck">
-          {surfaces.map((surface, index) => (
-            <section key={surface.id} id={surface.id} className={`public-surface-slide public-surface-${surface.id}`} aria-label={surface.label}>
-              <div className="surface-count">{String(index + 1).padStart(2, "0")} / {String(surfaces.length).padStart(2, "0")}</div>
-              {surface.id === "chat" ? <ChatSurfaceSlide role={role} entryContext={entryContext} /> : null}
-              {surface.id === "about" ? <AboutSurfaceSlide role={role} /> : null}
-              {surface.id === "feed" ? <FeedSurfaceSlide role={role} /> : null}
-            </section>
-          ))}
-        </main>
-
-        {surfaceMode === "story" && configuredHomeMode === "story" ? (
-          <Link href={publicHref("/chat", role, configuredHomeMode)} className="public-chat-fab" aria-label="Open full-screen Ordo" data-chat-fab-launcher="true">
-            <span className="public-chat-fab-glow" aria-hidden="true" />
-            <span className="public-chat-fab-icon" aria-hidden="true">
-              <ChatIcon />
-            </span>
-          </Link>
+        {surfaceMode === "chat" ? (
+          <main className="public-surface-track" aria-label="Studio Ordo surface deck">
+            {surfaces.map((surface, index) => (
+              <section key={surface.id} id={surface.id} className={`public-surface-slide public-surface-${surface.id}`} aria-label={surface.label}>
+                <div className="surface-count">{String(index + 1).padStart(2, "0")} / {String(surfaces.length).padStart(2, "0")}</div>
+                {surface.id === "chat" ? <ChatSurfaceSlide role={role} entryContext={entryContext} /> : null}
+              </section>
+            ))}
+          </main>
         ) : null}
       </div>
     </OrdoFrame>
@@ -182,115 +171,11 @@ function ChatSurfaceSlide({ role, entryContext }: { role: ProductRole; entryCont
   );
 }
 
-function AboutSurfaceSlide({ role }: { role: ProductRole }) {
-  return (
-    <div className="story-stage">
-      <div className="story-card">
-        <span className="eyebrow">About</span>
-        <h1 id="about-title">A business appliance for relationships, evidence, and production.</h1>
-        <p>
-          Ordo turns meetings, QR codes, conversations, offers, feedback, affiliate referrals, and factory output into a live operating
-          surface. The public story can be cinematic, but the system underneath stays durable and inspectable.
-        </p>
-        <div className="hero-actions">
-          <a href="#chat" className="primary-action">
-            Ask Ordo about this
-          </a>
-          <a href="#feed" className="secondary-action">
-            Continue
-          </a>
-        </div>
-      </div>
-      <div className="story-media" aria-hidden="true">
-        <span>01</span>
-      </div>
-    </div>
-  );
-}
-
-function FeedSurfaceSlide({ role }: { role: ProductRole }) {
-  const trackedEntrySlug = process.env.NEXT_PUBLIC_ORDO_HOME_ENTRY_SLUG?.trim() || "nyc-pilot";
-
-  return (
-    <div className="feed-stage">
-      <article className="feed-tile">
-        <span className="eyebrow">Meetup QR</span>
-        <h2 id="tracked-entry">Open the tracked Studio Ordo entry.</h2>
-        <p>
-          Use the event QR path when meeting Studio Ordo in person. The entry starts a visitor session with public-safe context
-          so the conversation and offer path can remember where the relationship began.
-        </p>
-        <div className="feed-proof">
-          <span>Tracked entry</span>
-          <span>Visitor session</span>
-          <span>No scan reward</span>
-        </div>
-        <Link href={roleHref(`/e/${trackedEntrySlug}`, role)} className="secondary-action">
-          Open QR path
-        </Link>
-      </article>
-      {feedItems.map((item) => (
-        <article key={item.id} className="feed-tile">
-          <span className="eyebrow">{item.kicker}</span>
-          <h2 id={item.id}>{item.title}</h2>
-          <p>{item.body}</p>
-          <div className="feed-proof">
-            {item.proof.map((proof) => (
-              <span key={proof}>{proof}</span>
-            ))}
-          </div>
-          <Link href={roleHref(item.href, role)} className="secondary-action">
-            {item.action}
-          </Link>
-        </article>
-      ))}
-    </div>
-  );
-}
-
 const surfaceDefinitions = {
   chat: { id: "chat", label: "Full-screen Ordo", shortLabel: "Ordo" },
   about: { id: "about", label: "About story", shortLabel: "About" },
   feed: { id: "feed", label: "Public feed", shortLabel: "Feed" },
 } as const;
-
-const feedItems = [
-  {
-    id: "offer-trial",
-    kicker: "Offer",
-    title: "Try OrdoStudio for 30 days.",
-    body: "A focused trial for solopreneurs who need customer conversations, offers, referrals, and content production to move together.",
-    proof: ["No fake urgency", "Trial evidence", "Plain-language fit check"],
-    action: "Ask if it fits",
-    href: "/chat",
-  },
-  {
-    id: "ask-affiliate",
-    kicker: "Ask",
-    title: "Send one good person back to us.",
-    body: "Tracked QR codes and referral links make useful introductions visible without turning relationships into a spreadsheet.",
-    proof: ["Tracked entry", "Referral evidence", "Reward-ready"],
-    action: "Open affiliate path",
-    href: "/my/affiliate",
-  },
-  {
-    id: "factory-output",
-    kicker: "Factory",
-    title: "Knowledge turns into artifacts.",
-    body: "Articles, short videos, briefs, QR cards, and offer material should come from the knowledgebase and production jobs.",
-    proof: ["Knowledge source", "Job stages", "Published artifact"],
-    action: "Open Studio",
-    href: "/studio/knowledge",
-  },
-] as const;
-
-function ChatIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
 
 function AboutIcon() {
   return (

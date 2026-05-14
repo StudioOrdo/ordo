@@ -5,11 +5,25 @@ export default async function FeedPage({ searchParams }: { searchParams?: Search
   const role = await roleFromSearchParams(searchParams);
   const params = searchParams ? await searchParams : {};
   const configuredHomeMode = resolveHomeMode(params.home);
+  const entryPointSlug = firstQueryValue(params.entryPointSlug);
+  const visitorSessionId = firstQueryValue(params.visitorSessionId);
 
-  return <PublicSurfaceDeck role={role} configuredHomeMode={configuredHomeMode} surfaceMode="story" />;
+  return (
+    <PublicSurfaceDeck
+      role={role}
+      configuredHomeMode={configuredHomeMode}
+      surfaceMode="story"
+      entryPointSlug={entryPointSlug}
+      visitorSessionId={visitorSessionId}
+    />
+  );
 }
 
 function resolveHomeMode(rawMode: string | string[] | undefined): PublicHomeMode {
   const mode = Array.isArray(rawMode) ? rawMode[0] : rawMode;
   return mode === "chat" ? "chat" : "story";
+}
+
+function firstQueryValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

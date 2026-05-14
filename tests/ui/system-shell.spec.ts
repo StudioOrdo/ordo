@@ -203,8 +203,30 @@ test("Studio artifacts room renders artifact review state without publishing cla
     await expect(page.locator("main")).toContainText("staged");
     await expect(page.locator("main")).toContainText("Request revision unavailable");
     await expect(page.locator("main")).toContainText("External publishing unavailable");
+    await expect(page.locator("main")).toContainText("Artifact Patch Review");
+    await expect(page.locator("main")).toContainText("Landing page copy update");
+    await expect(page.locator("main")).toContainText("Preview truncated");
+    await expect(page.locator("main")).toContainText("Reject/defer unavailable");
+    await expect(page.locator("main")).toContainText("Accept patch");
     await expect(page.locator("main")).not.toContainText("YouTube analytics");
+    await expect(page.locator("main")).not.toContainText("rawPrompt");
+    await expect(page.locator("main")).not.toContainText("sk_live_hidden");
     expect(daemon.state.requests).toContain("GET /surface/work-items?viewer=staff&surfaceKind=studio&roomKind=artifacts&limit=100");
+    expect(daemon.state.requests).toContain("GET /studio/artifact-patches?reviewState=proposed&limit=50");
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("Studio artifact patch accept proxy refuses missing Studio role before daemon mutation", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    const response = await page.request.post("/api/studio/artifact-patches/patch_copy_1/accept", {
+      data: { currentText: "old claim" },
+    });
+
+    expect(response.status()).toBe(403);
+    expect(daemon.state.requests.some((request) => request.includes("/studio/artifact-patches/patch_copy_1/accept"))).toBe(false);
   } finally {
     await daemon.close();
   }
@@ -676,6 +698,10 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
     }
   }
 
+  if (method === "GET" && path.startsWith("/studio/artifact-patches")) {
+    return jsonResponse(response, { proposals: studioArtifactPatchProposals() });
+  }
+
   if (method === "GET" && path === "/logs?limit=100") {
     return jsonResponse(response, { logs: diagnosticLogs() });
   }
@@ -1141,6 +1167,41 @@ function studioSurfaceWorkItems(roomKind: string | null) {
   ];
 
   return roomKind ? items.filter((item) => item.roomKind === roomKind) : items;
+}
+
+function studioArtifactPatchProposals() {
+  return [
+    {
+      id: "patch_copy_1",
+      sourceArtifactId: "artifact_landing_copy",
+      sourceArtifactKind: "markdown",
+      sourceArtifactTitle: "Landing page copy update",
+      sourceArtifactStatus: "candidate",
+      sourceArtifactVisibility: "owner",
+      sourceVersionId: "artifact_version_landing_1",
+      baseHash: "sha256:base",
+      proposedHash: "sha256:proposed",
+      preview: {
+        changed: true,
+        addedLines: 2,
+        removedLines: 1,
+        hunks: 1,
+      },
+      boundedPatchPreview: "--- base\n+++ proposed\n@@\n-old claim\n+evidence-backed claim",
+      previewTruncated: true,
+      evidenceRefs: ["artifact:artifact_landing_copy", "job:job_smoke_video"],
+      provenance: {
+        source: "artifact_patch_proposals",
+      },
+      reviewState: "proposed",
+      acceptedVersionId: null,
+      proposedByActorId: "owner:local_owner",
+      appliedByActorId: null,
+      createdAt: "2026-05-14T10:00:00Z",
+      updatedAt: "2026-05-14T10:01:00Z",
+      appliedAt: null,
+    },
+  ];
 }
 
 function studioWorkItem({

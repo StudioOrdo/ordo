@@ -1,6 +1,8 @@
 import { ProductShell } from "@/components/product-shell";
+import { StudioArtifactPatchReviewPanel } from "@/components/studio-artifact-patch-review";
 import { PageTitle, statusClass } from "@/components/system-panels";
 import {
+  getStudioArtifactPatchSnapshot,
   getStudioWorkSnapshot,
   type StudioDeferredAction,
   type StudioRoomSummary,
@@ -35,6 +37,7 @@ export async function StudioWorkPage({ searchParams, currentItemId, title, descr
   const mobileStep = await mobileStepFromSearchParams(searchParams);
   const role: ProductRole = requestedRole;
   const snapshot = await getStudioWorkSnapshot(viewer, roomKind);
+  const artifactPatchSnapshot = roomKind === "artifacts" ? await getStudioArtifactPatchSnapshot() : null;
   const degraded = Boolean(snapshot.degradedReason);
   const room = roomKind ? roomSummary(snapshot, roomKind) : null;
   const visibleItems = room?.items ?? snapshot.items;
@@ -67,6 +70,8 @@ export async function StudioWorkPage({ searchParams, currentItemId, title, descr
       {!roomKind ? <StudioRoomOverview snapshot={snapshot} /> : null}
 
       <StudioWorkTable title={room?.label ?? "All Studio Work"} items={visibleItems} emptyLabel={room?.emptyLabel ?? "No durable Studio work items are available."} />
+
+      {artifactPatchSnapshot ? <StudioArtifactPatchReviewPanel snapshot={artifactPatchSnapshot} role={role} /> : null}
 
       <DeferredActionsPanel actions={snapshot.deferredActions} />
     </ProductShell>

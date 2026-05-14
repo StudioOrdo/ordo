@@ -1511,6 +1511,31 @@ mod tests {
             "homepage.slides.proof.body",
             json!("The story changes when evidence changes."),
         );
+        insert_public_fact(
+            connection,
+            "offers.trial.title",
+            json!("30-day hosted trial"),
+        );
+        insert_public_fact(
+            connection,
+            "offers.trial.summary",
+            json!("Try Ordo with clear experimental limits."),
+        );
+        insert_home_entry_point(connection, "entry_nyc", "nyc", "NYC meetup QR");
+    }
+
+    fn insert_home_entry_point(connection: &Connection, id: &str, slug: &str, label: &str) {
+        connection
+            .execute(
+                "INSERT INTO tracked_entry_points (
+                    id, slug, label, status, source_kind, source_label, destination_surface,
+                    destination_id, public_path, qr_payload_json, attribution_json, metadata_json,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, 'active', 'event', 'NYC meetup', 'about',
+                    NULL, ?4, '{\"kind\":\"ordo.tracked_entry_point\"}', '{}', '{}', 'now', 'now')",
+                params![id, slug, label, format!("/e/{slug}")],
+            )
+            .unwrap();
     }
 
     fn record_valid_story_intake(connection: &Connection) -> String {
@@ -1661,6 +1686,20 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|value| value == &json!("business_fact:homepage.positioning"))
+        );
+        assert!(
+            compilation.safe_compiled_plan["variables"]["storyEvidenceRefs"]["value"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == &json!("offer:trial"))
+        );
+        assert!(
+            compilation.safe_compiled_plan["variables"]["storyEvidenceRefs"]["value"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == &json!("tracked_entry_point:entry_nyc"))
         );
 
         let safe_plan_json = compilation.safe_compiled_plan.to_string();

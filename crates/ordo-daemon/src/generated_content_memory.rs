@@ -1,0 +1,1064 @@
+use anyhow::{ensure, Result};
+use chrono::Utc;
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+
+use crate::artifacts::{load_artifact, ArtifactView};
+use crate::events::{append_realtime_event, system_event, RealtimeEvent};
+use crate::schema::db::ConnectionExt;
+use crate::security::redaction;
+
+pub const GENERATED_CONTENT_MEMORY_SCHEMA_VERSION: &str = "generated_content_memory.v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GeneratedContentMemoryKind {
+    CandidateClaim,
+    PreferenceMemory,
+    NegativeMemory,
+}
+
+impl GeneratedContentMemoryKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::CandidateClaim => "candidate_claim",
+            Self::PreferenceMemory => "preference_memory",
+            Self::NegativeMemory => "negative_memory",
+        }
+    }
+
+    fn memory_tier(self) -> &'static str {
+        match self {
+            Self::CandidateClaim => "candidate_memory",
+            Self::PreferenceMemory => "preference_memory",
+            Self::NegativeMemory => "negative_memory",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GeneratedContentMemoryState {
+    Proposed,
+    Approved,
+    Rejected,
+    Published,
+    Superseded,
+}
+
+impl GeneratedContentMemoryState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Proposed => "proposed",
+            Self::Approved => "approved",
+            Self::Rejected => "rejected",
+            Self::Published => "published",
+            Self::Superseded => "superseded",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GeneratedContentMemoryIngestionInput {
+    pub artifact_id: String,
+    pub artifact_version_id: Option<String>,
+    pub workflow_template_id: Option<String>,
+    pub workflow_compilation_id: Option<String>,
+    pub job_id: Option<String>,
+    pub extraction_fixture_id: String,
+    pub items: Vec<GeneratedContentMemoryItemInput>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GeneratedContentMemoryItemInput {
+    pub memory_kind: GeneratedContentMemoryKind,
+    pub candidate_state: Option<GeneratedContentMemoryState>,
+    pub summary_text: String,
+    pub body: Value,
+    pub confidence: f64,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub visibility: String,
+    pub approval_evidence_refs: Vec<String>,
+    pub publication_evidence_refs: Vec<String>,
+    pub feedback_evidence_refs: Vec<String>,
+    pub outcome_evidence_refs: Vec<String>,
+    pub rejection_evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GeneratedContentMemoryDecisionInput {
+    pub decision: GeneratedContentMemoryState,
+    pub reason: String,
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedContentMemoryCandidateView {
+    pub id: String,
+    pub artifact_id: String,
+    pub artifact_version_id: Option<String>,
+    pub source_artifact_kind: String,
+    pub source_content_hash: String,
+    pub workflow_template_id: Option<String>,
+    pub workflow_compilation_id: Option<String>,
+    pub job_id: Option<String>,
+    pub extraction_fixture_id: String,
+    pub memory_kind: String,
+    pub memory_tier: String,
+    pub candidate_state: String,
+    pub confidence: f64,
+    pub summary_text: String,
+    pub body: Value,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub visibility: String,
+    pub approval_evidence_refs: Vec<String>,
+    pub publication_evidence_refs: Vec<String>,
+    pub feedback_evidence_refs: Vec<String>,
+    pub outcome_evidence_refs: Vec<String>,
+    pub rejection_evidence_refs: Vec<String>,
+    pub provenance: Value,
+    pub content_hash: String,
+    pub memory_effect: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub state_changed_at: Option<String>,
+    pub state_reason: Option<String>,
+}
+
+pub fn ingest_generated_content_memory_candidates(
+    connection: &Connection,
+    input: GeneratedContentMemoryIngestionInput,
+) -> Result<(Vec<GeneratedContentMemoryCandidateView>, Vec<RealtimeEvent>)> {
+    ensure!(
+        !input.extraction_fixture_id.trim().is_empty(),
+        "generated content memory requires an extraction fixture id"
+    );
+    ensure!(
+        !input.items.is_empty(),
+        "generated content memory requires candidate items"
+    );
+    let artifact = load_artifact(connection, &input.artifact_id)?;
+    if let Some(version_id) = input.artifact_version_id.as_deref() {
+        ensure!(
+            artifact_version_belongs_to(connection, version_id, &artifact.id)?,
+            "generated content memory artifact version must belong to source artifact"
+        );
+    }
+    for item in &input.items {
+        validate_memory_item(
+            item,
+            item.candidate_state
+                .unwrap_or_else(|| default_state_for_kind(item.memory_kind)),
+        )?;
+    }
+
+    let mut candidates = Vec::new();
+    let mut events = Vec::new();
+    let items = input.items.clone();
+    for item in items {
+        let (candidate, inserted) =
+            upsert_generated_content_memory_candidate(connection, &artifact, &input, item)?;
+        if inserted {
+            events.push(append_realtime_event(
+                connection,
+                &system_event(
+                    "generated_content_memory.candidate_proposed",
+                    json!({
+                        "candidateId": candidate.id,
+                        "artifactId": candidate.artifact_id,
+                        "memoryKind": candidate.memory_kind,
+                        "memoryTier": candidate.memory_tier,
+                        "candidateState": candidate.candidate_state,
+                        "evidenceRefs": candidate.evidence_refs,
+                        "contentHash": candidate.content_hash,
+                    }),
+                ),
+            )?);
+        }
+        candidates.push(candidate);
+    }
+    Ok((candidates, events))
+}
+
+pub fn record_generated_content_memory_decision(
+    connection: &Connection,
+    candidate_id: &str,
+    input: GeneratedContentMemoryDecisionInput,
+) -> Result<(GeneratedContentMemoryCandidateView, RealtimeEvent)> {
+    ensure!(
+        matches!(
+            input.decision,
+            GeneratedContentMemoryState::Approved
+                | GeneratedContentMemoryState::Rejected
+                | GeneratedContentMemoryState::Published
+                | GeneratedContentMemoryState::Superseded
+        ),
+        "generated content memory decision must be a review state"
+    );
+    ensure!(
+        !input.reason.trim().is_empty(),
+        "generated content memory decision reason is required"
+    );
+    ensure!(
+        !input.evidence_refs.is_empty(),
+        "generated content memory decision evidence is required"
+    );
+    let existing = load_generated_content_memory_candidate(connection, candidate_id)?;
+    let mut approval_refs = existing.approval_evidence_refs.clone();
+    let mut publication_refs = existing.publication_evidence_refs.clone();
+    let mut rejection_refs = existing.rejection_evidence_refs.clone();
+    match input.decision {
+        GeneratedContentMemoryState::Approved => {
+            append_unique(&mut approval_refs, &input.evidence_refs);
+        }
+        GeneratedContentMemoryState::Published => {
+            append_unique(&mut publication_refs, &input.evidence_refs);
+        }
+        GeneratedContentMemoryState::Rejected | GeneratedContentMemoryState::Superseded => {
+            append_unique(&mut rejection_refs, &input.evidence_refs);
+        }
+        GeneratedContentMemoryState::Proposed => unreachable!(),
+    }
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "UPDATE generated_content_memory_candidates
+         SET candidate_state = ?2,
+             approval_evidence_refs_json = ?3,
+             publication_evidence_refs_json = ?4,
+             rejection_evidence_refs_json = ?5,
+             state_changed_at = ?6,
+             state_reason = ?7,
+             updated_at = ?6
+         WHERE id = ?1",
+        params![
+            candidate_id,
+            input.decision.as_str(),
+            json!(approval_refs).to_string(),
+            json!(publication_refs).to_string(),
+            json!(rejection_refs).to_string(),
+            now,
+            safe_text(&input.reason),
+        ],
+    )?;
+    let candidate = load_generated_content_memory_candidate(connection, candidate_id)?;
+    let event = append_realtime_event(
+        connection,
+        &system_event(
+            "generated_content_memory.decision_recorded",
+            json!({
+                "candidateId": candidate.id,
+                "artifactId": candidate.artifact_id,
+                "candidateState": candidate.candidate_state,
+                "evidenceRefs": input.evidence_refs,
+                "memoryEffect": candidate.memory_effect,
+            }),
+        ),
+    )?;
+    Ok((candidate, event))
+}
+
+pub fn list_generated_content_memory_for_artifact(
+    connection: &Connection,
+    artifact_id: &str,
+) -> Result<Vec<GeneratedContentMemoryCandidateView>> {
+    connection.query_many(
+        "SELECT id, artifact_id, artifact_version_id, source_artifact_kind, source_content_hash,
+                workflow_template_id, workflow_compilation_id, job_id, extraction_fixture_id,
+                memory_kind, memory_tier, candidate_state, confidence, summary_text, body_json,
+                evidence_refs_json, limitations_json, visibility, approval_evidence_refs_json,
+                publication_evidence_refs_json, feedback_evidence_refs_json,
+                outcome_evidence_refs_json, rejection_evidence_refs_json, provenance_json,
+                content_hash, created_at, updated_at, state_changed_at, state_reason
+         FROM generated_content_memory_candidates
+         WHERE artifact_id = ?1
+         ORDER BY created_at ASC, id ASC",
+        [artifact_id],
+        generated_content_memory_from_row,
+    )
+}
+
+pub fn load_generated_content_memory_candidate(
+    connection: &Connection,
+    candidate_id: &str,
+) -> Result<GeneratedContentMemoryCandidateView> {
+    connection
+        .query_row(
+            "SELECT id, artifact_id, artifact_version_id, source_artifact_kind, source_content_hash,
+                    workflow_template_id, workflow_compilation_id, job_id, extraction_fixture_id,
+                    memory_kind, memory_tier, candidate_state, confidence, summary_text, body_json,
+                    evidence_refs_json, limitations_json, visibility, approval_evidence_refs_json,
+                    publication_evidence_refs_json, feedback_evidence_refs_json,
+                    outcome_evidence_refs_json, rejection_evidence_refs_json, provenance_json,
+                    content_hash, created_at, updated_at, state_changed_at, state_reason
+             FROM generated_content_memory_candidates
+             WHERE id = ?1",
+            [candidate_id],
+            generated_content_memory_from_row,
+        )
+        .map_err(Into::into)
+}
+
+fn upsert_generated_content_memory_candidate(
+    connection: &Connection,
+    artifact: &ArtifactView,
+    input: &GeneratedContentMemoryIngestionInput,
+    item: GeneratedContentMemoryItemInput,
+) -> Result<(GeneratedContentMemoryCandidateView, bool)> {
+    let state = item
+        .candidate_state
+        .unwrap_or_else(|| default_state_for_kind(item.memory_kind));
+    validate_memory_item(&item, state)?;
+    let evidence_refs = memory_evidence_refs(artifact, input.artifact_version_id.as_deref(), &item);
+    let summary_text = safe_text(&item.summary_text);
+    let body = safe_json(item.body);
+    let limitations = safe_vec(item.limitations);
+    let provenance = json!({
+        "schemaVersion": GENERATED_CONTENT_MEMORY_SCHEMA_VERSION,
+        "source": "generated_content_artifact",
+        "artifactId": artifact.id,
+        "artifactKind": artifact.artifact_kind,
+        "artifactContentHash": artifact.content_hash,
+        "artifactVersionId": input.artifact_version_id,
+        "workflowTemplateId": input.workflow_template_id,
+        "workflowCompilationId": input.workflow_compilation_id,
+        "jobId": input.job_id,
+        "extractionFixtureId": safe_identifier(&input.extraction_fixture_id),
+        "truthBoundary": "candidate_memory_only",
+        "confirmedGraphPromotion": false,
+        "liveProviderCalled": false,
+    });
+    let content_hash = stable_hash(&format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}",
+        artifact.id,
+        input.artifact_version_id.as_deref().unwrap_or("none"),
+        input.extraction_fixture_id,
+        item.memory_kind.as_str(),
+        state.as_str(),
+        summary_text,
+        body,
+        json!(evidence_refs)
+    ));
+    let id = stable_id("generated_content_memory_candidate", &content_hash);
+    let now = Utc::now().to_rfc3339();
+    let inserted = connection.execute(
+        "INSERT OR IGNORE INTO generated_content_memory_candidates (
+            id, artifact_id, artifact_version_id, source_artifact_kind, source_content_hash,
+            workflow_template_id, workflow_compilation_id, job_id, extraction_fixture_id,
+            memory_kind, memory_tier, candidate_state, confidence, summary_text, body_json,
+            evidence_refs_json, limitations_json, visibility, approval_evidence_refs_json,
+            publication_evidence_refs_json, feedback_evidence_refs_json,
+            outcome_evidence_refs_json, rejection_evidence_refs_json, provenance_json,
+            content_hash, created_at, updated_at, state_changed_at, state_reason
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                   ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?26, ?27, ?28)",
+        params![
+            id,
+            artifact.id,
+            input.artifact_version_id,
+            artifact.artifact_kind,
+            artifact.content_hash,
+            input.workflow_template_id,
+            input.workflow_compilation_id,
+            input.job_id,
+            safe_identifier(&input.extraction_fixture_id),
+            item.memory_kind.as_str(),
+            item.memory_kind.memory_tier(),
+            state.as_str(),
+            item.confidence,
+            summary_text,
+            body.to_string(),
+            json!(evidence_refs).to_string(),
+            json!(limitations).to_string(),
+            normalize_visibility(&item.visibility),
+            json!(safe_vec(item.approval_evidence_refs)).to_string(),
+            json!(safe_vec(item.publication_evidence_refs)).to_string(),
+            json!(safe_vec(item.feedback_evidence_refs)).to_string(),
+            json!(safe_vec(item.outcome_evidence_refs)).to_string(),
+            json!(safe_vec(item.rejection_evidence_refs)).to_string(),
+            provenance.to_string(),
+            content_hash,
+            now,
+            if state == GeneratedContentMemoryState::Proposed {
+                None::<String>
+            } else {
+                Some(now.clone())
+            },
+            if state == GeneratedContentMemoryState::Proposed {
+                None::<String>
+            } else {
+                Some(format!(
+                    "Initial {} evidence recorded from deterministic fixture.",
+                    state.as_str()
+                ))
+            },
+        ],
+    )? == 1;
+    Ok((
+        load_generated_content_memory_candidate(connection, &id)?,
+        inserted,
+    ))
+}
+
+fn validate_memory_item(
+    item: &GeneratedContentMemoryItemInput,
+    state: GeneratedContentMemoryState,
+) -> Result<()> {
+    ensure!(
+        !item.summary_text.trim().is_empty(),
+        "generated content memory summary is required"
+    );
+    ensure!(
+        (0.0..=1.0).contains(&item.confidence),
+        "generated content memory confidence must be between 0 and 1"
+    );
+    ensure!(
+        !item.evidence_refs.is_empty(),
+        "generated content memory evidence refs are required"
+    );
+    ensure!(
+        item.body.is_object(),
+        "generated content memory body must be structured"
+    );
+    ensure!(
+        matches!(
+            item.memory_kind,
+            GeneratedContentMemoryKind::CandidateClaim
+                | GeneratedContentMemoryKind::PreferenceMemory
+                | GeneratedContentMemoryKind::NegativeMemory
+        ),
+        "unsupported generated content memory kind"
+    );
+    if item.memory_kind == GeneratedContentMemoryKind::NegativeMemory {
+        ensure!(
+            state == GeneratedContentMemoryState::Rejected,
+            "negative memory requires rejected candidate state"
+        );
+        ensure!(
+            !item.rejection_evidence_refs.is_empty(),
+            "negative memory requires rejection evidence"
+        );
+    }
+    if state == GeneratedContentMemoryState::Approved {
+        ensure!(
+            !item.approval_evidence_refs.is_empty(),
+            "approved memory candidates require approval evidence"
+        );
+    }
+    if state == GeneratedContentMemoryState::Published {
+        ensure!(
+            !item.publication_evidence_refs.is_empty(),
+            "published memory candidates require publication evidence"
+        );
+    }
+    ensure_safe_memory_text(&item.summary_text)?;
+    ensure_safe_memory_text(&item.body.to_string())?;
+    Ok(())
+}
+
+fn memory_evidence_refs(
+    artifact: &ArtifactView,
+    artifact_version_id: Option<&str>,
+    item: &GeneratedContentMemoryItemInput,
+) -> Vec<String> {
+    let mut refs = vec![format!("artifact:{}", artifact.id)];
+    if let Some(version_id) = artifact_version_id {
+        refs.push(format!("artifact_version:{version_id}"));
+    }
+    refs.extend(
+        item.evidence_refs
+            .iter()
+            .map(|value| safe_identifier(value)),
+    );
+    append_unique(&mut refs, &artifact.evidence_refs);
+    refs
+}
+
+fn artifact_version_belongs_to(
+    connection: &Connection,
+    version_id: &str,
+    artifact_id: &str,
+) -> Result<bool> {
+    let matched = connection
+        .query_row(
+            "SELECT 1 FROM artifact_versions WHERE id = ?1 AND artifact_id = ?2",
+            params![version_id, artifact_id],
+            |_row| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    Ok(matched)
+}
+
+fn generated_content_memory_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<GeneratedContentMemoryCandidateView> {
+    let body_json: String = row.get(14)?;
+    let evidence_json: String = row.get(15)?;
+    let limitations_json: String = row.get(16)?;
+    let approval_json: String = row.get(18)?;
+    let publication_json: String = row.get(19)?;
+    let feedback_json: String = row.get(20)?;
+    let outcome_json: String = row.get(21)?;
+    let rejection_json: String = row.get(22)?;
+    let provenance_json: String = row.get(23)?;
+    let candidate_state: String = row.get(11)?;
+    Ok(GeneratedContentMemoryCandidateView {
+        id: row.get(0)?,
+        artifact_id: row.get(1)?,
+        artifact_version_id: row.get(2)?,
+        source_artifact_kind: row.get(3)?,
+        source_content_hash: row.get(4)?,
+        workflow_template_id: row.get(5)?,
+        workflow_compilation_id: row.get(6)?,
+        job_id: row.get(7)?,
+        extraction_fixture_id: row.get(8)?,
+        memory_kind: row.get(9)?,
+        memory_tier: row.get(10)?,
+        candidate_state: candidate_state.clone(),
+        confidence: row.get(12)?,
+        summary_text: row.get(13)?,
+        body: serde_json::from_str(&body_json).unwrap_or_else(|_| json!({})),
+        evidence_refs: serde_json::from_str(&evidence_json).unwrap_or_default(),
+        limitations: serde_json::from_str(&limitations_json).unwrap_or_default(),
+        visibility: row.get(17)?,
+        approval_evidence_refs: serde_json::from_str(&approval_json).unwrap_or_default(),
+        publication_evidence_refs: serde_json::from_str(&publication_json).unwrap_or_default(),
+        feedback_evidence_refs: serde_json::from_str(&feedback_json).unwrap_or_default(),
+        outcome_evidence_refs: serde_json::from_str(&outcome_json).unwrap_or_default(),
+        rejection_evidence_refs: serde_json::from_str(&rejection_json).unwrap_or_default(),
+        provenance: serde_json::from_str(&provenance_json).unwrap_or_else(|_| json!({})),
+        content_hash: row.get(24)?,
+        memory_effect: memory_effect_for_state(&candidate_state),
+        created_at: row.get(25)?,
+        updated_at: row.get(26)?,
+        state_changed_at: row.get(27)?,
+        state_reason: row.get(28)?,
+    })
+}
+
+fn default_state_for_kind(kind: GeneratedContentMemoryKind) -> GeneratedContentMemoryState {
+    match kind {
+        GeneratedContentMemoryKind::NegativeMemory => GeneratedContentMemoryState::Rejected,
+        GeneratedContentMemoryKind::CandidateClaim
+        | GeneratedContentMemoryKind::PreferenceMemory => GeneratedContentMemoryState::Proposed,
+    }
+}
+
+fn memory_effect_for_state(state: &str) -> String {
+    match state {
+        "approved" | "published" => "candidate_stronger_evidence".to_string(),
+        "rejected" | "superseded" => "candidate_weakened_or_negative".to_string(),
+        _ => "candidate_only".to_string(),
+    }
+}
+
+fn ensure_safe_memory_text(text: &str) -> Result<()> {
+    let lower = text.to_ascii_lowercase();
+    let blocked = [
+        "prompt internal",
+        "promptinternals",
+        "provider internal",
+        "provider payload",
+        "raw policy",
+        "policy internal",
+        "owner-only",
+        "private artifact text",
+        "task private payload",
+        "staff routing",
+        "graph certainty",
+        "confirmed graph truth",
+        "unsupported claim",
+        "secret",
+        "api_key",
+        "password",
+        "bearer ",
+    ];
+    ensure!(
+        !blocked.iter().any(|needle| lower.contains(needle)),
+        "generated content memory contains private/internal or unsupported claim text"
+    );
+    ensure!(
+        !redaction::contains_sensitive_text(text, &[]),
+        "generated content memory contains sensitive text"
+    );
+    Ok(())
+}
+
+fn safe_text(text: &str) -> String {
+    redaction::redact_public_text(text.trim())
+}
+
+fn safe_json(value: Value) -> Value {
+    redaction::sanitize_json_strings(value)
+}
+
+fn safe_vec(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .map(|value| safe_text(&value))
+        .filter(|value| !value.trim().is_empty())
+        .collect()
+}
+
+fn safe_identifier(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | ':' | '.' | '/')
+            {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+}
+
+fn normalize_visibility(value: &str) -> String {
+    match value.trim() {
+        "public" => "public",
+        "authenticated" | "member" => "authenticated",
+        "staff" | "staff_private" => "staff",
+        "owner" | "owner_private" => "owner",
+        _ => "staff",
+    }
+    .to_string()
+}
+
+fn append_unique(target: &mut Vec<String>, refs: &[String]) {
+    for value in refs {
+        let safe = safe_identifier(value);
+        if !safe.trim().is_empty() && !target.contains(&safe) {
+            target.push(safe);
+        }
+    }
+}
+
+fn stable_hash(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+fn stable_id(prefix: &str, content_hash: &str) -> String {
+    let suffix = content_hash
+        .strip_prefix("sha256:")
+        .unwrap_or(content_hash)
+        .chars()
+        .take(24)
+        .collect::<String>();
+    format!("{prefix}_{suffix}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::artifacts::{add_artifact_version, record_artifact, ArtifactInput};
+    use crate::schema::init_schema;
+
+    fn generated_artifact(connection: &Connection, content_hash: &str) -> ArtifactView {
+        record_artifact(
+            connection,
+            ArtifactInput {
+                artifact_kind: "story.homepage_draft".to_string(),
+                title: "Homepage draft".to_string(),
+                status: "draft".to_string(),
+                visibility_ceiling: "staff".to_string(),
+                summary: "Generated public story draft awaiting review.".to_string(),
+                source_kind: Some("workflow_task".to_string()),
+                source_id: Some("task_story_draft".to_string()),
+                evidence_refs: vec!["workflow:story.scrollytelling_homepage".to_string()],
+                provenance: json!({
+                    "schemaVersion": "test.generated_artifact.v1",
+                    "generatedBy": "content.preparePublicStoryDraft",
+                    "liveProviderCalled": false,
+                }),
+                content_hash: content_hash.to_string(),
+                storage_uri: Some(format!("ordo://artifacts/story/{content_hash}")),
+                health_status: Some("contract_only".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap()
+        .0
+    }
+
+    fn claim_item(summary: &str) -> GeneratedContentMemoryItemInput {
+        GeneratedContentMemoryItemInput {
+            memory_kind: GeneratedContentMemoryKind::CandidateClaim,
+            candidate_state: None,
+            summary_text: summary.to_string(),
+            body: json!({
+                "claim": summary,
+                "source": "deterministic_fixture",
+            }),
+            confidence: 0.64,
+            evidence_refs: vec!["artifact_version:v1".to_string()],
+            limitations: vec![
+                "Generated draft requires owner review before becoming truth.".to_string(),
+            ],
+            visibility: "staff".to_string(),
+            approval_evidence_refs: vec![],
+            publication_evidence_refs: vec![],
+            feedback_evidence_refs: vec![],
+            outcome_evidence_refs: vec![],
+            rejection_evidence_refs: vec![],
+        }
+    }
+
+    #[test]
+    fn generated_artifact_proposes_candidate_memory_without_confirming_graph_truth() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-v1");
+        let version = add_artifact_version(
+            &connection,
+            &artifact.id,
+            "sha256:generated-story-v1-version",
+            artifact.storage_uri.as_deref(),
+            json!({"fixture": "story"}),
+        )
+        .unwrap();
+
+        let (candidates, events) = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id.clone(),
+                artifact_version_id: Some(version.id.clone()),
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_story_1".to_string()),
+                job_id: Some("job_story_1".to_string()),
+                extraction_fixture_id: "fixture.story.claims.v1".to_string(),
+                items: vec![claim_item(
+                    "Ordo helps the owner turn approved story evidence into a homepage.",
+                )],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(events.len(), 1);
+        let candidate = &candidates[0];
+        assert_eq!(candidate.artifact_id, artifact.id);
+        assert_eq!(candidate.artifact_version_id, Some(version.id));
+        assert_eq!(candidate.memory_kind, "candidate_claim");
+        assert_eq!(candidate.memory_tier, "candidate_memory");
+        assert_eq!(candidate.candidate_state, "proposed");
+        assert_eq!(candidate.memory_effect, "candidate_only");
+        assert!(candidate
+            .limitations
+            .contains(&"Generated draft requires owner review before becoming truth.".to_string()));
+        assert_eq!(
+            candidate.provenance["confirmedGraphPromotion"],
+            json!(false)
+        );
+        assert!(candidate
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == &format!("artifact:{}", candidate.artifact_id)));
+
+        let graph_node_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(graph_node_count, 0);
+    }
+
+    #[test]
+    fn rejects_private_provider_prompt_policy_graph_certainty_and_sensitive_text() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-private");
+
+        let mut item = claim_item("Provider internal prompt internals prove graph certainty.");
+        item.body = json!({
+            "claim": "Use raw policy internals and sk-live-secret in public memory",
+        });
+        let error = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id,
+                artifact_version_id: None,
+                workflow_template_id: None,
+                workflow_compilation_id: None,
+                job_id: None,
+                extraction_fixture_id: "fixture.story.claims.v1".to_string(),
+                items: vec![item],
+            },
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("private/internal or unsupported claim"));
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn rejects_invalid_batch_without_partial_memory_or_events() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-batch-private");
+
+        let valid_item =
+            claim_item("A safe candidate claim should not persist from a failed batch.");
+        let mut invalid_item =
+            claim_item("Provider internal payload should reject the whole batch.");
+        invalid_item.body = json!({
+            "claim": "This includes raw policy internals and task private payload data",
+        });
+
+        let error = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id,
+                artifact_version_id: None,
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_story_batch".to_string()),
+                job_id: Some("job_story_batch".to_string()),
+                extraction_fixture_id: "fixture.story.claims.batch.v1".to_string(),
+                items: vec![valid_item, invalid_item],
+            },
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("private/internal or unsupported claim"));
+        let candidate_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(candidate_count, 0);
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM realtime_events WHERE event_type LIKE 'generated_content_memory.%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 0);
+    }
+
+    #[test]
+    fn rejected_content_records_negative_memory_without_public_truth() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-rejected");
+
+        let (candidates, _) = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id,
+                artifact_version_id: None,
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: None,
+                job_id: Some("job_story_2".to_string()),
+                extraction_fixture_id: "fixture.story.rejections.v1".to_string(),
+                items: vec![GeneratedContentMemoryItemInput {
+                    memory_kind: GeneratedContentMemoryKind::NegativeMemory,
+                    candidate_state: None,
+                    summary_text: "Do not reuse the rejected heavy jargon direction.".to_string(),
+                    body: json!({"preference": "avoid heavy jargon"}),
+                    confidence: 0.8,
+                    evidence_refs: vec!["artifact_review:review_1".to_string()],
+                    limitations: vec![
+                        "Rejected content should guide style, not public claims.".to_string()
+                    ],
+                    visibility: "staff".to_string(),
+                    approval_evidence_refs: vec![],
+                    publication_evidence_refs: vec![],
+                    feedback_evidence_refs: vec![],
+                    outcome_evidence_refs: vec![],
+                    rejection_evidence_refs: vec!["artifact_review:review_1".to_string()],
+                }],
+            },
+        )
+        .unwrap();
+
+        let candidate = &candidates[0];
+        assert_eq!(candidate.memory_kind, "negative_memory");
+        assert_eq!(candidate.memory_tier, "negative_memory");
+        assert_eq!(candidate.candidate_state, "rejected");
+        assert_eq!(candidate.memory_effect, "candidate_weakened_or_negative");
+        assert!(candidate
+            .rejection_evidence_refs
+            .contains(&"artifact_review:review_1".to_string()));
+
+        let graph_node_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(graph_node_count, 0);
+    }
+
+    #[test]
+    fn reingestion_is_idempotent_and_new_artifact_version_is_distinct() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-idempotent");
+        let first_version = add_artifact_version(
+            &connection,
+            &artifact.id,
+            "sha256:generated-story-version-1",
+            artifact.storage_uri.as_deref(),
+            json!({"version": 1}),
+        )
+        .unwrap();
+        let input = || GeneratedContentMemoryIngestionInput {
+            artifact_id: artifact.id.clone(),
+            artifact_version_id: Some(first_version.id.clone()),
+            workflow_template_id: None,
+            workflow_compilation_id: None,
+            job_id: Some("job_story_3".to_string()),
+            extraction_fixture_id: "fixture.story.claims.v1".to_string(),
+            items: vec![claim_item(
+                "The story draft can propose memory without becoming truth.",
+            )],
+        };
+
+        let first = ingest_generated_content_memory_candidates(&connection, input()).unwrap();
+        let second = ingest_generated_content_memory_candidates(&connection, input()).unwrap();
+        assert_eq!(first.0[0].id, second.0[0].id);
+
+        let second_version = add_artifact_version(
+            &connection,
+            &artifact.id,
+            "sha256:generated-story-version-2",
+            artifact.storage_uri.as_deref(),
+            json!({"version": 2}),
+        )
+        .unwrap();
+        let third = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id.clone(),
+                artifact_version_id: Some(second_version.id),
+                workflow_template_id: None,
+                workflow_compilation_id: None,
+                job_id: Some("job_story_3".to_string()),
+                extraction_fixture_id: "fixture.story.claims.v1".to_string(),
+                items: vec![claim_item(
+                    "The story draft can propose memory without becoming truth.",
+                )],
+            },
+        )
+        .unwrap();
+        assert_ne!(first.0[0].id, third.0[0].id);
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn approval_publication_feedback_and_outcome_evidence_strengthen_candidate_only_memory() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-decision");
+        let (candidates, _) = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id,
+                artifact_version_id: None,
+                workflow_template_id: None,
+                workflow_compilation_id: None,
+                job_id: Some("job_story_4".to_string()),
+                extraction_fixture_id: "fixture.story.claims.v1".to_string(),
+                items: vec![claim_item(
+                    "Ordo public story claims require evidence before publication.",
+                )],
+            },
+        )
+        .unwrap();
+
+        let (approved, event) = record_generated_content_memory_decision(
+            &connection,
+            &candidates[0].id,
+            GeneratedContentMemoryDecisionInput {
+                decision: GeneratedContentMemoryState::Approved,
+                reason: "Owner approved this as candidate memory evidence.".to_string(),
+                evidence_refs: vec!["approval:owner_1".to_string()],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(approved.candidate_state, "approved");
+        assert_eq!(approved.memory_effect, "candidate_stronger_evidence");
+        assert!(approved
+            .approval_evidence_refs
+            .contains(&"approval:owner_1".to_string()));
+        assert_eq!(
+            event.event_type,
+            "generated_content_memory.decision_recorded"
+        );
+        let graph_node_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(graph_node_count, 0);
+    }
+
+    #[test]
+    fn publication_feedback_and_outcome_evidence_are_retained_without_truth_promotion() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-outcome");
+        let mut item =
+            claim_item("Published story content can become stronger candidate evidence.");
+        item.candidate_state = Some(GeneratedContentMemoryState::Published);
+        item.publication_evidence_refs = vec!["publication:homepage_v1".to_string()];
+        item.feedback_evidence_refs = vec!["feedback:member_1".to_string()];
+        item.outcome_evidence_refs = vec!["outcome:trial_started_1".to_string()];
+
+        let (candidates, _) = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id,
+                artifact_version_id: None,
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_story_2".to_string()),
+                job_id: Some("job_story_5".to_string()),
+                extraction_fixture_id: "fixture.story.published.v1".to_string(),
+                items: vec![item],
+            },
+        )
+        .unwrap();
+
+        let candidate = &candidates[0];
+        assert_eq!(candidate.candidate_state, "published");
+        assert_eq!(candidate.memory_effect, "candidate_stronger_evidence");
+        assert!(candidate
+            .publication_evidence_refs
+            .contains(&"publication:homepage_v1".to_string()));
+        assert!(candidate
+            .feedback_evidence_refs
+            .contains(&"feedback:member_1".to_string()));
+        assert!(candidate
+            .outcome_evidence_refs
+            .contains(&"outcome:trial_started_1".to_string()));
+
+        let graph_node_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(graph_node_count, 0);
+    }
+}

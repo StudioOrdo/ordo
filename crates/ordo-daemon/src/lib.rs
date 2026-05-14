@@ -25,6 +25,7 @@ pub mod eval_simulators;
 pub mod events;
 pub mod experience_preferences;
 pub mod feedback;
+pub mod generated_content_memory;
 pub mod growth_report;
 pub mod health;
 pub mod install;

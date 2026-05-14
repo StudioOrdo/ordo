@@ -346,7 +346,7 @@ fn project_artifact_patch_requests(
                 actor_kind: Some("actor"),
                 actor_id: Some(proposed_by_actor_id),
                 connection_id: None,
-                visibility: visibility_from_ceiling(&visibility_ceiling).to_string(),
+                visibility: artifact_review_visibility(&visibility_ceiling).to_string(),
                 due_at: None,
                 created_at,
                 updated_at,
@@ -643,6 +643,13 @@ fn visibility_from_ceiling(visibility: &str) -> &'static str {
     }
 }
 
+fn artifact_review_visibility(artifact_visibility: &str) -> &'static str {
+    match visibility_from_ceiling(artifact_visibility) {
+        "owner" => "owner",
+        _ => "staff",
+    }
+}
+
 fn parse_string_vec(value: &str) -> Vec<String> {
     serde_json::from_str(value).unwrap_or_default()
 }
@@ -731,7 +738,11 @@ mod tests {
         .unwrap()
         .requests;
 
-        assert_eq!(member_requests.len(), 1);
+        assert_eq!(
+            member_requests.len(),
+            1,
+            "member-visible request spine must not expose artifact review work even when the artifact itself is member-visible"
+        );
         assert_eq!(member_requests[0].source_kind, "feedback_request");
         assert_eq!(member_requests[0].visibility, "authenticated");
         assert_eq!(member_requests[0].safe_context, json!({}));
@@ -873,7 +884,7 @@ mod tests {
                     source_id, evidence_refs_json, provenance_json, content_hash, health_status,
                     created_by_job_id, created_at, updated_at
                  ) VALUES (
-                    'artifact_1', 'studio.copy', 'Landing Copy', 'ready', 'staff',
+                    'artifact_1', 'studio.copy', 'Landing Copy', 'ready', 'authenticated',
                     'Copy ready for review.', 'job', 'job_1', '[\"job:job_1\"]',
                     '{\"privateArtifactText\":\"private artifact text\"}', 'sha256:artifact',
                     'available', 'job_1', ?1, ?1
@@ -903,7 +914,7 @@ mod tests {
                     'sha256:proposed', '--- a\\n+++ b\\n@@\\n-a\\n+b\\n',
                     '{\"changed\":true}', '[\"artifact:artifact_1\"]',
                     '{\"rawPolicyInternals\":\"do not leak\"}', 'proposed',
-                    'actor_staff', ?1, ?1
+                    'actor_member_1', ?1, ?1
                  )",
                 [NOW],
             )

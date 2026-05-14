@@ -852,6 +852,155 @@ pub fn expire_task_lease_for_retry(
     Ok(outcome)
 }
 
+pub fn pause_job(
+    connection: &mut Connection,
+    job_id: &str,
+    actor_id: Option<&str>,
+    reason: &str,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    validate_operator_reason(reason)?;
+    let transaction = connection.transaction()?;
+    let status = require_job_status(&transaction, job_id)?;
+    if !matches!(status.as_str(), "queued" | "running") {
+        bail!("job cannot be paused from its current state");
+    }
+
+    let now = now.to_rfc3339();
+    transaction.execute(
+        "UPDATE jobs
+         SET status = 'paused',
+             current_task_key = NULL,
+             updated_at = ?1
+         WHERE id = ?2 AND status IN ('queued', 'running')",
+        params![now, job_id],
+    )?;
+    append_job_event_tx(
+        &transaction,
+        job_id,
+        None,
+        "job.paused",
+        json!({
+            "actorId": actor_id,
+            "reason": reason,
+        }),
+    )?;
+
+    transaction.commit()?;
+    Ok(())
+}
+
+pub fn resume_job(
+    connection: &mut Connection,
+    job_id: &str,
+    actor_id: Option<&str>,
+    reason: &str,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    validate_operator_reason(reason)?;
+    let transaction = connection.transaction()?;
+    let status = require_job_status(&transaction, job_id)?;
+    if status != "paused" {
+        bail!("job cannot be resumed from its current state");
+    }
+
+    let now = now.to_rfc3339();
+    mark_newly_ready_tasks(&transaction, job_id, &now)?;
+    let running_task_key = running_task_key(&transaction, job_id)?;
+    let next_status = if running_task_key.is_some() {
+        "running"
+    } else {
+        "queued"
+    };
+    transaction.execute(
+        "UPDATE jobs
+         SET status = ?1,
+             current_task_key = ?2,
+             updated_at = ?3
+         WHERE id = ?4 AND status = 'paused'",
+        params![next_status, running_task_key, now, job_id],
+    )?;
+    append_job_event_tx(
+        &transaction,
+        job_id,
+        None,
+        "job.resumed",
+        json!({
+            "actorId": actor_id,
+            "reason": reason,
+            "status": next_status,
+        }),
+    )?;
+    complete_job_if_done(&transaction, job_id, &now)?;
+
+    transaction.commit()?;
+    Ok(())
+}
+
+pub fn skip_task(
+    connection: &mut Connection,
+    job_id: &str,
+    task_key: &str,
+    actor_id: Option<&str>,
+    reason: &str,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    validate_operator_reason(reason)?;
+    let transaction = connection.transaction()?;
+    let job_status = require_job_status(&transaction, job_id)?;
+    if !matches!(job_status.as_str(), "queued" | "running" | "paused") {
+        bail!("task cannot be skipped while job is in its current state");
+    }
+    let task = require_task_state(&transaction, job_id, task_key)?;
+    if !matches!(task.status.as_str(), "pending" | "ready") {
+        bail!("task cannot be skipped from its current state");
+    }
+    if !dependencies_are_complete(&transaction, job_id, task_key)? {
+        bail!("task dependencies are not complete");
+    }
+
+    let now = now.to_rfc3339();
+    transaction.execute(
+        "UPDATE job_tasks
+         SET status = 'skipped',
+             completed_at = COALESCE(completed_at, ?1),
+             updated_at = ?1,
+             lease_owner_id = NULL,
+             lease_expires_at = NULL,
+             error_message = NULL
+         WHERE job_id = ?2 AND task_key = ?3 AND status IN ('pending', 'ready')",
+        params![now, job_id, task_key],
+    )?;
+
+    if task.required {
+        transaction.execute(
+            "UPDATE jobs
+             SET completed_required_task_count = completed_required_task_count + 1,
+                 updated_at = ?1
+             WHERE id = ?2",
+            params![now, job_id],
+        )?;
+    }
+
+    append_job_event_tx(
+        &transaction,
+        job_id,
+        Some(task_key),
+        "task.skipped",
+        json!({
+            "taskKey": task_key,
+            "actorId": actor_id,
+            "reason": reason,
+            "required": task.required,
+        }),
+    )?;
+    mark_newly_ready_tasks(&transaction, job_id, &now)?;
+    complete_job_if_done(&transaction, job_id, &now)?;
+
+    transaction.commit()?;
+    Ok(())
+}
+
 pub fn cancel_job(
     connection: &mut Connection,
     job_id: &str,
@@ -960,6 +1109,24 @@ fn job_status(connection: &Connection, job_id: &str) -> Result<Option<String>> {
         .map_err(Into::into)
 }
 
+fn require_job_status(connection: &Connection, job_id: &str) -> Result<String> {
+    job_status(connection, job_id)?.ok_or_else(|| anyhow::anyhow!("job not found"))
+}
+
+fn running_task_key(connection: &Connection, job_id: &str) -> Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT task_key FROM job_tasks
+             WHERE job_id = ?1 AND status = 'running'
+             ORDER BY claimed_at, task_key
+             LIMIT 1",
+            [job_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
 fn next_claimable_task_key(connection: &Connection, job_id: &str) -> Result<Option<String>> {
     connection
         .query_row(
@@ -989,6 +1156,53 @@ fn task_required(connection: &Connection, job_id: &str, task_key: &str) -> Resul
         |row| row.get(0),
     )?;
     Ok(required != 0)
+}
+
+fn require_task_state(connection: &Connection, job_id: &str, task_key: &str) -> Result<TaskState> {
+    let mut task = connection
+        .query_row(
+            "SELECT task_key, required, status FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+            params![job_id, task_key],
+            |row| {
+                Ok(TaskState {
+                    key: row.get(0)?,
+                    required: row.get::<_, i64>(1)? != 0,
+                    status: row.get(2)?,
+                    depends_on: Vec::new(),
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("task not found"))?;
+    task.depends_on = connection
+        .prepare(
+            "SELECT depends_on_task_key FROM job_task_dependencies
+             WHERE job_id = ?1 AND task_key = ?2
+             ORDER BY depends_on_task_key",
+        )?
+        .query_map(params![job_id, task_key], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(task)
+}
+
+fn dependencies_are_complete(
+    connection: &Connection,
+    job_id: &str,
+    task_key: &str,
+) -> Result<bool> {
+    let incomplete_count: i64 = connection.query_row(
+        "SELECT COUNT(*)
+         FROM job_task_dependencies dependency
+         JOIN job_tasks dependency_task
+           ON dependency_task.job_id = dependency.job_id
+          AND dependency_task.task_key = dependency.depends_on_task_key
+         WHERE dependency.job_id = ?1
+           AND dependency.task_key = ?2
+           AND dependency_task.status NOT IN ('succeeded', 'skipped')",
+        params![job_id, task_key],
+        |row| row.get(0),
+    )?;
+    Ok(incomplete_count == 0)
 }
 
 fn ensure_task_lease_owner(
@@ -1095,6 +1309,10 @@ fn task_max_attempts(connection: &Connection, job_id: &str, task_key: &str) -> R
         .and_then(Value::as_i64)
         .unwrap_or(1)
         .max(1))
+}
+
+fn validate_operator_reason(reason: &str) -> Result<()> {
+    validate_task_result_text(reason, false)
 }
 
 fn mark_newly_ready_tasks(transaction: &Transaction, job_id: &str, now: &str) -> Result<()> {
@@ -1356,6 +1574,16 @@ mod tests {
                 [artifact_id],
             )
             .unwrap();
+    }
+
+    fn job_event_types(connection: &Connection, job_id: &str) -> Vec<String> {
+        connection
+            .prepare("SELECT event_type FROM job_events WHERE job_id = ?1 ORDER BY sequence")
+            .unwrap()
+            .query_map([job_id], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
     }
 
     #[test]
@@ -2123,5 +2351,280 @@ mod tests {
             )
             .unwrap();
         assert_eq!(replay_count, 1);
+    }
+
+    #[test]
+    fn paused_job_blocks_claims_then_resume_re_evaluates_ready_tasks() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+
+        pause_job(
+            &mut connection,
+            &job_id,
+            Some("actor_local_owner"),
+            "operator review",
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap();
+
+        let claim_while_paused = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            60,
+            utc("2026-05-14T10:00:05Z"),
+        )
+        .unwrap();
+        assert!(claim_while_paused.is_none());
+
+        let paused_job: (String, Option<String>) = connection
+            .query_row(
+                "SELECT status, current_task_key FROM jobs WHERE id = ?1",
+                [&job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(paused_job, ("paused".to_string(), None));
+
+        resume_job(
+            &mut connection,
+            &job_id,
+            Some("actor_local_owner"),
+            "operator resumed",
+            utc("2026-05-14T10:00:10Z"),
+        )
+        .unwrap();
+
+        let resumed_claim = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            60,
+            utc("2026-05-14T10:00:15Z"),
+        )
+        .unwrap();
+        assert!(resumed_claim.is_some());
+
+        let event_types = job_event_types(&connection, &job_id);
+        assert!(event_types.contains(&"job.paused".to_string()));
+        assert!(event_types.contains(&"job.resumed".to_string()));
+        assert_eq!(
+            event_types
+                .iter()
+                .filter(|event_type| *event_type == "task.claimed")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn invalid_skip_rejects_without_partial_mutation() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        let before: (String, String, i64) = connection
+            .query_row(
+                "SELECT jobs.status, job_tasks.status,
+                        (SELECT COUNT(*) FROM job_events WHERE job_id = jobs.id)
+                 FROM jobs
+                 JOIN job_tasks ON job_tasks.job_id = jobs.id
+                 WHERE jobs.id = ?1 AND job_tasks.task_key = 'health.record'",
+                [&job_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        let error = skip_task(
+            &mut connection,
+            &job_id,
+            "health.record",
+            Some("actor_local_owner"),
+            "skip blocked by dependency",
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("dependencies are not complete"));
+        assert!(!error.contains("skip blocked by dependency"));
+
+        let after: (String, String, i64) = connection
+            .query_row(
+                "SELECT jobs.status, job_tasks.status,
+                        (SELECT COUNT(*) FROM job_events WHERE job_id = jobs.id)
+                 FROM jobs
+                 JOIN job_tasks ON job_tasks.job_id = jobs.id
+                 WHERE jobs.id = ?1 AND job_tasks.task_key = 'health.record'",
+                [&job_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn invalid_resume_of_completed_job_rejects_without_event() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+
+        skip_task(
+            &mut connection,
+            &job_id,
+            "health.probe",
+            Some("actor_local_owner"),
+            "operator skipped deterministic probe",
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap();
+        skip_task(
+            &mut connection,
+            &job_id,
+            "health.record",
+            Some("actor_local_owner"),
+            "operator skipped deterministic record",
+            utc("2026-05-14T10:00:05Z"),
+        )
+        .unwrap();
+
+        let before_events: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = ?1",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let error = resume_job(
+            &mut connection,
+            &job_id,
+            Some("actor_local_owner"),
+            "operator attempted invalid resume",
+            utc("2026-05-14T10:00:10Z"),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("job cannot be resumed"));
+        let state: (String, i64) = connection
+            .query_row(
+                "SELECT status, (SELECT COUNT(*) FROM job_events WHERE job_id = jobs.id)
+                 FROM jobs WHERE id = ?1",
+                [&job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(state, ("succeeded".to_string(), before_events));
+    }
+
+    #[test]
+    fn skip_ready_required_task_marks_dependents_ready_and_records_safe_event() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+
+        skip_task(
+            &mut connection,
+            &job_id,
+            "health.probe",
+            Some("actor_local_owner"),
+            "operator skipped deterministic probe",
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap();
+
+        let states: Vec<(String, String)> = connection
+            .prepare("SELECT task_key, status FROM job_tasks WHERE job_id = ?1 ORDER BY task_key")
+            .unwrap()
+            .query_map([&job_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            states,
+            vec![
+                ("health.probe".to_string(), "skipped".to_string()),
+                ("health.record".to_string(), "ready".to_string()),
+            ]
+        );
+
+        let payload_json: String = connection
+            .query_row(
+                "SELECT payload_json FROM job_events
+                 WHERE job_id = ?1 AND task_key = 'health.probe' AND event_type = 'task.skipped'",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let payload: Value = serde_json::from_str(&payload_json).unwrap();
+        assert_eq!(payload["taskKey"], "health.probe");
+        assert_eq!(payload["actorId"], "actor_local_owner");
+        assert_eq!(payload["reason"], "operator skipped deterministic probe");
+    }
+
+    #[test]
+    fn paused_leased_task_expiry_retries_without_claims_until_resume() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        connection
+            .execute(
+                "UPDATE job_tasks SET retry_policy_json = '{\"maxAttempts\":2}' WHERE job_id = ?1",
+                [&job_id],
+            )
+            .unwrap();
+        let claimed = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            30,
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+
+        pause_job(
+            &mut connection,
+            &job_id,
+            Some("actor_local_owner"),
+            "operator paused while leased",
+            utc("2026-05-14T10:00:10Z"),
+        )
+        .unwrap();
+
+        let outcome = expire_task_lease_for_retry(
+            &mut connection,
+            &job_id,
+            &claimed.task_key,
+            utc("2026-05-14T10:00:45Z"),
+            "lease expired while paused",
+        )
+        .unwrap();
+        assert_eq!(outcome, TaskRetryOutcome::Retrying);
+
+        let claim_while_paused = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_b",
+            60,
+            utc("2026-05-14T10:00:50Z"),
+        )
+        .unwrap();
+        assert!(claim_while_paused.is_none());
+
+        resume_job(
+            &mut connection,
+            &job_id,
+            Some("actor_local_owner"),
+            "operator resumed",
+            utc("2026-05-14T10:01:00Z"),
+        )
+        .unwrap();
+
+        let retried = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_b",
+            60,
+            utc("2026-05-14T10:01:05Z"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(retried.task_key, claimed.task_key);
+        assert_eq!(retried.attempt_count, 2);
     }
 }

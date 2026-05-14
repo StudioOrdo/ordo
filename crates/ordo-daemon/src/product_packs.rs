@@ -468,6 +468,10 @@ pub fn story_pack_manifest() -> ProductPackManifest {
             artifact_contract("narrative_deck", "story.narrative_deck"),
             artifact_contract("image_brief", "story.image_brief"),
             artifact_contract(
+                "image_provider_request_envelope",
+                "story.image_provider_request_envelope",
+            ),
+            artifact_contract(
                 "generated_image_candidate",
                 "story.generated_image_candidate",
             ),

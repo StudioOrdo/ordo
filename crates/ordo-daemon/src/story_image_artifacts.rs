@@ -12,9 +12,12 @@ use crate::public_surfaces::{HomepageNarrativeSlide, HomepageStoryDeckResponse};
 use crate::security::redaction;
 
 pub const STORY_IMAGE_BRIEF_ARTIFACT_KIND: &str = "story.image_brief";
+pub const STORY_IMAGE_PROVIDER_REQUEST_ENVELOPE_ARTIFACT_KIND: &str =
+    "story.image_provider_request_envelope";
 pub const STORY_GENERATED_IMAGE_CANDIDATE_ARTIFACT_KIND: &str = "story.generated_image_candidate";
 const CONTRACT_SCHEMA_VERSION: &str = "ordo.story_image_artifact_contract.v1";
 const DEFAULT_ASPECT_RATIO: &str = "16:9";
+const DEFAULT_IMAGE_SIZE: &str = "1024x576";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -85,14 +88,72 @@ pub struct GeneratedImageCandidateContract {
     pub limitations: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryImageProviderRequestEnvelope {
+    pub schema_version: String,
+    pub request_id: String,
+    pub method: String,
+    pub provider_name: String,
+    pub model_hint: String,
+    pub provider_mode: String,
+    pub requested_size: String,
+    pub requested_aspect_ratio: String,
+    pub requested_count: i64,
+    pub fixture_status: String,
+    pub prompt_payload_ref: String,
+    pub idempotency_key: String,
+    pub source_artifact_refs: Vec<String>,
+    pub visibility: String,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryImageProviderResponseEnvelope {
+    pub schema_version: String,
+    pub request_id: String,
+    pub status: String,
+    pub provider_status: String,
+    pub candidate_artifact_ids: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub live_provider_called: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryImageProviderRequestOutcome {
+    pub envelope_artifact: ArtifactView,
+    pub request: StoryImageProviderRequestEnvelope,
+    pub response: StoryImageProviderResponseEnvelope,
+    pub candidates: Vec<GeneratedImageCandidateArtifact>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoryImageProviderRequestInput {
+    pub brief_artifact_id: String,
+    pub idempotency_key: String,
+    pub provider_name: String,
+    pub model_hint: String,
+    pub provider_mode: String,
+    pub requested_size: String,
+    pub requested_aspect_ratio: String,
+    pub requested_count: i64,
+    pub fixture_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StoryImageBriefArtifact {
     pub artifact: ArtifactView,
     pub version: Option<ArtifactVersionView>,
     pub contract: StoryImageBriefContract,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GeneratedImageCandidateArtifact {
     pub artifact: ArtifactView,
     pub version: Option<ArtifactVersionView>,
@@ -287,6 +348,171 @@ pub fn record_generated_image_candidate_artifact(
     })
 }
 
+pub fn record_story_image_provider_request_envelope(
+    connection: &Connection,
+    input: StoryImageProviderRequestInput,
+) -> Result<StoryImageProviderRequestOutcome> {
+    let brief_artifact = require_story_image_brief_artifact(connection, &input.brief_artifact_id)?;
+    let brief_contract = story_image_brief_contract_from_artifact(&brief_artifact)?;
+    let request = story_image_provider_request_envelope(&brief_artifact, &brief_contract, input)?;
+    let request_json = serde_json::to_value(&request)?;
+    let request_hash = stable_json_hash(&request_json)?;
+
+    if let Some(existing) =
+        load_existing_provider_request_by_idempotency(connection, &request.idempotency_key)?
+    {
+        if existing.content_hash != request_hash {
+            bail!("image provider request idempotency key conflicts with a different input");
+        }
+        let (existing_request, mut existing_response) =
+            provider_envelopes_from_artifact(&existing)?;
+        let candidates = load_generated_candidates_for_request(connection, &existing.id)?;
+        existing_response.candidate_artifact_ids = candidates
+            .iter()
+            .map(|candidate| candidate.artifact.id.clone())
+            .collect();
+        return Ok(StoryImageProviderRequestOutcome {
+            envelope_artifact: existing,
+            request: existing_request,
+            response: existing_response,
+            candidates,
+        });
+    }
+
+    let (
+        initial_status,
+        provider_status,
+        candidate_state,
+        storage_prefix,
+        mut response_limitations,
+    ) = fixture_result_shape(&request)?;
+    let (envelope_artifact, _) = record_artifact(
+        connection,
+        ArtifactInput {
+            artifact_kind: STORY_IMAGE_PROVIDER_REQUEST_ENVELOPE_ARTIFACT_KIND.to_string(),
+            title: format!("Image provider request {}", request.request_id),
+            status: initial_status.to_string(),
+            visibility_ceiling: request.visibility.clone(),
+            summary: format!(
+                "Deterministic image provider request envelope for {} variants.",
+                request.requested_count
+            ),
+            source_kind: Some("story_image_provider_request".to_string()),
+            source_id: Some(request.idempotency_key.clone()),
+            evidence_refs: request.evidence_refs.clone(),
+            provenance: json!({
+                "schemaVersion": CONTRACT_SCHEMA_VERSION,
+                "generatedBy": "image.generateVariants.envelope",
+                "briefArtifactId": brief_artifact.id,
+                "requestEnvelope": request,
+                "liveProviderCalled": false,
+            }),
+            content_hash: request_hash.clone(),
+            storage_uri: Some(format!(
+                "ordo://artifacts/story-image-provider-requests/{}",
+                safe_identifier(&request.idempotency_key)
+            )),
+            health_status: Some(provider_status.to_string()),
+            created_by_job_id: None,
+        },
+    )?;
+
+    let mut candidates = Vec::new();
+    let envelope_ref = format!("story_image_provider_request:{}", envelope_artifact.id);
+    for index in 0..request.requested_count {
+        let variant = index + 1;
+        let storage_uri = storage_prefix
+            .as_ref()
+            .map(|prefix| format!("{prefix}/variant-{variant}.png"));
+        let mut candidate_limitations = vec![
+            "Generated image candidate was recorded from a deterministic fixture envelope; no live provider was called."
+                .to_string(),
+        ];
+        candidate_limitations.extend(response_limitations.clone());
+        let candidate = record_generated_image_candidate_artifact(
+            connection,
+            GeneratedImageCandidateInput {
+                brief_artifact_id: brief_artifact.id.clone(),
+                candidate_id: format!("{}:variant:{variant}", request.request_id),
+                state: candidate_state.clone(),
+                provider_status: provider_status.to_string(),
+                storage_uri,
+                visibility: "staff".to_string(),
+                approval_state: if candidate_state == GeneratedImageCandidateState::Generated {
+                    "pending_review".to_string()
+                } else {
+                    "draft".to_string()
+                },
+                evidence_refs: stable_strings(vec![
+                    brief_artifact.id.clone(),
+                    envelope_ref.clone(),
+                    "provider_fixture:image.generateVariants".to_string(),
+                ]),
+                limitations: candidate_limitations,
+            },
+        )?;
+        candidates.push(candidate);
+    }
+
+    let response_status = match candidate_state {
+        GeneratedImageCandidateState::Generated => "generated",
+        GeneratedImageCandidateState::Failed => "failed",
+        GeneratedImageCandidateState::Requested => "requested",
+        _ => initial_status,
+    };
+    let response = StoryImageProviderResponseEnvelope {
+        schema_version: CONTRACT_SCHEMA_VERSION.to_string(),
+        request_id: request.request_id.clone(),
+        status: response_status.to_string(),
+        provider_status: provider_status.to_string(),
+        candidate_artifact_ids: candidates
+            .iter()
+            .map(|candidate| candidate.artifact.id.clone())
+            .collect(),
+        evidence_refs: stable_strings(vec![
+            brief_artifact.id.clone(),
+            envelope_ref,
+            "provider_fixture:image.generateVariants".to_string(),
+        ]),
+        limitations: {
+            response_limitations.push(
+                "No live GPT image provider, network request, publication, or analytics event was run."
+                    .to_string(),
+            );
+            stable_strings(response_limitations)
+        },
+        live_provider_called: false,
+    };
+
+    connection.execute(
+        "UPDATE artifacts
+         SET provenance_json = json_set(provenance_json, '$.responseEnvelope', json(?2)),
+             updated_at = datetime('now')
+         WHERE id = ?1",
+        params![envelope_artifact.id, serde_json::to_string(&response)?],
+    )?;
+    add_artifact_version(
+        connection,
+        &envelope_artifact.id,
+        &request_hash,
+        envelope_artifact.storage_uri.as_deref(),
+        json!({
+            "schemaVersion": CONTRACT_SCHEMA_VERSION,
+            "requestEnvelope": request,
+            "responseEnvelope": response,
+            "candidateArtifactIds": response.candidate_artifact_ids,
+            "liveProviderCalled": false,
+        }),
+    )?;
+
+    Ok(StoryImageProviderRequestOutcome {
+        envelope_artifact,
+        request,
+        response,
+        candidates,
+    })
+}
+
 fn require_story_image_brief_artifact(
     connection: &Connection,
     artifact_id: &str,
@@ -299,6 +525,295 @@ fn require_story_image_brief_artifact(
         "generated image candidate source must be a story image brief artifact"
     );
     Ok(artifact)
+}
+
+fn story_image_brief_contract_from_artifact(
+    artifact: &ArtifactView,
+) -> Result<StoryImageBriefContract> {
+    let contract_value = artifact
+        .provenance
+        .get("contract")
+        .cloned()
+        .ok_or_else(|| {
+            anyhow::anyhow!("story image brief artifact is missing provider contract")
+        })?;
+    Ok(serde_json::from_value(contract_value)?)
+}
+
+fn story_image_provider_request_envelope(
+    brief_artifact: &ArtifactView,
+    brief: &StoryImageBriefContract,
+    input: StoryImageProviderRequestInput,
+) -> Result<StoryImageProviderRequestEnvelope> {
+    let idempotency_key = normalize_idempotency_key(&input.idempotency_key)?;
+    ensure!(
+        input.provider_mode == "deterministic_fixture",
+        "image provider request mode must be deterministic_fixture for default validation"
+    );
+    ensure!(
+        matches!(
+            input.fixture_status.as_str(),
+            "requested" | "generated" | "failed"
+        ),
+        "image provider fixture status is unsupported"
+    );
+    ensure!(
+        input.requested_count >= 1 && input.requested_count <= 4,
+        "image provider request count must be between 1 and 4"
+    );
+    ensure!(
+        !contains_forbidden_provider_marker(&input.provider_name)
+            && !contains_forbidden_provider_marker(&input.model_hint),
+        "image provider request contains private or unsupported markers"
+    );
+    let provider_name = safe_provider_text(&input.provider_name);
+    let model_hint = safe_provider_text(&input.model_hint);
+    ensure!(
+        !provider_name.trim().is_empty() && !model_hint.trim().is_empty(),
+        "image provider request requires provider and model hint"
+    );
+    ensure!(
+        !contains_forbidden_provider_marker(&provider_name)
+            && !contains_forbidden_provider_marker(&model_hint),
+        "image provider request contains private or unsupported markers"
+    );
+
+    let (requested_size, size_limitation) = normalize_image_size(&input.requested_size);
+    let (requested_aspect_ratio, aspect_limitation) =
+        normalize_provider_aspect_ratio(&input.requested_aspect_ratio);
+    let mut limitations = vec![
+        "Image provider request envelope is deterministic fixture mode; no live GPT image provider was called."
+            .to_string(),
+        "Prompt payload is referenced by artifact id and is not serialized into the request envelope."
+            .to_string(),
+        "Generated candidates require review before any public derivative or publication."
+            .to_string(),
+    ];
+    limitations.extend(brief.limitations.clone());
+    limitations.extend(size_limitation);
+    limitations.extend(aspect_limitation);
+    limitations = public_safe_values(limitations);
+    let request_id = format!(
+        "story_image_provider_request:{}",
+        safe_identifier(&idempotency_key)
+    );
+    let evidence_refs = stable_strings(
+        brief
+            .evidence_refs
+            .iter()
+            .cloned()
+            .chain([
+                brief_artifact.id.clone(),
+                "provider_fixture:image.generateVariants".to_string(),
+            ])
+            .collect(),
+    );
+
+    Ok(StoryImageProviderRequestEnvelope {
+        schema_version: CONTRACT_SCHEMA_VERSION.to_string(),
+        request_id,
+        method: "image.generateVariants".to_string(),
+        provider_name,
+        model_hint,
+        provider_mode: input.provider_mode,
+        requested_size,
+        requested_aspect_ratio,
+        requested_count: input.requested_count,
+        fixture_status: input.fixture_status,
+        prompt_payload_ref: format!("artifact:{}:providerPayload", brief_artifact.id),
+        idempotency_key,
+        source_artifact_refs: vec![brief_artifact.id.clone()],
+        visibility: "staff".to_string(),
+        evidence_refs,
+        limitations,
+    })
+}
+
+fn normalize_idempotency_key(idempotency_key: &str) -> Result<String> {
+    let key = idempotency_key.trim();
+    ensure!(
+        !key.is_empty(),
+        "image provider request idempotency key cannot be blank"
+    );
+    ensure!(
+        key.len() <= 200,
+        "image provider request idempotency key is too long"
+    );
+    Ok(safe_identifier(key))
+}
+
+fn normalize_image_size(size: &str) -> (String, Vec<String>) {
+    match size.trim() {
+        DEFAULT_IMAGE_SIZE | "" => (DEFAULT_IMAGE_SIZE.to_string(), Vec::new()),
+        other => (
+            DEFAULT_IMAGE_SIZE.to_string(),
+            vec![format!(
+                "Unsupported image size `{}` defaulted to {}; no live provider call was made.",
+                safe_provider_text(other),
+                DEFAULT_IMAGE_SIZE
+            )],
+        ),
+    }
+}
+
+fn normalize_provider_aspect_ratio(aspect_ratio: &str) -> (String, Vec<String>) {
+    match aspect_ratio.trim() {
+        DEFAULT_ASPECT_RATIO | "" => (DEFAULT_ASPECT_RATIO.to_string(), Vec::new()),
+        other => (
+            DEFAULT_ASPECT_RATIO.to_string(),
+            vec![format!(
+                "Unsupported image aspect ratio `{}` defaulted to {}; no live provider call was made.",
+                safe_provider_text(other),
+                DEFAULT_ASPECT_RATIO
+            )],
+        ),
+    }
+}
+
+fn fixture_result_shape(
+    request: &StoryImageProviderRequestEnvelope,
+) -> Result<(
+    &'static str,
+    &'static str,
+    GeneratedImageCandidateState,
+    Option<String>,
+    Vec<String>,
+)> {
+    let request_hash = stable_json_hash(&serde_json::to_value(request)?)?;
+    let suffix = request_hash.trim_start_matches("sha256:");
+    match request.fixture_status.as_str() {
+        "requested" => Ok((
+            "requested",
+            "provider_request_recorded",
+            GeneratedImageCandidateState::Requested,
+            None,
+            vec![
+                "Deterministic fixture recorded request state only; no generated storage URI is available."
+                    .to_string(),
+            ],
+        )),
+        "failed" => Ok((
+            "failed",
+            "deterministic_fixture_failed",
+            GeneratedImageCandidateState::Failed,
+            None,
+            vec!["Deterministic fixture recorded provider failure; no generated storage URI is available.".to_string()],
+        )),
+        "generated" => Ok((
+            "ready",
+            "deterministic_fixture_generated",
+            GeneratedImageCandidateState::Generated,
+            Some(format!(
+                "ordo://fixtures/story-images/{}/{}",
+                safe_identifier(&request.idempotency_key),
+                suffix.get(0..12).unwrap_or(suffix)
+            )),
+            vec![
+                "Generated state is backed by deterministic fixture storage evidence, not live provider success."
+                    .to_string(),
+            ],
+        )),
+        _ => bail!("image provider fixture status is unsupported"),
+    }
+}
+
+fn load_existing_provider_request_by_idempotency(
+    connection: &Connection,
+    idempotency_key: &str,
+) -> Result<Option<ArtifactView>> {
+    let artifact_id = connection
+        .query_row(
+            "SELECT id FROM artifacts
+             WHERE artifact_kind = ?1
+               AND source_kind = 'story_image_provider_request'
+               AND source_id = ?2
+             ORDER BY created_at ASC
+             LIMIT 1",
+            params![
+                STORY_IMAGE_PROVIDER_REQUEST_ENVELOPE_ARTIFACT_KIND,
+                idempotency_key
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    artifact_id
+        .map(|id| load_artifact(connection, &id))
+        .transpose()
+}
+
+fn provider_envelopes_from_artifact(
+    artifact: &ArtifactView,
+) -> Result<(
+    StoryImageProviderRequestEnvelope,
+    StoryImageProviderResponseEnvelope,
+)> {
+    let request = artifact
+        .provenance
+        .get("requestEnvelope")
+        .cloned()
+        .ok_or_else(|| {
+            anyhow::anyhow!("image provider request artifact is missing request envelope")
+        })?;
+    let response = artifact
+        .provenance
+        .get("responseEnvelope")
+        .cloned()
+        .unwrap_or_else(|| {
+            json!({
+                "schemaVersion": CONTRACT_SCHEMA_VERSION,
+                "requestId": artifact.id,
+                "status": artifact.status,
+                "providerStatus": artifact.health_status,
+                "candidateArtifactIds": [],
+                "evidenceRefs": artifact.evidence_refs,
+                "limitations": ["Existing request envelope predates response snapshot hydration."],
+                "liveProviderCalled": false
+            })
+        });
+    Ok((
+        serde_json::from_value(request)?,
+        serde_json::from_value(response)?,
+    ))
+}
+
+fn load_generated_candidates_for_request(
+    connection: &Connection,
+    envelope_artifact_id: &str,
+) -> Result<Vec<GeneratedImageCandidateArtifact>> {
+    let needle = format!("story_image_provider_request:{envelope_artifact_id}");
+    let mut statement = connection.prepare(
+        "SELECT id FROM artifacts
+         WHERE artifact_kind = ?1
+           AND evidence_refs_json LIKE ?2
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let ids = statement
+        .query_map(
+            params![
+                STORY_GENERATED_IMAGE_CANDIDATE_ARTIFACT_KIND,
+                format!("%{}%", needle)
+            ],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    ids.into_iter()
+        .map(|id| {
+            let artifact = load_artifact(connection, &id)?;
+            let contract_value = artifact
+                .provenance
+                .get("contract")
+                .cloned()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("generated candidate artifact is missing contract")
+                })?;
+            let contract = serde_json::from_value(contract_value)?;
+            Ok(GeneratedImageCandidateArtifact {
+                artifact,
+                version: None,
+                contract,
+            })
+        })
+        .collect()
 }
 
 fn story_image_brief_contract(
@@ -494,6 +1009,27 @@ fn load_existing_story_image_artifact(
     artifact_id
         .map(|id| load_artifact(connection, &id))
         .transpose()
+}
+
+fn public_safe_values(values: Vec<String>) -> Vec<String> {
+    stable_strings(
+        values
+            .into_iter()
+            .map(|value| safe_provider_text(&value))
+            .filter(|value| !value.trim().is_empty() && !contains_forbidden_provider_marker(value))
+            .collect(),
+    )
+}
+
+fn stable_strings(values: Vec<String>) -> Vec<String> {
+    let mut values = values
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
 }
 
 fn non_empty_evidence_refs(slide_refs: &[String], deck_refs: &[String]) -> Vec<String> {
@@ -829,6 +1365,217 @@ mod tests {
             brief.artifact.health_status.as_deref(),
             Some("contract_only")
         );
+    }
+
+    #[test]
+    fn provider_request_envelope_records_deterministic_generated_candidates_idempotently() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let deck = deck_with_slide("hero", "Studio Ordo", "A public proof scene.");
+        let brief = prepare_story_image_brief_artifacts(&connection, &deck)
+            .unwrap()
+            .remove(0);
+
+        let first = record_story_image_provider_request_envelope(
+            &connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id.clone(),
+                idempotency_key: "hero-image-v1".to_string(),
+                provider_name: "openai".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "deterministic_fixture".to_string(),
+                requested_size: "1024x576".to_string(),
+                requested_aspect_ratio: "16:9".to_string(),
+                requested_count: 2,
+                fixture_status: "generated".to_string(),
+            },
+        )
+        .unwrap();
+        let repeated = record_story_image_provider_request_envelope(
+            &connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id.clone(),
+                idempotency_key: "hero-image-v1".to_string(),
+                provider_name: "openai".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "deterministic_fixture".to_string(),
+                requested_size: "1024x576".to_string(),
+                requested_aspect_ratio: "16:9".to_string(),
+                requested_count: 2,
+                fixture_status: "generated".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(first.envelope_artifact.id, repeated.envelope_artifact.id);
+        assert_eq!(first.candidates.len(), 2);
+        assert_eq!(repeated.candidates.len(), 2);
+        assert_eq!(first.response.status, "generated");
+        assert!(!first.response.live_provider_called);
+        assert_eq!(first.request.method, "image.generateVariants");
+        assert_eq!(first.request.provider_mode, "deterministic_fixture");
+        assert_eq!(first.request.model_hint, "gpt-image-2");
+        assert_eq!(
+            first.request.prompt_payload_ref,
+            format!("artifact:{}:providerPayload", brief.artifact.id)
+        );
+        assert!(first
+            .candidates
+            .iter()
+            .all(|candidate| candidate.contract.state == GeneratedImageCandidateState::Generated));
+        assert!(first
+            .candidates
+            .iter()
+            .all(|candidate| candidate.contract.storage_uri.is_some()));
+
+        let serialized = serde_json::to_string(&first).unwrap();
+        assert!(!serialized.contains(&brief.contract.provider_payload.prompt));
+        assert!(!serialized.contains("live provider succeeded"));
+
+        let envelope_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [STORY_IMAGE_PROVIDER_REQUEST_ENVELOPE_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(envelope_count, 1);
+        let candidate_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [STORY_GENERATED_IMAGE_CANDIDATE_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(candidate_count, 2);
+    }
+
+    #[test]
+    fn provider_request_envelope_records_fixture_failure_without_fake_storage() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let deck = deck_with_slide("hero", "Studio Ordo", "A public proof scene.");
+        let brief = prepare_story_image_brief_artifacts(&connection, &deck)
+            .unwrap()
+            .remove(0);
+
+        let outcome = record_story_image_provider_request_envelope(
+            &connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id,
+                idempotency_key: "hero-image-failed".to_string(),
+                provider_name: "openai".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "deterministic_fixture".to_string(),
+                requested_size: "2048x2048".to_string(),
+                requested_aspect_ratio: "1:1".to_string(),
+                requested_count: 1,
+                fixture_status: "failed".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.response.status, "failed");
+        assert_eq!(outcome.request.requested_size, "1024x576");
+        assert_eq!(outcome.request.requested_aspect_ratio, "16:9");
+        assert!(outcome
+            .request
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("Unsupported image size")));
+        assert!(outcome
+            .request
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("Unsupported image aspect ratio")));
+        assert_eq!(
+            outcome.candidates[0].contract.state,
+            GeneratedImageCandidateState::Failed
+        );
+        assert!(outcome.candidates[0].contract.storage_uri.is_none());
+        assert!(!outcome.response.live_provider_called);
+    }
+
+    #[test]
+    fn provider_request_envelope_rejects_live_mode_conflicts_and_private_markers() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let deck = deck_with_slide("hero", "Studio Ordo", "A public proof scene.");
+        let brief = prepare_story_image_brief_artifacts(&connection, &deck)
+            .unwrap()
+            .remove(0);
+
+        let live = record_story_image_provider_request_envelope(
+            &connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id.clone(),
+                idempotency_key: "hero-image-live".to_string(),
+                provider_name: "openai".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "live".to_string(),
+                requested_size: "1024x576".to_string(),
+                requested_aspect_ratio: "16:9".to_string(),
+                requested_count: 1,
+                fixture_status: "requested".to_string(),
+            },
+        );
+        assert!(live
+            .unwrap_err()
+            .to_string()
+            .contains("deterministic_fixture"));
+
+        let unsafe_provider = record_story_image_provider_request_envelope(
+            &connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id.clone(),
+                idempotency_key: "hero-image-secret".to_string(),
+                provider_name: "providerSecret".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "deterministic_fixture".to_string(),
+                requested_size: "1024x576".to_string(),
+                requested_aspect_ratio: "16:9".to_string(),
+                requested_count: 1,
+                fixture_status: "requested".to_string(),
+            },
+        );
+        assert!(unsafe_provider
+            .unwrap_err()
+            .to_string()
+            .contains("private or unsupported markers"));
+
+        record_story_image_provider_request_envelope(
+            &connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id.clone(),
+                idempotency_key: "hero-image-conflict".to_string(),
+                provider_name: "openai".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "deterministic_fixture".to_string(),
+                requested_size: "1024x576".to_string(),
+                requested_aspect_ratio: "16:9".to_string(),
+                requested_count: 1,
+                fixture_status: "requested".to_string(),
+            },
+        )
+        .unwrap();
+        let conflict = record_story_image_provider_request_envelope(
+            &connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id,
+                idempotency_key: "hero-image-conflict".to_string(),
+                provider_name: "openai".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "deterministic_fixture".to_string(),
+                requested_size: "1024x576".to_string(),
+                requested_aspect_ratio: "16:9".to_string(),
+                requested_count: 2,
+                fixture_status: "requested".to_string(),
+            },
+        );
+        assert!(conflict
+            .unwrap_err()
+            .to_string()
+            .contains("idempotency key conflicts"));
     }
 
     fn deck_with_slide(slide_id: &str, title: &str, body: &str) -> HomepageStoryDeckResponse {

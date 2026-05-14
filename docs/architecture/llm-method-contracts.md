@@ -20,6 +20,20 @@ member method should expose internal routing, prompt internals, provider
 internals, raw policy internals, owner-only data, private artifact text, or
 unsupported claims.
 
+The same rule applies to tools. A generic provider capability can exist for
+image generation, image review, TTS, transcription, search, QR generation,
+rendering, or screenshot QA, but LLMs should reach it through product-shaped
+methods with policy, artifact, visibility, audit, and evidence contracts.
+
+```text
+Generic capability: image.generateVariants
+Product method: homepage.generateSectionHeroImage
+Workflow use: Story Pack homepage refresh task
+```
+
+Generic capability should mean reusable machinery. It must not mean generic
+authority.
+
 ## Method Shape
 
 Each method contract must define:
@@ -49,6 +63,8 @@ Method outputs must include:
   "summary": "...",
   "evidenceRefs": [],
   "limitations": [],
+  "visibilityClass": "public | authenticated | staff | owner",
+  "memoryEffect": "none | candidate | confirmed_requires_approval",
   "policyDecisionId": null
 }
 ```
@@ -70,6 +86,12 @@ Use product-shaped namespaces:
 - `job.*`
 - `homepage.*`
 - `pack.*`
+- `workflow.*`
+- `tool.*`
+- `image.*`
+- `content.*`
+- `memory.*`
+- `analytics.*`
 - `system.*`
 
 Method names should describe the business question:
@@ -184,6 +206,7 @@ and event evidence.
 - `artifact.prepare_patch_proposal`
 - `artifact.validate_visibility`
 - `artifact.list_public_safe_derivatives`
+- `artifact.preparePublicDerivative`
 
 Use for artifact provenance, patches, and derivative content.
 
@@ -203,6 +226,7 @@ business truth.
 - `homepage.validate_section_claims`
 - `homepage.propose_story_refresh`
 - `homepage.prepare_image_briefs`
+- `homepage.generateSectionHeroImage`
 - `homepage.prepare_video_storyboard`
 
 Use for scrollytelling and story artifacts. AI may add color; Ordo owns
@@ -217,6 +241,71 @@ structure and publish decisions.
 - `pack.explain_uninstall_impact`
 
 Use for internal and future external packs. Must respect core trust boundaries.
+
+### `workflow.*`
+
+- `workflow.inspectTemplate`
+- `workflow.resolveVariables`
+- `workflow.expandFanout`
+- `workflow.explainBlockedTask`
+- `workflow.prepareApprovalGate`
+
+Use for typed workflow template inspection and explanation. Must not expose
+private variables, compiled-plan private inputs, provider payloads, or task
+private outputs to public/member contexts.
+
+### `tool.*`
+
+- `tool.listApprovedCapabilities`
+- `tool.explainCapabilityRequirement`
+- `tool.prepareProviderTask`
+- `tool.validateDeterministicFixture`
+
+Use for approved capability discovery and provider-gateway preparation. Must
+not become `run_tool` or arbitrary provider access.
+
+### `image.*`
+
+- `image.generateVariants`
+- `image.reviewAgainstBrief`
+- `image.extractPalette`
+- `image.createAltText`
+- `image.preparePublicDerivative`
+
+Use for reusable image work. Public outputs must hide raw prompts, provider
+internals, private brief text, and private review notes unless a public-safe
+derivative is approved.
+
+### `content.*`
+
+- `content.extractClaims`
+- `content.compareVersionPerformance`
+- `content.preparePublicStoryDraft`
+- `content.listPublishedClaims`
+
+Use for content artifacts, claims, and public-safe drafts. Generated content is
+evidence; it does not automatically become truth.
+
+### `memory.*`
+
+- `memory.proposeCandidateClaims`
+- `memory.listCandidateClaimsForReview`
+- `memory.explainWhyClaimIsRemembered`
+- `memory.recordRejectedDirection`
+
+Use for candidate memory and preference/negative memory. Mutation methods must
+distinguish candidate, approved, published, and canonical memory effects.
+
+### `analytics.*`
+
+- `analytics.recordContentEvent`
+- `analytics.explainContentPerformance`
+- `analytics.linkOutcomeToContent`
+- `analytics.prepareLearningBrief`
+
+Use for event-first content analytics and outcome explanation. Must not fake
+traffic, conversion, attribution, trial scarcity, rewards, or performance
+claims.
 
 ## Prompt Slot Use
 
@@ -236,6 +325,11 @@ Every LLM method family should have deterministic tests for:
 - limitations included;
 - no live provider required;
 - stable output shape.
+
+Every method output should include evidence refs, limitations, visibility
+class, and explicit memory effect. If a method can propose memory updates, the
+output must say whether it proposed candidates only, required approval, or made
+no memory change.
 
 Live-provider smoke tests are optional, guarded, and never required for default
 validation.

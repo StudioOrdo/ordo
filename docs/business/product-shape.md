@@ -216,6 +216,62 @@ Ordo should help a solopreneur experiment faster:
 The goal is not just content generation. The goal is lower business overhead
 and faster learning.
 
+## Governed Creative Tools
+
+Creative tools should be reusable provider capabilities wrapped by
+product-shaped methods and workflow templates. Ordo can support image
+generation, image review, TTS, transcription, video storyboard drafts, web
+search, screenshot QA, QR generation, and content analytics, but those tools
+must run through jobs, artifacts, policy, visibility, audit, access, Growth,
+and approval gates.
+
+The product rule is:
+
+```text
+Generic capability.
+Product-shaped method.
+Governed workflow.
+Evidence-backed artifact.
+```
+
+The owner should be able to ask for flexible work, such as twelve zodiac images
+or an article plus a matching image about a shared topic, without becoming a
+workflow engineer. Internally, Ordo should resolve typed workflow variables,
+expand bounded fanout, run approved capabilities, preserve artifacts, and ask
+for approval before publishing or external egress.
+
+## Content Learning Loop
+
+Ordo should learn from content operations, but generated content should inform
+memory as evidence and candidate claims, not automatically become truth.
+
+The durable learning loop is:
+
+```text
+generated artifact
+-> extracted claims and preferences
+-> approval, rejection, publication, or feedback
+-> engagement and outcome events
+-> candidate, preference, negative, published, or confirmed memory
+-> better next workflow
+```
+
+Ordo should remember:
+
+- what was generated;
+- what was approved;
+- what was rejected;
+- what was published;
+- what users saw;
+- what they clicked, requested, tried, referred, or reviewed;
+- what feedback or outcomes followed.
+
+Content analytics belongs to Studio and Growth, not to a generic analytics
+dashboard. Studio records what was produced and reviewed. Growth records
+attribution, engagement, reward, referral, trial, feedback, and outcome
+evidence. Knowledge and graph memory receive only evidence-backed candidate or
+confirmed facts according to visibility and approval policy.
+
 ## Knowledge, Access, And Packs
 
 Future Ordo should support curated knowledge and workforce packs with

@@ -10,6 +10,7 @@ These docs turn the product thesis into system shape.
 - [Graph Kernel](graph-kernel.md)
 - [LLM Method Contracts](llm-method-contracts.md)
 - [Pack Kernel](pack-kernel.md)
+- [Workflow Template Kernel](workflow-template-kernel.md)
 - [Hosted Ordo Control Plane](hosted-ordo-control-plane.md)
 - [Hosted Ordo Lifecycle](hosted-ordo-lifecycle.md)
 - [Notifications And Transactional Email](notifications-and-transactional-email.md)

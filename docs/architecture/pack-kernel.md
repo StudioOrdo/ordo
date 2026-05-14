@@ -48,8 +48,11 @@ A pack manifest should declare:
   "status": "internal",
   "capabilities": [],
   "permissions": [],
+  "workflowTemplates": [],
+  "variableSchemas": [],
   "jobTemplates": [],
   "artifactKinds": [],
+  "analyticsEvents": [],
   "graphNodeKinds": [],
   "graphEdgeKinds": [],
   "projectionSurfaces": [],
@@ -66,6 +69,30 @@ A pack manifest should declare:
 
 Manifest fields must be explicit. A pack cannot gain hidden authority from
 prompt text or UI placement.
+
+## Workflow Templates
+
+Packs may own reusable workflow templates. Core owns validation, compilation,
+policy, capability dispatch, artifact boundaries, event emission, graph
+promotion rules, and projections.
+
+Workflow declarations should include:
+
+- template id and version;
+- typed input schema;
+- variable schema and allowed variable sources;
+- task bindings to registered capabilities or product-shaped methods;
+- fanout groups over bounded typed lists;
+- artifact output contracts;
+- graph candidate contributions;
+- analytics events;
+- approval gates;
+- deterministic provider mocks and fixtures.
+
+See [Workflow Template Kernel](workflow-template-kernel.md) for the full
+contract. A pack workflow can compose many approved tools, but it cannot call
+arbitrary providers, execute arbitrary code, or smuggle authority through prompt
+text.
 
 ## Permissions
 
@@ -280,6 +307,26 @@ Story Pack:
 - may propose public story, copy, images, narration, and video artifacts;
 - may not publish automatically;
 - may not invent claims, proof, scarcity, or provider behavior.
+- should declare workflow templates for founder intake, narrative deck, image
+  briefs, generated image variants, reviewer feedback, scrollytelling draft,
+  QA review, manual or scheduled publish, analytics feedback, and memory
+  candidate updates.
+
+Story Pack default workflow:
+
+```text
+founder/business intake
+-> narrative deck
+-> image briefs
+-> generated image variants
+-> reviewer feedback
+-> public derivative preparation
+-> scrollytelling draft
+-> claim and privacy QA
+-> manual/scheduled publish approval
+-> content analytics events
+-> candidate memory updates
+```
 
 Growth Pack:
 

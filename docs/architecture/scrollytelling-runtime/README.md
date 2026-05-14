@@ -28,6 +28,12 @@ The homepage should not be a static marketing page. It should be the public
 narrative brief of the business: evidence-backed, motion-rich, readable, and
 able to route a visitor into Ordo with durable attribution.
 
+For Studio Ordo itself, the public story may say that Ordo is a practical
+answer to enshittification: a local-first operating appliance that lets owners
+keep trust, evidence, and relationships instead of surrendering business motion
+to opaque platforms. That positioning must be backed by approved public claims
+or clearly marked as product stance.
+
 The referral or QR landing page has a different job. It should be personal,
 fast, and reliable:
 
@@ -130,6 +136,9 @@ simple public deck rather than a reusable scrollytelling runtime.
 
 - No cookie-heavy ad tracking.
 - No fake analytics dashboards.
+- No automatic publication from generated content.
+- No automatic memory promotion from generated drafts.
+- No loose provider/tool calls outside jobs, artifacts, policy, and audit.
 - No hidden collection of raw personal data.
 - No public use of draft, owner-only, staff-only, or revoked facts.
 - No QR destination to private surfaces.
@@ -532,6 +541,93 @@ Each slide should have:
 - stable id;
 - publication state.
 
+## Story Pack Production Flow
+
+The Story Pack should turn founder/business intake into a governed
+scrollytelling draft through typed workflow templates, not loose chat prompts.
+
+Target flow:
+
+```text
+founder/business intake
+-> public story positioning
+-> narrative deck
+-> image briefs
+-> generated image variants
+-> image review/critique
+-> public derivative preparation
+-> scrollytelling draft
+-> claim/privacy QA
+-> manual or scheduled publish
+-> content analytics
+-> memory feedback loop
+```
+
+The LLM role is:
+
+- draft language;
+- add cinematic color;
+- summarize intake;
+- interpret feedback;
+- create image brief candidates;
+- review images against a brief;
+- explain performance evidence.
+
+The deterministic Ordo role is:
+
+- deck structure;
+- workflow variables and fanout;
+- policy and access;
+- provider gateway decisions;
+- artifact creation and visibility;
+- claim validation;
+- approval gates;
+- publication authority;
+- analytics event truth;
+- graph and memory promotion rules;
+- audit/replay.
+
+Generated story copy, image prompts, reviewer notes, and public derivatives
+must be stored as artifacts with provenance. Draft claims become candidate
+memory until approved, published, or backed by customer feedback/outcome
+evidence.
+
+## Content Analytics And Memory Loop
+
+Content analytics should be event-first and outcome-linked. The first
+scrollytelling analytics spine should record:
+
+- content artifact/version published;
+- claim set version;
+- image/audio/video asset version;
+- tracked entry point and QR context;
+- section impressions or scroll milestones when captured safely;
+- CTA clicks by section;
+- visitor sessions created;
+- offer acceptances, trial starts, handoffs, feedback, referrals, and rewards;
+- publication/manual-publish evidence;
+- customer feedback and owner approvals/rejections.
+
+Analytics do not own truth. Events own audit, Growth records attribution and
+outcome evidence, and projections summarize performance. LLM explanations can
+describe what the evidence suggests, but they must include limitations and must
+not invent traffic, conversion, scarcity, reward, or causality.
+
+Memory updates should follow:
+
+```text
+generated artifact
+-> extracted candidate claims/preferences
+-> owner approval or publication evidence
+-> engagement/outcome feedback
+-> confirmed, weakened, rejected, or preference memory
+```
+
+Public and member surfaces must never expose staff routing, provider internals,
+prompt internals, raw policy internals, owner-only data, private artifact text,
+compiled-plan private inputs, task private payloads, graph certainty, or
+unsupported claims.
+
 The QR slide should not try to explain the whole product. Its job is to route
 the visitor to the focused landing page. The landing page then offers the two
 choices: talk now or view the story first.
@@ -597,6 +693,11 @@ flowchart TD
     destination boundaries.
 19. Add owner brief summarizing QR scans, landing-page choices, sessions, conversations, offers,
     trials, and attribution candidates.
+20. Add Story Pack workflow template for founder intake to scrollytelling draft.
+21. Add image brief and generated image artifact contracts.
+22. Add content analytics events for scrollytelling sections, CTAs, versions,
+    offers, trials, feedback, referrals, and outcomes.
+23. Add memory candidate extraction from generated/published content.
 
 ## Open Questions
 

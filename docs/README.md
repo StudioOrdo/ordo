@@ -30,10 +30,11 @@ material.
 23. [Graph Kernel](architecture/graph-kernel.md)
 24. [LLM Method Contracts](architecture/llm-method-contracts.md)
 25. [Pack Kernel](architecture/pack-kernel.md)
-26. [Architecture](architecture/README.md)
-27. [Process](process/README.md)
-28. [Decisions](decisions/README.md)
-29. [Backlog](backlog/README.md)
+26. [Workflow Template Kernel](architecture/workflow-template-kernel.md)
+27. [Architecture](architecture/README.md)
+28. [Process](process/README.md)
+29. [Decisions](decisions/README.md)
+30. [Backlog](backlog/README.md)
 
 ## Public Docs
 
@@ -58,6 +59,7 @@ material.
 | [graph kernel](architecture/graph-kernel.md) | SQLite-backed graph architecture for relationship traversal, explanation, evidence, and LLM-safe graph methods. |
 | [LLM method contracts](architecture/llm-method-contracts.md) | Product-shaped method naming and output rules for useful but unreliable LLMs. |
 | [pack kernel](architecture/pack-kernel.md) | Core-trust and pack-workflow architecture for internal packs and future developer ecosystem. |
+| [workflow template kernel](architecture/workflow-template-kernel.md) | Typed workflow variables, fanout, governed tool composition, task bindings, and approval gates for reusable pack workflows. |
 | [appliance operating discipline](architecture/appliance-operating-discipline.md) | Enterprise-grade execution patterns adapted into a local AI appliance. |
 | [target architecture plan](architecture/target-architecture-plan.md) | Clean/CQRS-lite implementation shape for the product canon. |
 | [hosted Ordo control plane](architecture/hosted-ordo-control-plane.md) | Shared-image, multi-container, Traefik-routed hosted trial architecture. |
@@ -99,6 +101,7 @@ For the current appliance, read:
 21. [Graph Kernel](architecture/graph-kernel.md)
 22. [LLM Method Contracts](architecture/llm-method-contracts.md)
 23. [Pack Kernel](architecture/pack-kernel.md)
+24. [Workflow Template Kernel](architecture/workflow-template-kernel.md)
 
 For LLM agents, read:
 
@@ -133,13 +136,14 @@ For future direction, read:
 16. [Graph Kernel](architecture/graph-kernel.md)
 17. [LLM Method Contracts](architecture/llm-method-contracts.md)
 18. [Pack Kernel](architecture/pack-kernel.md)
-19. [Rewards And Incentives](architecture/rewards-and-incentives.md)
-20. [OrdoStudio NYC Pilot](business/ordostudio-nyc-pilot.md)
-21. [Ordo Core](business/ordo-core.md)
-22. [Product Roadmap](business/product-roadmap.md)
-23. [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md)
-24. [Agent-To-Agent Roadmap](architecture/agent-to-agent-roadmap.md)
-25. [Backlog](backlog/README.md)
+19. [Workflow Template Kernel](architecture/workflow-template-kernel.md)
+20. [Rewards And Incentives](architecture/rewards-and-incentives.md)
+21. [OrdoStudio NYC Pilot](business/ordostudio-nyc-pilot.md)
+22. [Ordo Core](business/ordo-core.md)
+23. [Product Roadmap](business/product-roadmap.md)
+24. [Scaling With Worker Ordos](architecture/scaling-worker-ordos.md)
+25. [Agent-To-Agent Roadmap](architecture/agent-to-agent-roadmap.md)
+26. [Backlog](backlog/README.md)
 
 ## Local Docs Convention
 
@@ -180,8 +184,10 @@ When sources disagree, trust them in this order:
 8. [Rewards And Incentives](architecture/rewards-and-incentives.md) for Growth
    rewards, referral, feedback, and benefit-grant architecture.
 9. [Graph Kernel](architecture/graph-kernel.md), [LLM Method Contracts](architecture/llm-method-contracts.md),
-   and [Pack Kernel](architecture/pack-kernel.md) for graph-native memory,
-   product-shaped LLM access, and developer pack boundaries.
+   [Pack Kernel](architecture/pack-kernel.md), and
+   [Workflow Template Kernel](architecture/workflow-template-kernel.md) for
+   graph-native memory, product-shaped LLM access, developer pack boundaries,
+   and typed workflow composition.
 10. [Agent Execution Protocol](process/agent-execution-protocol.md) and
     [Definition Of Done](process/definition-of-done.md) for development
     workflow and completion claims.

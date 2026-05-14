@@ -201,6 +201,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_cron_schedule_expression",
         apply: add_cron_schedule_expression,
     },
+    SchemaMigration {
+        version: 39,
+        name: "add_job_task_lease_state",
+        apply: add_job_task_lease_state,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -2966,6 +2971,25 @@ fn add_product_pack_manifest_spine(connection: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_product_pack_bindings_template
             ON product_pack_bindings(template_id, template_version, status);
         "#,
+    )?;
+
+    Ok(())
+}
+
+fn add_job_task_lease_state(connection: &Connection) -> Result<()> {
+    ensure_column(connection, "job_tasks", "lease_owner_id", "TEXT")?;
+    ensure_column(connection, "job_tasks", "lease_expires_at", "TEXT")?;
+    ensure_column(connection, "job_tasks", "claimed_at", "TEXT")?;
+    ensure_column(
+        connection,
+        "job_tasks",
+        "retry_policy_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_tasks_ready_lease
+            ON job_tasks(job_id, status, lease_expires_at)",
+        [],
     )?;
 
     Ok(())

@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
-use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, Transaction};
+use chrono::{DateTime, Duration, Utc};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,6 +33,22 @@ pub struct JobProgress {
     pub percent: u8,
     pub current_task_key: Option<String>,
     pub elapsed_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimedTask {
+    pub job_id: String,
+    pub task_key: String,
+    pub worker_id: String,
+    pub attempt_count: i64,
+    pub claimed_at: DateTime<Utc>,
+    pub lease_expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskRetryOutcome {
+    Retrying,
+    Exhausted,
 }
 
 pub fn validate_task_dag(tasks: &[TaskDefinition]) -> Result<()> {
@@ -279,6 +295,267 @@ fn insert_task(
     Ok(())
 }
 
+pub fn claim_ready_task(
+    connection: &mut Connection,
+    job_id: &str,
+    worker_id: &str,
+    lease_seconds: i64,
+    now: DateTime<Utc>,
+) -> Result<Option<ClaimedTask>> {
+    if worker_id.trim().is_empty() {
+        bail!("worker_id is required");
+    }
+    if lease_seconds <= 0 {
+        bail!("lease_seconds must be positive");
+    }
+
+    let transaction = connection.transaction()?;
+    let job_status = job_status(&transaction, job_id)?;
+    if !matches!(job_status.as_deref(), Some("queued") | Some("running")) {
+        transaction.commit()?;
+        return Ok(None);
+    }
+
+    let task_key = next_claimable_task_key(&transaction, job_id)?;
+    let Some(task_key) = task_key else {
+        transaction.commit()?;
+        return Ok(None);
+    };
+
+    let claimed_at = now.to_rfc3339();
+    let lease_expires_at = (now + Duration::seconds(lease_seconds)).to_rfc3339();
+    let updated = transaction.execute(
+        "UPDATE job_tasks
+         SET status = 'running',
+             attempt_count = attempt_count + 1,
+             claimed_at = ?1,
+             started_at = COALESCE(started_at, ?1),
+             lease_owner_id = ?2,
+             lease_expires_at = ?3,
+             updated_at = ?1,
+             error_message = NULL
+         WHERE job_id = ?4
+           AND task_key = ?5
+           AND status = 'ready'
+           AND lease_owner_id IS NULL",
+        params![claimed_at, worker_id, lease_expires_at, job_id, task_key],
+    )?;
+
+    if updated == 0 {
+        transaction.commit()?;
+        return Ok(None);
+    }
+
+    transaction.execute(
+        "UPDATE jobs
+         SET status = 'running',
+             started_at = COALESCE(started_at, ?1),
+             current_task_key = ?2,
+             updated_at = ?1
+         WHERE id = ?3 AND status IN ('queued', 'running')",
+        params![claimed_at, task_key, job_id],
+    )?;
+
+    let attempt_count = task_attempt_count(&transaction, job_id, &task_key)?;
+    append_job_event_tx(
+        &transaction,
+        job_id,
+        Some(&task_key),
+        "task.claimed",
+        json!({
+            "taskKey": task_key,
+            "workerId": worker_id,
+            "attemptCount": attempt_count,
+            "leaseExpiresAt": lease_expires_at,
+        }),
+    )?;
+
+    transaction.commit()?;
+    Ok(Some(ClaimedTask {
+        job_id: job_id.to_string(),
+        task_key,
+        worker_id: worker_id.to_string(),
+        attempt_count,
+        claimed_at: now,
+        lease_expires_at: now + Duration::seconds(lease_seconds),
+    }))
+}
+
+pub fn complete_leased_task(
+    connection: &mut Connection,
+    job_id: &str,
+    task_key: &str,
+    worker_id: &str,
+    output: Value,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let transaction = connection.transaction()?;
+    ensure_task_lease_owner(&transaction, job_id, task_key, worker_id)?;
+    let now = now.to_rfc3339();
+    let was_required = task_required(&transaction, job_id, task_key)?;
+
+    transaction.execute(
+        "UPDATE job_tasks
+         SET status = 'succeeded',
+             output_json = ?1,
+             completed_at = ?2,
+             updated_at = ?2,
+             lease_owner_id = NULL,
+             lease_expires_at = NULL,
+             error_message = NULL
+         WHERE job_id = ?3 AND task_key = ?4",
+        params![output.to_string(), now, job_id, task_key],
+    )?;
+
+    if was_required {
+        transaction.execute(
+            "UPDATE jobs
+             SET completed_required_task_count = completed_required_task_count + 1,
+                 updated_at = ?1
+             WHERE id = ?2",
+            params![now, job_id],
+        )?;
+    }
+
+    append_job_event_tx(
+        &transaction,
+        job_id,
+        Some(task_key),
+        "task.succeeded",
+        json!({ "taskKey": task_key }),
+    )?;
+    mark_newly_ready_tasks(&transaction, job_id, &now)?;
+    complete_job_if_done(&transaction, job_id, &now)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+pub fn fail_leased_task_attempt(
+    connection: &mut Connection,
+    job_id: &str,
+    task_key: &str,
+    worker_id: &str,
+    error_message: &str,
+    now: DateTime<Utc>,
+) -> Result<TaskRetryOutcome> {
+    let transaction = connection.transaction()?;
+    ensure_task_lease_owner(&transaction, job_id, task_key, worker_id)?;
+    let outcome = fail_task_attempt_tx(
+        &transaction,
+        job_id,
+        task_key,
+        error_message,
+        now,
+        "task.failed",
+    )?;
+    transaction.commit()?;
+    Ok(outcome)
+}
+
+pub fn expire_task_lease_for_retry(
+    connection: &mut Connection,
+    job_id: &str,
+    task_key: &str,
+    now: DateTime<Utc>,
+    reason: &str,
+) -> Result<TaskRetryOutcome> {
+    let transaction = connection.transaction()?;
+    let lease_expires_at: Option<String> = transaction
+        .query_row(
+            "SELECT lease_expires_at FROM job_tasks WHERE job_id = ?1 AND task_key = ?2 AND status = 'running'",
+            params![job_id, task_key],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(lease_expires_at) = lease_expires_at else {
+        bail!("task is not leased");
+    };
+    let lease_expires_at = DateTime::parse_from_rfc3339(&lease_expires_at)?.with_timezone(&Utc);
+    if lease_expires_at > now {
+        bail!("task lease has not expired");
+    }
+
+    let outcome = fail_task_attempt_tx(
+        &transaction,
+        job_id,
+        task_key,
+        reason,
+        now,
+        "task.lease_expired",
+    )?;
+    transaction.commit()?;
+    Ok(outcome)
+}
+
+pub fn cancel_job(
+    connection: &mut Connection,
+    job_id: &str,
+    actor_id: Option<&str>,
+    reason: &str,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let transaction = connection.transaction()?;
+    let now = now.to_rfc3339();
+    let updated = transaction.execute(
+        "UPDATE jobs
+         SET status = 'canceled',
+             completed_at = COALESCE(completed_at, ?1),
+             failure_message = ?2,
+             current_task_key = NULL,
+             updated_at = ?1
+         WHERE id = ?3 AND status NOT IN ('succeeded', 'failed', 'canceled')",
+        params![now, reason, job_id],
+    )?;
+    if updated == 0 {
+        transaction.commit()?;
+        return Ok(());
+    }
+
+    let mut statement = transaction.prepare(
+        "SELECT task_key FROM job_tasks
+         WHERE job_id = ?1 AND status IN ('pending', 'ready', 'running')",
+    )?;
+    let cancelable_tasks = statement
+        .query_map([job_id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    transaction.execute(
+        "UPDATE job_tasks
+         SET status = 'canceled',
+             completed_at = COALESCE(completed_at, ?1),
+             updated_at = ?1,
+             lease_owner_id = NULL,
+             lease_expires_at = NULL,
+             error_message = ?2
+         WHERE job_id = ?3 AND status IN ('pending', 'ready', 'running')",
+        params![now, reason, job_id],
+    )?;
+
+    append_job_event_tx(
+        &transaction,
+        job_id,
+        None,
+        "job.canceled",
+        json!({
+            "actorId": actor_id,
+            "reason": reason,
+        }),
+    )?;
+    for task_key in cancelable_tasks {
+        append_job_event_tx(
+            &transaction,
+            job_id,
+            Some(&task_key),
+            "task.canceled",
+            json!({ "taskKey": task_key, "reason": reason }),
+        )?;
+    }
+
+    transaction.commit()?;
+    Ok(())
+}
+
 pub fn append_job_event(
     connection: &Connection,
     job_id: &str,
@@ -307,6 +584,231 @@ pub fn append_job_event(
         job_event_log_entry(job_id, task_key, event_type, payload),
     )?;
     Ok(sequence)
+}
+
+fn job_status(connection: &Connection, job_id: &str) -> Result<Option<String>> {
+    connection
+        .query_row("SELECT status FROM jobs WHERE id = ?1", [job_id], |row| {
+            row.get(0)
+        })
+        .optional()
+        .map_err(Into::into)
+}
+
+fn next_claimable_task_key(connection: &Connection, job_id: &str) -> Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT task_key FROM job_tasks
+             WHERE job_id = ?1 AND status = 'ready' AND lease_owner_id IS NULL
+             ORDER BY created_at, task_key
+             LIMIT 1",
+            [job_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn task_attempt_count(connection: &Connection, job_id: &str, task_key: &str) -> Result<i64> {
+    Ok(connection.query_row(
+        "SELECT attempt_count FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+        params![job_id, task_key],
+        |row| row.get(0),
+    )?)
+}
+
+fn task_required(connection: &Connection, job_id: &str, task_key: &str) -> Result<bool> {
+    let required: i64 = connection.query_row(
+        "SELECT required FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+        params![job_id, task_key],
+        |row| row.get(0),
+    )?;
+    Ok(required != 0)
+}
+
+fn ensure_task_lease_owner(
+    connection: &Connection,
+    job_id: &str,
+    task_key: &str,
+    worker_id: &str,
+) -> Result<()> {
+    let owner: Option<String> = connection
+        .query_row(
+            "SELECT lease_owner_id FROM job_tasks WHERE job_id = ?1 AND task_key = ?2 AND status = 'running'",
+            params![job_id, task_key],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if owner.as_deref() != Some(worker_id) {
+        bail!("task is not leased by worker");
+    }
+    Ok(())
+}
+
+fn fail_task_attempt_tx(
+    transaction: &Transaction,
+    job_id: &str,
+    task_key: &str,
+    error_message: &str,
+    now: DateTime<Utc>,
+    event_type: &str,
+) -> Result<TaskRetryOutcome> {
+    let attempt_count = task_attempt_count(transaction, job_id, task_key)?;
+    let max_attempts = task_max_attempts(transaction, job_id, task_key)?;
+    let now = now.to_rfc3339();
+    let retrying = attempt_count < max_attempts;
+    let next_status = if retrying { "ready" } else { "failed" };
+
+    transaction.execute(
+        "UPDATE job_tasks
+         SET status = ?1,
+             updated_at = ?2,
+             lease_owner_id = NULL,
+             lease_expires_at = NULL,
+             error_message = ?3
+         WHERE job_id = ?4 AND task_key = ?5",
+        params![next_status, now, error_message, job_id, task_key],
+    )?;
+
+    append_job_event_tx(
+        transaction,
+        job_id,
+        Some(task_key),
+        event_type,
+        json!({
+            "taskKey": task_key,
+            "attemptCount": attempt_count,
+            "maxAttempts": max_attempts,
+            "retrying": retrying,
+            "reason": error_message,
+        }),
+    )?;
+
+    if retrying {
+        append_job_event_tx(
+            transaction,
+            job_id,
+            Some(task_key),
+            "task.ready",
+            json!({ "taskKey": task_key, "reason": "retry" }),
+        )?;
+        Ok(TaskRetryOutcome::Retrying)
+    } else {
+        if task_required(transaction, job_id, task_key)? {
+            transaction.execute(
+                "UPDATE jobs
+                 SET status = 'failed',
+                     failure_message = ?1,
+                     completed_at = COALESCE(completed_at, ?2),
+                     current_task_key = NULL,
+                     updated_at = ?2
+                 WHERE id = ?3",
+                params![error_message, now, job_id],
+            )?;
+            append_job_event_tx(
+                transaction,
+                job_id,
+                None,
+                "job.failed",
+                json!({ "taskKey": task_key, "reason": error_message }),
+            )?;
+        }
+        Ok(TaskRetryOutcome::Exhausted)
+    }
+}
+
+fn task_max_attempts(connection: &Connection, job_id: &str, task_key: &str) -> Result<i64> {
+    let retry_policy_json: String = connection.query_row(
+        "SELECT retry_policy_json FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+        params![job_id, task_key],
+        |row| row.get(0),
+    )?;
+    let retry_policy: Value =
+        serde_json::from_str(&retry_policy_json).unwrap_or_else(|_| json!({}));
+    Ok(retry_policy
+        .get("maxAttempts")
+        .and_then(Value::as_i64)
+        .unwrap_or(1)
+        .max(1))
+}
+
+fn mark_newly_ready_tasks(transaction: &Transaction, job_id: &str, now: &str) -> Result<()> {
+    let tasks = load_task_states(transaction, job_id)?;
+    for task_key in ready_task_keys(&tasks) {
+        let updated = transaction.execute(
+            "UPDATE job_tasks
+             SET status = 'ready', updated_at = ?1
+             WHERE job_id = ?2 AND task_key = ?3 AND status = 'pending'",
+            params![now, job_id, task_key],
+        )?;
+        if updated == 1 {
+            append_job_event_tx(
+                transaction,
+                job_id,
+                Some(&task_key),
+                "task.ready",
+                json!({ "taskKey": task_key }),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn complete_job_if_done(transaction: &Transaction, job_id: &str, now: &str) -> Result<()> {
+    let incomplete_required: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM job_tasks
+         WHERE job_id = ?1 AND required = 1 AND status NOT IN ('succeeded', 'skipped')",
+        [job_id],
+        |row| row.get(0),
+    )?;
+    if incomplete_required == 0 {
+        transaction.execute(
+            "UPDATE jobs
+             SET status = 'succeeded',
+                 completed_at = COALESCE(completed_at, ?1),
+                 current_task_key = NULL,
+                 updated_at = ?1
+             WHERE id = ?2",
+            params![now, job_id],
+        )?;
+        append_job_event_tx(
+            transaction,
+            job_id,
+            None,
+            "job.succeeded",
+            json!({ "jobId": job_id }),
+        )?;
+    }
+    Ok(())
+}
+
+fn load_task_states(connection: &Connection, job_id: &str) -> Result<Vec<TaskState>> {
+    let mut statement = connection.prepare(
+        "SELECT task_key, required, status FROM job_tasks WHERE job_id = ?1 ORDER BY created_at, task_key",
+    )?;
+    let mut tasks = statement
+        .query_map([job_id], |row| {
+            Ok(TaskState {
+                key: row.get(0)?,
+                required: row.get::<_, i64>(1)? != 0,
+                status: row.get(2)?,
+                depends_on: Vec::new(),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    for task in &mut tasks {
+        let mut dependency_statement = connection.prepare(
+            "SELECT depends_on_task_key FROM job_task_dependencies
+             WHERE job_id = ?1 AND task_key = ?2
+             ORDER BY depends_on_task_key",
+        )?;
+        task.depends_on = dependency_statement
+            .query_map(params![job_id, task.key], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+    }
+    Ok(tasks)
 }
 
 fn append_job_event_tx(
@@ -376,6 +878,25 @@ mod tests {
     use crate::schema::init_schema;
     use crate::templates::{seed_builtin_templates, TaskDefinition};
     use rusqlite::Connection;
+
+    fn test_connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        seed_builtin_capabilities(&connection).unwrap();
+        seed_builtin_templates(&connection).unwrap();
+        connection
+    }
+
+    fn test_job(connection: &mut Connection) -> String {
+        let template = crate::templates::require_builtin_template("system.health.check").unwrap();
+        create_job_from_template(connection, &template, "test", None, json!({})).unwrap()
+    }
+
+    fn utc(timestamp: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(timestamp)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
 
     fn test_task(key: &str, depends_on: &[&str]) -> TaskDefinition {
         TaskDefinition {
@@ -470,14 +991,8 @@ mod tests {
 
     #[test]
     fn creates_job_from_template_and_records_events() {
-        let mut connection = Connection::open_in_memory().unwrap();
-        init_schema(&connection).unwrap();
-        seed_builtin_capabilities(&connection).unwrap();
-        seed_builtin_templates(&connection).unwrap();
-        let template = crate::templates::require_builtin_template("system.health.check").unwrap();
-
-        let job_id =
-            create_job_from_template(&mut connection, &template, "test", None, json!({})).unwrap();
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
 
         let task_count: i64 = connection
             .query_row(
@@ -506,5 +1021,219 @@ mod tests {
             .unwrap();
 
         assert_eq!(replay_count, 2);
+    }
+
+    #[test]
+    fn claims_one_ready_task_with_durable_lease_and_rejects_double_claim() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        let now = utc("2026-05-14T10:00:00Z");
+
+        let claimed = claim_ready_task(&mut connection, &job_id, "worker_a", 60, now)
+            .unwrap()
+            .expect("ready task should be claimed");
+
+        assert_eq!(claimed.worker_id, "worker_a");
+        assert_eq!(claimed.attempt_count, 1);
+        assert_eq!(claimed.lease_expires_at, utc("2026-05-14T10:01:00Z"));
+
+        let double_claim = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_b",
+            60,
+            utc("2026-05-14T10:00:05Z"),
+        )
+        .unwrap();
+        assert!(double_claim.is_none());
+
+        let persisted: (String, String, String, i64) = connection
+            .query_row(
+                "SELECT status, lease_owner_id, lease_expires_at, attempt_count
+                 FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+                params![job_id, claimed.task_key],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(persisted.0, "running");
+        assert_eq!(persisted.1, "worker_a");
+        assert_eq!(persisted.2, "2026-05-14T10:01:00+00:00");
+        assert_eq!(persisted.3, 1);
+
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = ?1 AND event_type = 'task.claimed'",
+                [job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 1);
+    }
+
+    #[test]
+    fn completing_a_leased_task_releases_lease_and_marks_dependents_ready() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        let claimed = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            60,
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+
+        complete_leased_task(
+            &mut connection,
+            &job_id,
+            &claimed.task_key,
+            "worker_a",
+            json!({ "ok": true }),
+            utc("2026-05-14T10:00:30Z"),
+        )
+        .unwrap();
+
+        let completed: (String, Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT status, lease_owner_id, lease_expires_at
+                 FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+                params![job_id, claimed.task_key],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(completed, ("succeeded".to_string(), None, None));
+
+        let ready_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM job_tasks WHERE job_id = ?1 AND status = 'ready'",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ready_count, 1);
+    }
+
+    #[test]
+    fn failed_and_expired_attempts_retry_until_bounded_attempts_are_exhausted() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        connection
+            .execute(
+                "UPDATE job_tasks SET retry_policy_json = '{\"maxAttempts\":2}' WHERE job_id = ?1",
+                [&job_id],
+            )
+            .unwrap();
+
+        let first = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            30,
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+        let outcome = fail_leased_task_attempt(
+            &mut connection,
+            &job_id,
+            &first.task_key,
+            "worker_a",
+            "deterministic failure",
+            utc("2026-05-14T10:00:10Z"),
+        )
+        .unwrap();
+        assert_eq!(outcome, TaskRetryOutcome::Retrying);
+
+        let second = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_b",
+            30,
+            utc("2026-05-14T10:00:15Z"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(second.task_key, first.task_key);
+        assert_eq!(second.attempt_count, 2);
+
+        let outcome = expire_task_lease_for_retry(
+            &mut connection,
+            &job_id,
+            &second.task_key,
+            utc("2026-05-14T10:01:00Z"),
+            "lease expired",
+        )
+        .unwrap();
+        assert_eq!(outcome, TaskRetryOutcome::Exhausted);
+
+        let final_state: (String, i64) = connection
+            .query_row(
+                "SELECT status, attempt_count FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+                params![job_id, first.task_key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(final_state, ("failed".to_string(), 2));
+
+        let job_status: String = connection
+            .query_row("SELECT status FROM jobs WHERE id = ?1", [job_id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(job_status, "failed");
+    }
+
+    #[test]
+    fn canceling_job_clears_leases_records_events_and_prevents_future_claims() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        let claimed = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            60,
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+
+        cancel_job(
+            &mut connection,
+            &job_id,
+            Some("actor_local_owner"),
+            "operator canceled",
+            utc("2026-05-14T10:00:20Z"),
+        )
+        .unwrap();
+
+        let next_claim = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_b",
+            60,
+            utc("2026-05-14T10:00:25Z"),
+        )
+        .unwrap();
+        assert!(next_claim.is_none());
+
+        let task_state: (String, Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT status, lease_owner_id, lease_expires_at
+                 FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+                params![job_id, claimed.task_key],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(task_state, ("canceled".to_string(), None, None));
+
+        let replay_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM realtime_events WHERE job_id = ?1 AND event_type = 'job.canceled'",
+                [job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(replay_count, 1);
     }
 }

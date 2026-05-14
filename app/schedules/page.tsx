@@ -6,6 +6,7 @@ import {
   type SchedulerOperationsSchedule,
   type SchedulerOperationsRun,
 } from "@/lib/daemon-client";
+import { formatScheduleTimestamp } from "@/lib/scheduler-operations";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +100,7 @@ function ScheduleRow({ schedule }: { schedule: SchedulerOperationsSchedule }) {
         ) : null}
       </td>
       <td>
-        {formatDate(schedule.nextDueAt)}
+        {formatScheduleTimestamp(schedule.nextDueAt)}
         <span className="table-subtle">{schedule.timezone}</span>
       </td>
       <td>
@@ -124,7 +125,7 @@ function scheduleShape(schedule: SchedulerOperationsSchedule): string {
     return schedule.intervalSeconds === null ? "interval unavailable" : `${schedule.intervalSeconds}s`;
   }
   if (schedule.scheduleKind === "one_shot") {
-    return schedule.runAt ? `runs ${formatDate(schedule.runAt)}` : "one-shot time unavailable";
+    return schedule.runAt ? `runs ${formatScheduleTimestamp(schedule.runAt)}` : "one-shot time unavailable";
   }
   return "unknown schedule shape";
 }
@@ -140,8 +141,4 @@ function runStatusTone(run: SchedulerOperationsRun): string {
     return "running";
   }
   return run.status;
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString();
 }

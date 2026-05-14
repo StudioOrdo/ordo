@@ -140,6 +140,11 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
     public(HttpMethod::Get, "/public/offers", "/public/offers"),
     public(HttpMethod::Get, "/public/asks", "/public/asks"),
     public(HttpMethod::Get, "/public/feed", "/public/feed"),
+    public(
+        HttpMethod::Get,
+        "/public/homepage-story",
+        "/public/homepage-story",
+    ),
     protected(
         HttpMethod::Get,
         "/entry-points",

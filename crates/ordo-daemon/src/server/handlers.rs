@@ -114,8 +114,9 @@ use crate::product_packs::{
     ProductPackInstallRequest, ProductPackListResponse, ProductPackResponse,
 };
 use crate::public_surfaces::{
-    public_about, public_asks, public_feed, public_offers, public_surfaces, AboutReadModel,
-    AsksReadModel, FeedReadModel, OffersReadModel, PublicSurfacesResponse,
+    homepage_story_deck, public_about, public_asks, public_feed, public_offers, public_surfaces,
+    AboutReadModel, AsksReadModel, FeedReadModel, HomepageStoryDeckResponse, OffersReadModel,
+    PublicSurfacesResponse,
 };
 use crate::reports::{
     approve_support_packet, draft_support_packet, export_issue_report, list_issue_reports,
@@ -427,6 +428,14 @@ pub(crate) async fn public_feed_handler(
     State(state): State<AppState>,
 ) -> Result<Json<FeedReadModel>, (StatusCode, Json<ErrorResponse>)> {
     public_feed(&state.db_path)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn public_homepage_story_handler(
+    State(state): State<AppState>,
+) -> Result<Json<HomepageStoryDeckResponse>, (StatusCode, Json<ErrorResponse>)> {
+    homepage_story_deck(&state.db_path)
         .map(Json)
         .map_err(internal_error)
 }

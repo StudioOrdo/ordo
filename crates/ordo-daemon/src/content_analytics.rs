@@ -428,14 +428,16 @@ fn validate_event_input(input: &ContentAnalyticsEventInput) -> Result<()> {
             && !input.idempotency_key.trim().is_empty(),
         "content analytics requires a source idempotency tuple"
     );
+    let safe_evidence_refs = safe_vec(input.evidence_refs.clone());
+    let safe_limitation_labels = safe_vec(input.limitation_labels.clone());
     ensure!(
-        !input.evidence_refs.is_empty(),
-        "content analytics requires evidence refs"
+        !safe_evidence_refs.is_empty(),
+        "content analytics requires safe evidence refs"
     );
     if input.source_status != ContentAnalyticsSourceStatus::Measured {
         ensure!(
-            !input.limitation_labels.is_empty(),
-            "manual or missing content analytics evidence requires limitation labels"
+            !safe_limitation_labels.is_empty(),
+            "manual or missing content analytics evidence requires safe limitation labels"
         );
     }
     if matches!(
@@ -459,6 +461,25 @@ fn validate_event_input(input: &ContentAnalyticsEventInput) -> Result<()> {
     ensure_safe_text(&input.source_kind)?;
     ensure_safe_text(&input.source_id)?;
     ensure_safe_text(&input.idempotency_key)?;
+    for value in [
+        &input.content_version_id,
+        &input.artifact_id,
+        &input.artifact_version_id,
+        &input.section_id,
+        &input.cta_id,
+        &input.workflow_template_id,
+        &input.workflow_compilation_id,
+        &input.job_id,
+        &input.tracked_entry_point_id,
+        &input.visitor_session_id,
+        &input.referral_id,
+        &input.outcome_id,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        ensure_safe_text(value)?;
+    }
     for value in input
         .evidence_refs
         .iter()
@@ -822,6 +843,40 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unsafe_optional_public_refs_and_empty_sanitized_evidence() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let mut unsafe_optional = input(ContentAnalyticsEventKind::Clicked, "unsafe-optional");
+        unsafe_optional.cta_id = Some("staff routing owner-only CTA".to_string());
+        let error = record_content_analytics_event(&connection, unsafe_optional).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("private/internal or unsupported claim"));
+
+        let mut blank_evidence = input(ContentAnalyticsEventKind::Viewed, "blank-evidence");
+        blank_evidence.evidence_refs = vec!["   ".to_string()];
+        let error = record_content_analytics_event(&connection, blank_evidence).unwrap_err();
+        assert!(error.to_string().contains("requires safe evidence refs"));
+
+        let mut blank_limitation = input(ContentAnalyticsEventKind::Viewed, "blank-limitation");
+        blank_limitation.source_status = ContentAnalyticsSourceStatus::Missing;
+        blank_limitation.evidence_refs = vec!["limitation:external_analytics_missing".to_string()];
+        blank_limitation.limitation_labels = vec!["   ".to_string()];
+        let error = record_content_analytics_event(&connection, blank_limitation).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("requires safe limitation labels"));
+
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM content_analytics_events", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
     fn idempotent_retries_are_stable_and_conflicts_reject_without_inflating_metrics() {
         let connection = Connection::open_in_memory().unwrap();
         init_schema(&connection).unwrap();
@@ -875,7 +930,9 @@ mod tests {
         missing.source_status = ContentAnalyticsSourceStatus::Missing;
         missing.limitation_labels = vec![];
         let error = record_content_analytics_event(&connection, missing).unwrap_err();
-        assert!(error.to_string().contains("requires limitation labels"));
+        assert!(error
+            .to_string()
+            .contains("requires safe limitation labels"));
 
         let mut outcome_missing =
             input(ContentAnalyticsEventKind::OutcomeLinked, "missing-outcome");

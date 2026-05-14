@@ -7,9 +7,16 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
+use crate::artifacts::{load_artifact, ArtifactView};
 use crate::json_contracts::validate_json_value;
+use crate::public_surfaces::{homepage_story_deck_connection, HomepageStoryDeckResponse};
+use crate::security::redaction;
+use crate::story_intake_artifacts::{
+    StoryFounderIntakePublicDerivative, STORY_FOUNDER_INTAKE_ARTIFACT_KIND,
+};
 
 const MAX_FANOUT_ITEMS: i64 = 50;
+pub const STORY_HOMEPAGE_REFRESH_TEMPLATE_ID: &str = "studio.story.scrollytelling_homepage";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,7 +112,8 @@ pub struct WorkflowDeterministicMock {
     pub fixture_ref: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkflowCompilation {
     pub id: String,
     pub template_id: String,
@@ -115,12 +123,73 @@ pub struct WorkflowCompilation {
     pub safe_compiled_plan: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoryHomepageRefreshCompileRequest {
+    pub founder_intake_artifact_id: String,
+    pub publish_mode: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryHomepageRefreshCompileOutcome {
+    pub status: String,
+    pub compilation: Option<WorkflowCompilation>,
+    pub blocker: Option<StoryHomepageRefreshBlocker>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryHomepageRefreshBlocker {
+    pub request_summary: String,
+    pub missing: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub live_provider_required: bool,
+}
+
 pub fn built_in_workflow_templates() -> Vec<WorkflowTemplateDefinition> {
     vec![
         zodiac_image_set_template(),
         article_with_image_template(),
         story_scrollytelling_homepage_template(),
     ]
+}
+
+pub fn compile_story_homepage_refresh_workflow(
+    connection: &mut Connection,
+    request: StoryHomepageRefreshCompileRequest,
+) -> Result<StoryHomepageRefreshCompileOutcome> {
+    let intake_artifact = load_artifact(connection, &request.founder_intake_artifact_id)?;
+    let public_derivative = story_intake_public_derivative(&intake_artifact)?;
+    let story_deck = homepage_story_deck_connection(connection)?;
+    let blocker = story_homepage_refresh_blocker(&public_derivative, &story_deck);
+    if let Some(blocker) = blocker {
+        return Ok(StoryHomepageRefreshCompileOutcome {
+            status: "blocked".to_string(),
+            compilation: None,
+            blocker: Some(blocker),
+        });
+    }
+
+    let input = story_homepage_refresh_template_input(
+        &intake_artifact,
+        &public_derivative,
+        &story_deck,
+        &request.publish_mode,
+    )?;
+    let compilation = compile_workflow_template(
+        connection,
+        STORY_HOMEPAGE_REFRESH_TEMPLATE_ID,
+        1,
+        input,
+        &request.idempotency_key,
+    )?;
+    Ok(StoryHomepageRefreshCompileOutcome {
+        status: "compiled".to_string(),
+        compilation: Some(compilation),
+        blocker: None,
+    })
 }
 
 pub fn seed_builtin_workflow_templates(connection: &Connection) -> Result<()> {
@@ -238,6 +307,231 @@ pub fn compile_workflow_template(
         input_hash,
         safe_compiled_plan,
     })
+}
+
+fn story_intake_public_derivative(
+    artifact: &ArtifactView,
+) -> Result<StoryFounderIntakePublicDerivative> {
+    if artifact.artifact_kind != STORY_FOUNDER_INTAKE_ARTIFACT_KIND {
+        bail!(
+            "Story homepage refresh requires a {} artifact",
+            STORY_FOUNDER_INTAKE_ARTIFACT_KIND
+        );
+    }
+    if artifact.visibility_ceiling != "owner" && artifact.visibility_ceiling != "staff" {
+        bail!("Story founder intake artifact has unsupported visibility ceiling");
+    }
+    let derivative_value = artifact
+        .provenance
+        .get("publicDerivative")
+        .cloned()
+        .ok_or_else(|| {
+            anyhow::anyhow!("Story founder intake artifact is missing a public-safe derivative")
+        })?;
+    let derivative: StoryFounderIntakePublicDerivative = serde_json::from_value(derivative_value)?;
+    if derivative.visibility != "public_derivative" {
+        bail!("Story founder intake derivative has unsupported visibility");
+    }
+    Ok(derivative)
+}
+
+fn story_homepage_refresh_blocker(
+    intake: &StoryFounderIntakePublicDerivative,
+    story_deck: &HomepageStoryDeckResponse,
+) -> Option<StoryHomepageRefreshBlocker> {
+    let mut missing = Vec::new();
+    if intake.summary.trim().is_empty()
+        || intake.summary.contains("[REDACTED_POLICY_BOUNDARY]")
+        || redaction::contains_sensitive_text(&intake.summary, &[])
+    {
+        missing.push("public-safe founder/business intake summary".to_string());
+    }
+    if intake
+        .claims
+        .iter()
+        .any(|claim| claim.review_state == "needs_review")
+    {
+        missing.push("evidence-backed public Story Pack claims".to_string());
+    }
+    if !story_deck.readiness.ready {
+        missing.extend(story_deck.readiness.missing.clone());
+    }
+    if story_deck.deck.slides.is_empty() {
+        missing.push("homepage story sections for workflow fanout".to_string());
+    }
+    missing = stable_strings(missing);
+    if missing.is_empty() {
+        return None;
+    }
+
+    Some(StoryHomepageRefreshBlocker {
+        request_summary: "Story homepage refresh needs reviewed intake and published public story sections before compiling a workflow run plan."
+            .to_string(),
+        missing,
+        evidence_refs: public_safe_refs(
+            intake
+                .evidence_refs
+                .iter()
+                .cloned()
+                .chain(story_deck.deck.evidence_refs.clone())
+                .collect(),
+        ),
+        limitations: stable_strings(vec![
+            "No workflow compilation was stored while required inputs were missing."
+                .to_string(),
+            "No provider, task executor, publisher, analytics, or memory promotion path was run."
+                .to_string(),
+        ]),
+        live_provider_required: false,
+    })
+}
+
+fn story_homepage_refresh_template_input(
+    artifact: &ArtifactView,
+    intake: &StoryFounderIntakePublicDerivative,
+    story_deck: &HomepageStoryDeckResponse,
+    publish_mode: &str,
+) -> Result<Value> {
+    let publish_mode = match publish_mode {
+        "manual" | "scheduled" => publish_mode,
+        _ => bail!("Story homepage refresh publish mode must be manual or scheduled"),
+    };
+    let sections = story_deck
+        .deck
+        .slides
+        .iter()
+        .map(|slide| {
+            stable_strings(vec![
+                slide.section_id.clone(),
+                slide.title.clone(),
+                slide.motion_profile.clone(),
+            ])
+            .join(":")
+        })
+        .collect::<Vec<_>>();
+    let story_evidence_refs = public_safe_refs(
+        intake
+            .evidence_refs
+            .iter()
+            .cloned()
+            .chain(story_deck.deck.evidence_refs.clone())
+            .chain(
+                story_deck
+                    .deck
+                    .slides
+                    .iter()
+                    .flat_map(|slide| slide.evidence_refs.clone()),
+            )
+            .chain(story_deck.profile.evidence_refs.clone())
+            .collect(),
+    );
+    let story_limitations = public_safe_strings(
+        intake
+            .limitations
+            .iter()
+            .cloned()
+            .chain(story_deck.deck.limitations.clone())
+            .chain(story_deck.refresh.limitations.clone())
+            .collect(),
+    );
+    Ok(json!({
+        "founderProfile": intake.summary,
+        "businessPositioning": story_deck.profile.positioning,
+        "sections": sections,
+        "publishMode": publish_mode,
+        "storyEvidenceRefs": story_evidence_refs,
+        "storyLimitations": story_limitations,
+        "sourceArtifactRefs": [format!("artifact:{}", artifact.id)],
+        "readinessMissing": story_deck.readiness.missing,
+    }))
+}
+
+fn public_safe_refs(values: Vec<String>) -> Vec<String> {
+    stable_strings(
+        values
+            .into_iter()
+            .filter_map(|value| {
+                let safe = value.trim();
+                if safe.is_empty()
+                    || redaction::contains_sensitive_text(safe, &[])
+                    || contains_private_marker(safe)
+                {
+                    None
+                } else {
+                    Some(safe_identifier(safe))
+                }
+            })
+            .collect(),
+    )
+}
+
+fn stable_strings(values: Vec<String>) -> Vec<String> {
+    let mut values = values
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn safe_identifier(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | ':' | '.' | '/')
+            {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+}
+
+fn public_safe_strings(values: Vec<String>) -> Vec<String> {
+    stable_strings(
+        values
+            .into_iter()
+            .filter_map(|value| {
+                let trimmed = value.trim();
+                if trimmed.is_empty()
+                    || redaction::contains_sensitive_text(trimmed, &[])
+                    || contains_private_marker(trimmed)
+                {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect(),
+    )
+}
+
+fn contains_private_marker(value: &str) -> bool {
+    let normalized = value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    [
+        "staffrouting",
+        "providerinternal",
+        "providersecret",
+        "promptinternal",
+        "rawpolicy",
+        "policyinternal",
+        "owneronly",
+        "privateartifacttext",
+        "compiledplanprivateinput",
+        "taskprivatepayload",
+        "graphcertainty",
+        "unsupportedclaim",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
 }
 
 pub fn load_workflow_template(
@@ -976,7 +1270,16 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
         idempotency_strategy: "required_idempotency_key".to_string(),
         input_schema: json!({
             "type": "object",
-            "required": ["founderProfile", "businessPositioning", "sections", "publishMode"],
+            "required": [
+                "founderProfile",
+                "businessPositioning",
+                "sections",
+                "publishMode",
+                "storyEvidenceRefs",
+                "storyLimitations",
+                "sourceArtifactRefs",
+                "readinessMissing"
+            ],
             "additionalProperties": false,
             "properties": {
                 "founderProfile": { "type": "string", "minLength": 1 },
@@ -986,7 +1289,27 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
                     "maxItems": 12,
                     "items": { "type": "string", "minLength": 1 }
                 },
-                "publishMode": { "enum": ["manual", "scheduled"] }
+                "publishMode": { "enum": ["manual", "scheduled"] },
+                "storyEvidenceRefs": {
+                    "type": "array",
+                    "maxItems": 40,
+                    "items": { "type": "string", "minLength": 1 }
+                },
+                "storyLimitations": {
+                    "type": "array",
+                    "maxItems": 40,
+                    "items": { "type": "string", "minLength": 1 }
+                },
+                "sourceArtifactRefs": {
+                    "type": "array",
+                    "maxItems": 12,
+                    "items": { "type": "string", "minLength": 1 }
+                },
+                "readinessMissing": {
+                    "type": "array",
+                    "maxItems": 12,
+                    "items": { "type": "string", "minLength": 1 }
+                }
             }
         }),
         variables: vec![
@@ -999,6 +1322,25 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
             ),
             input_variable("sections", "array", "sections", "staff"),
             input_variable("publishMode", "string", "publishMode", "staff"),
+            input_variable(
+                "storyEvidenceRefs",
+                "array",
+                "storyEvidenceRefs",
+                "authenticated",
+            ),
+            input_variable(
+                "storyLimitations",
+                "array",
+                "storyLimitations",
+                "authenticated",
+            ),
+            input_variable("sourceArtifactRefs", "array", "sourceArtifactRefs", "staff"),
+            input_variable(
+                "readinessMissing",
+                "array",
+                "readinessMissing",
+                "authenticated",
+            ),
         ],
         fanout_groups: vec![WorkflowFanoutGroup {
             key: "section".to_string(),
@@ -1012,7 +1354,9 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
                 method: "homepage.createNarrativeDeck".to_string(),
                 input: json!({
                     "businessPositioning": { "$var": "businessPositioning" },
-                    "founderProfile": { "$var": "founderProfile" }
+                    "founderProfile": { "$var": "founderProfile" },
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" },
+                    "limitations": { "$var": "storyLimitations" }
                 }),
                 retry_policy: json!({ "maxAttempts": 2 }),
                 depends_on: vec![],
@@ -1037,7 +1381,12 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
             WorkflowTaskBinding {
                 key: "publish.approval".to_string(),
                 method: "publish.requestApproval".to_string(),
-                input: json!({ "publishMode": { "$var": "publishMode" } }),
+                input: json!({
+                    "publishMode": { "$var": "publishMode" },
+                    "sourceArtifactRefs": { "$var": "sourceArtifactRefs" },
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" },
+                    "readinessMissing": { "$var": "readinessMissing" }
+                }),
                 retry_policy: json!({ "maxAttempts": 1 }),
                 depends_on: vec!["section.image_brief".to_string()],
                 visibility: "staff".to_string(),
@@ -1095,12 +1444,128 @@ fn mock_provider(key: &str, capability: &str) -> WorkflowProviderRequirement {
 mod tests {
     use super::*;
     use crate::schema::init_schema;
+    use crate::story_intake_artifacts::{
+        record_story_founder_intake_artifact, StoryFounderIntakeInput, StoryIntakeClaimInput,
+    };
+    use rusqlite::params;
 
     fn setup_connection() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
         init_schema(&connection).unwrap();
         seed_builtin_workflow_templates(&connection).unwrap();
         connection
+    }
+
+    fn insert_public_fact(connection: &Connection, fact_key: &str, value: Value) {
+        connection
+            .execute(
+                "INSERT INTO business_facts (
+                    id, subject_type, subject_id, fact_key, value_json, source_kind,
+                    source_label, source_uri, provenance_json, visibility, publication_state,
+                    created_by_actor_id, created_at, updated_at, published_at, archived_at
+                 ) VALUES (
+                    ?1, 'business', 'business_local', ?2, ?3, 'operator',
+                    'workflow test', NULL, '{\"test\":true}', 'public', 'published',
+                    NULL, 'now', 'now', 'now', NULL
+                 )",
+                params![
+                    format!("business_fact_{}", fact_key.replace('.', "_")),
+                    fact_key,
+                    value.to_string()
+                ],
+            )
+            .unwrap();
+    }
+
+    fn seed_public_homepage_story(connection: &Connection) {
+        insert_public_fact(
+            connection,
+            "homepage.profile.positioning",
+            json!("Ordo is a local-first operating appliance for relationship-led businesses."),
+        );
+        insert_public_fact(connection, "homepage.slides.hero.order", json!(10));
+        insert_public_fact(connection, "homepage.slides.hero.sectionId", json!("hero"));
+        insert_public_fact(
+            connection,
+            "homepage.slides.hero.title",
+            json!("Studio Ordo"),
+        );
+        insert_public_fact(
+            connection,
+            "homepage.slides.hero.body",
+            json!("A public story grounded in local evidence."),
+        );
+        insert_public_fact(connection, "homepage.slides.proof.order", json!(20));
+        insert_public_fact(
+            connection,
+            "homepage.slides.proof.sectionId",
+            json!("proof"),
+        );
+        insert_public_fact(
+            connection,
+            "homepage.slides.proof.title",
+            json!("Proof before polish"),
+        );
+        insert_public_fact(
+            connection,
+            "homepage.slides.proof.body",
+            json!("The story changes when evidence changes."),
+        );
+        insert_public_fact(
+            connection,
+            "offers.trial.title",
+            json!("30-day hosted trial"),
+        );
+        insert_public_fact(
+            connection,
+            "offers.trial.summary",
+            json!("Try Ordo with clear experimental limits."),
+        );
+        insert_home_entry_point(connection, "entry_nyc", "nyc", "NYC meetup QR");
+    }
+
+    fn insert_home_entry_point(connection: &Connection, id: &str, slug: &str, label: &str) {
+        connection
+            .execute(
+                "INSERT INTO tracked_entry_points (
+                    id, slug, label, status, source_kind, source_label, destination_surface,
+                    destination_id, public_path, qr_payload_json, attribution_json, metadata_json,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, 'active', 'event', 'NYC meetup', 'about',
+                    NULL, ?4, '{\"kind\":\"ordo.tracked_entry_point\"}', '{}', '{}', 'now', 'now')",
+                params![id, slug, label, format!("/e/{slug}")],
+            )
+            .unwrap();
+    }
+
+    fn record_valid_story_intake(connection: &Connection) -> String {
+        record_story_founder_intake_artifact(
+            connection,
+            StoryFounderIntakeInput {
+                intake_id: "keith-v1".to_string(),
+                founder_story: "Keith is building Studio Ordo in public.".to_string(),
+                business_stance:
+                    "Ordo is a practical answer to enshittification for small operators."
+                        .to_string(),
+                audience: Some("Solopreneurs".to_string()),
+                public_claims: vec![StoryIntakeClaimInput {
+                    claim: "Ordo keeps public story work grounded in local evidence.".to_string(),
+                    evidence_refs: vec!["business_fact:homepage.positioning".to_string()],
+                }],
+                proof_evidence_refs: vec!["business_fact:homepage.positioning".to_string()],
+                private_notes: vec!["Private founder note must remain private.".to_string()],
+                style_preferences: vec!["cinematic editorial".to_string()],
+                offer_refs: vec!["offer:hosted-30-day-trial".to_string()],
+                cta_refs: vec!["cta:talk-with-ordo".to_string()],
+                limitations: vec!["Requires owner review before publish.".to_string()],
+                source_kind: Some("manual_owner_intake".to_string()),
+                source_id: Some("owner_keith".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap()
+        .artifact
+        .id
     }
 
     #[test]
@@ -1127,7 +1592,11 @@ mod tests {
                 "founderProfile": "private founder story",
                 "businessPositioning": "answer enshittification with owned local tools",
                 "sections": ["private-origin-section", "private-method-section", "private-offer-section"],
-                "publishMode": "manual"
+                "publishMode": "manual",
+                "storyEvidenceRefs": ["business_fact:homepage.positioning"],
+                "storyLimitations": ["Draft needs owner review"],
+                "sourceArtifactRefs": ["artifact:story_intake"],
+                "readinessMissing": []
             }),
             "story-homepage-1",
         )
@@ -1168,6 +1637,176 @@ mod tests {
             .iter()
             .filter_map(|task| task["input"]["section"]["privateValueHash"].as_str())
             .any(|hash| hash.starts_with("sha256:")));
+    }
+
+    #[test]
+    fn compiles_story_homepage_refresh_from_intake_and_public_story_state() {
+        let mut connection = setup_connection();
+        seed_public_homepage_story(&connection);
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let outcome = compile_story_homepage_refresh_workflow(
+            &mut connection,
+            StoryHomepageRefreshCompileRequest {
+                founder_intake_artifact_id: intake_artifact_id.clone(),
+                publish_mode: "manual".to_string(),
+                idempotency_key: "story-refresh-keith-v1".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.status, "compiled");
+        assert!(outcome.blocker.is_none());
+        let compilation = outcome.compilation.unwrap();
+        assert_eq!(
+            compilation.safe_compiled_plan["template"]["id"],
+            STORY_HOMEPAGE_REFRESH_TEMPLATE_ID
+        );
+        assert_eq!(
+            compilation.safe_compiled_plan["boundaries"]["defaultValidationRequiresLiveProviders"],
+            false
+        );
+        assert_eq!(
+            compilation.safe_compiled_plan["providerRequirements"][0]["mode"],
+            "deterministic_mock"
+        );
+        assert_eq!(
+            compilation.safe_compiled_plan["approvalGates"][0]["action"],
+            "publish"
+        );
+        assert!(
+            compilation.safe_compiled_plan["variables"]["founderProfile"]["privateValueHash"]
+                .as_str()
+                .unwrap()
+                .starts_with("sha256:")
+        );
+        assert!(
+            compilation.safe_compiled_plan["variables"]["storyEvidenceRefs"]["value"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == &json!("business_fact:homepage.positioning"))
+        );
+        assert!(
+            compilation.safe_compiled_plan["variables"]["storyEvidenceRefs"]["value"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == &json!("offer:trial"))
+        );
+        assert!(
+            compilation.safe_compiled_plan["variables"]["storyEvidenceRefs"]["value"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == &json!("tracked_entry_point:entry_nyc"))
+        );
+
+        let safe_plan_json = compilation.safe_compiled_plan.to_string();
+        for forbidden in [
+            "Private founder note",
+            "manual_owner_intake",
+            "owner_keith",
+            "provider internal",
+            "prompt internal",
+            "compiled plan private input",
+            "task private payload",
+            "graph certainty",
+        ] {
+            assert!(
+                !safe_plan_json.contains(forbidden),
+                "compiled plan leaked {forbidden}: {safe_plan_json}"
+            );
+        }
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_template_compilations WHERE idempotency_key = 'story-refresh-keith-v1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn story_homepage_refresh_blocks_missing_public_story_without_compilation() {
+        let mut connection = setup_connection();
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let outcome = compile_story_homepage_refresh_workflow(
+            &mut connection,
+            StoryHomepageRefreshCompileRequest {
+                founder_intake_artifact_id: intake_artifact_id,
+                publish_mode: "manual".to_string(),
+                idempotency_key: "story-refresh-missing-story".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.status, "blocked");
+        assert!(outcome.compilation.is_none());
+        let blocker = outcome.blocker.unwrap();
+        assert!(blocker
+            .missing
+            .contains(&"published public homepage profile positioning".to_string()));
+        assert!(blocker
+            .missing
+            .contains(&"published public homepage slide facts".to_string()));
+        assert!(!blocker.live_provider_required);
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_template_compilations WHERE idempotency_key = 'story-refresh-missing-story'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn story_homepage_refresh_idempotency_returns_existing_and_rejects_conflict() {
+        let mut connection = setup_connection();
+        seed_public_homepage_story(&connection);
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let first = compile_story_homepage_refresh_workflow(
+            &mut connection,
+            StoryHomepageRefreshCompileRequest {
+                founder_intake_artifact_id: intake_artifact_id.clone(),
+                publish_mode: "manual".to_string(),
+                idempotency_key: "story-refresh-idempotent".to_string(),
+            },
+        )
+        .unwrap()
+        .compilation
+        .unwrap();
+        let repeated = compile_story_homepage_refresh_workflow(
+            &mut connection,
+            StoryHomepageRefreshCompileRequest {
+                founder_intake_artifact_id: intake_artifact_id.clone(),
+                publish_mode: "manual".to_string(),
+                idempotency_key: "story-refresh-idempotent".to_string(),
+            },
+        )
+        .unwrap()
+        .compilation
+        .unwrap();
+        assert_eq!(first.id, repeated.id);
+        assert_eq!(first.input_hash, repeated.input_hash);
+
+        let error = compile_story_homepage_refresh_workflow(
+            &mut connection,
+            StoryHomepageRefreshCompileRequest {
+                founder_intake_artifact_id: intake_artifact_id,
+                publish_mode: "scheduled".to_string(),
+                idempotency_key: "story-refresh-idempotent".to_string(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("idempotency key conflicts"));
     }
 
     #[test]

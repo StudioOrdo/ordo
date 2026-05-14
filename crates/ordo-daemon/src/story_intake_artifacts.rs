@@ -313,6 +313,7 @@ fn public_derivative(
             .chain(claims.iter().flat_map(|claim| claim.evidence_refs.clone()))
             .collect(),
     );
+    evidence_refs = public_refs(evidence_refs);
     if evidence_refs.is_empty() {
         evidence_refs.push("story_intake:needs_evidence".to_string());
     }
@@ -339,10 +340,16 @@ fn public_derivative(
         intake_id: intake_id.to_string(),
         summary: public_text(&summary),
         audience: audience.map(public_text),
-        claims,
+        claims: claims
+            .into_iter()
+            .map(|claim| StoryIntakeClaim {
+                evidence_refs: public_refs(claim.evidence_refs),
+                ..claim
+            })
+            .collect(),
         style_preferences: stable_public_values(style_preferences.to_vec()),
-        offer_refs: stable_refs(offer_refs.to_vec()),
-        cta_refs: stable_refs(cta_refs.to_vec()),
+        offer_refs: public_refs(stable_refs(offer_refs.to_vec())),
+        cta_refs: public_refs(stable_refs(cta_refs.to_vec())),
         evidence_refs,
         limitations: all_limitations,
         visibility: "public_derivative".to_string(),
@@ -405,6 +412,22 @@ fn stable_refs(values: Vec<String>) -> Vec<String> {
         values
             .into_iter()
             .map(|value| safe_identifier(&value))
+            .collect(),
+    )
+}
+
+fn public_refs(values: Vec<String>) -> Vec<String> {
+    stable_strings(
+        values
+            .into_iter()
+            .filter_map(|value| {
+                let sanitized = public_text(&value);
+                if sanitized.contains("[REDACTED_POLICY_BOUNDARY]") {
+                    None
+                } else {
+                    Some(safe_identifier(&sanitized))
+                }
+            })
             .collect(),
     )
 }
@@ -619,6 +642,58 @@ mod tests {
             .iter()
             .any(|limitation| limitation.contains("needs evidence")));
         assert_eq!(recorded.public_derivative.memory_effect, "candidate_only");
+    }
+
+    #[test]
+    fn public_derivative_removes_private_reference_markers() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let mut input = valid_intake();
+        input.public_claims = vec![StoryIntakeClaimInput {
+            claim: "Ordo keeps business motion grounded in local evidence.".to_string(),
+            evidence_refs: vec![
+                "owner-only:claim-proof".to_string(),
+                "business_fact:ordo.local_first".to_string(),
+            ],
+        }];
+        input.proof_evidence_refs = vec![
+            "provider_internal:homepage-proof".to_string(),
+            "business_fact:homepage.positioning".to_string(),
+        ];
+        input.offer_refs = vec!["owner-only:secret-offer".to_string()];
+        input.cta_refs = vec!["prompt_internal:secret-cta".to_string()];
+
+        let recorded = record_story_founder_intake_artifact(&connection, input).unwrap();
+        let public_json = serde_json::to_string(&recorded.public_derivative).unwrap();
+
+        for forbidden in [
+            "owner-only",
+            "owner_only",
+            "provider_internal",
+            "prompt_internal",
+            "secret-offer",
+            "secret-cta",
+            "claim-proof",
+            "homepage-proof",
+        ] {
+            assert!(
+                !public_json.contains(forbidden),
+                "public derivative leaked private ref {forbidden}: {public_json}"
+            );
+        }
+        assert_eq!(
+            recorded.public_derivative.evidence_refs,
+            vec![
+                "business_fact:homepage.positioning",
+                "business_fact:ordo.local_first"
+            ]
+        );
+        assert!(recorded.public_derivative.offer_refs.is_empty());
+        assert!(recorded.public_derivative.cta_refs.is_empty());
+        assert_eq!(
+            recorded.public_derivative.claims[0].evidence_refs,
+            vec!["business_fact:ordo.local_first"]
+        );
     }
 
     #[test]

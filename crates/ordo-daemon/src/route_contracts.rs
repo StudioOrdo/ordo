@@ -485,6 +485,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
     ),
     protected(
         HttpMethod::Get,
+        "/schedules",
+        "/schedules",
+        PolicyAction::Inspect,
+        "schedules.operations.read",
+    ),
+    protected(
+        HttpMethod::Get,
         "/surface/work-items",
         "/surface/work-items",
         PolicyAction::Inspect,

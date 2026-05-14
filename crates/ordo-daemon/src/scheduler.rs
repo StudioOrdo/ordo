@@ -2,7 +2,9 @@ use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use cron::Schedule;
 use rusqlite::{params, Connection};
+use serde::Serialize;
 use serde_json::Value;
+use std::path::Path;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -40,6 +42,44 @@ pub struct CreateScheduleInput {
     pub payload: Value,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulerOperationsResponse {
+    pub generated_at: String,
+    pub schedules: Vec<SchedulerOperationsSchedule>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulerOperationsSchedule {
+    pub id: String,
+    pub name: String,
+    pub template_id: String,
+    pub template_version: i64,
+    pub schedule_kind: String,
+    pub enabled: bool,
+    pub timezone: String,
+    pub cron_expression: Option<String>,
+    pub interval_seconds: Option<i64>,
+    pub run_at: Option<String>,
+    pub last_due_at: Option<String>,
+    pub next_due_at: String,
+    pub last_run: Option<SchedulerOperationsRun>,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulerOperationsRun {
+    pub id: String,
+    pub job_id: Option<String>,
+    pub due_at: String,
+    pub claimed_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub status: String,
+    pub has_error: bool,
+}
+
 pub fn create_schedule(connection: &Connection, input: CreateScheduleInput) -> Result<()> {
     validate_schedule_input(&input)?;
     let now = Utc::now().to_rfc3339();
@@ -63,6 +103,124 @@ pub fn create_schedule(connection: &Connection, input: CreateScheduleInput) -> R
         ],
     )?;
     Ok(())
+}
+
+pub fn read_scheduler_operations(db_path: &Path) -> Result<SchedulerOperationsResponse> {
+    let connection = Connection::open(db_path)?;
+    read_scheduler_operations_from_connection(&connection, Utc::now())
+}
+
+pub fn read_scheduler_operations_from_connection(
+    connection: &Connection,
+    now: DateTime<Utc>,
+) -> Result<SchedulerOperationsResponse> {
+    let mut statement = connection.prepare(
+        "SELECT id, template_id, template_version, name, schedule_kind, cron_expression,
+                interval_seconds, run_at, timezone, enabled, last_due_at, next_due_at
+         FROM schedules
+         ORDER BY enabled DESC, next_due_at ASC, id ASC",
+    )?;
+    let schedule_rows = statement.query_map([], |row| {
+        Ok((
+            ScheduleRecord {
+                id: row.get(0)?,
+                template_id: row.get(1)?,
+                template_version: row.get(2)?,
+                name: row.get(3)?,
+                schedule_kind: row.get(4)?,
+                cron_expression: row.get(5)?,
+                interval_seconds: row.get(6)?,
+                run_at: row.get(7)?,
+                enabled: row.get::<_, i64>(9)? == 1,
+                next_due_at: row.get(11)?,
+                payload_json: "{}".to_string(),
+            },
+            row.get::<_, String>(8)?,
+            row.get::<_, Option<String>>(10)?,
+        ))
+    })?;
+
+    let mut schedules = Vec::new();
+    for schedule_result in schedule_rows {
+        let (schedule, timezone, last_due_at) = schedule_result?;
+        let last_run = latest_schedule_run(connection, &schedule.id)?;
+        let limitations = schedule_limitations(&schedule, last_run.as_ref(), now);
+        schedules.push(SchedulerOperationsSchedule {
+            id: schedule.id,
+            name: schedule.name,
+            template_id: schedule.template_id,
+            template_version: schedule.template_version,
+            schedule_kind: schedule.schedule_kind,
+            enabled: schedule.enabled,
+            timezone,
+            cron_expression: schedule.cron_expression,
+            interval_seconds: schedule.interval_seconds,
+            run_at: schedule.run_at,
+            last_due_at,
+            next_due_at: schedule.next_due_at,
+            last_run,
+            limitations,
+        });
+    }
+
+    Ok(SchedulerOperationsResponse {
+        generated_at: now.to_rfc3339(),
+        schedules,
+    })
+}
+
+fn latest_schedule_run(
+    connection: &Connection,
+    schedule_id: &str,
+) -> Result<Option<SchedulerOperationsRun>> {
+    let mut statement = connection.prepare(
+        "SELECT id, job_id, due_at, claimed_at, completed_at, status, error_message
+         FROM scheduled_job_runs
+         WHERE schedule_id = ?1
+         ORDER BY claimed_at DESC, due_at DESC, id DESC
+         LIMIT 1",
+    )?;
+    let mut rows = statement.query([schedule_id])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+
+    Ok(Some(SchedulerOperationsRun {
+        id: row.get(0)?,
+        job_id: row.get(1)?,
+        due_at: row.get(2)?,
+        claimed_at: row.get(3)?,
+        completed_at: row.get(4)?,
+        status: row.get(5)?,
+        has_error: row.get::<_, Option<String>>(6)?.is_some(),
+    }))
+}
+
+fn schedule_limitations(
+    schedule: &ScheduleRecord,
+    last_run: Option<&SchedulerOperationsRun>,
+    now: DateTime<Utc>,
+) -> Vec<String> {
+    let mut limitations = Vec::new();
+    if !schedule.enabled {
+        limitations.push("disabled schedules are shown for inspection only".to_string());
+    }
+    if DateTime::parse_from_rfc3339(&schedule.next_due_at)
+        .map(|due_at| due_at.with_timezone(&Utc) <= now)
+        .unwrap_or(false)
+    {
+        limitations
+            .push("schedule is due or overdue; this read path does not claim work".to_string());
+    }
+    if last_run
+        .map(|run| run.status == "failed" || run.has_error)
+        .unwrap_or(false)
+    {
+        limitations.push(
+            "last run recorded a failure; inspect protected daemon logs for details".to_string(),
+        );
+    }
+    limitations
 }
 
 pub fn ensure_default_system_brief_schedule(connection: &Connection) -> Result<()> {
@@ -593,6 +751,116 @@ mod tests {
             .unwrap();
 
         assert_eq!(enabled, 0);
+    }
+
+    #[test]
+    fn scheduler_operations_shape_omits_payloads_and_raw_failure_details() {
+        let mut connection = test_connection();
+        create_schedule(
+            &connection,
+            CreateScheduleInput {
+                id: "schedule_private_payload".to_string(),
+                template_id: "system.health.check".to_string(),
+                template_version: 1,
+                name: "Private payload schedule".to_string(),
+                schedule_kind: "cron".to_string(),
+                cron_expression: Some("0 0 * * * * *".to_string()),
+                interval_seconds: None,
+                run_at: None,
+                next_due_at: "2026-05-07T10:00:00Z".to_string(),
+                payload: json!({ "privateToken": "sk-private", "ownerNote": "do not expose" }),
+            },
+        )
+        .unwrap();
+        let job_id = create_job_for_due_schedule(
+            &mut connection,
+            "schedule_private_payload",
+            utc("2026-05-07T10:00:00Z"),
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE scheduled_job_runs
+                 SET completed_at = '2026-05-07T10:00:01Z',
+                     status = 'failed',
+                     error_message = 'provider secret sk-private leaked'
+                 WHERE job_id = ?1",
+                [&job_id],
+            )
+            .unwrap();
+
+        let operations =
+            read_scheduler_operations_from_connection(&connection, utc("2026-05-07T10:30:00Z"))
+                .unwrap();
+        let schedule = operations
+            .schedules
+            .iter()
+            .find(|schedule| schedule.id == "schedule_private_payload")
+            .unwrap();
+        let serialized = serde_json::to_string(&operations).unwrap();
+
+        assert_eq!(schedule.schedule_kind, "cron");
+        assert_eq!(schedule.cron_expression.as_deref(), Some("0 0 * * * * *"));
+        assert_eq!(
+            schedule.last_run.as_ref().unwrap().job_id.as_deref(),
+            Some(job_id.as_str())
+        );
+        assert!(schedule.last_run.as_ref().unwrap().has_error);
+        assert!(schedule.limitations.contains(
+            &"last run recorded a failure; inspect protected daemon logs for details".to_string()
+        ));
+        assert!(!serialized.contains("sk-private"));
+        assert!(!serialized.contains("ownerNote"));
+        assert!(!serialized.contains("provider secret"));
+    }
+
+    #[test]
+    fn scheduler_operations_handles_empty_and_disabled_schedules() {
+        let connection = test_connection();
+        create_schedule(
+            &connection,
+            CreateScheduleInput {
+                id: "schedule_disabled".to_string(),
+                template_id: "system.health.check".to_string(),
+                template_version: 1,
+                name: "Disabled schedule".to_string(),
+                schedule_kind: "one_shot".to_string(),
+                cron_expression: None,
+                interval_seconds: None,
+                run_at: Some("2026-05-07T10:00:00Z".to_string()),
+                next_due_at: "2026-05-07T10:00:00Z".to_string(),
+                payload: json!({}),
+            },
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE schedules SET enabled = 0 WHERE id = 'schedule_disabled'",
+                [],
+            )
+            .unwrap();
+
+        let operations =
+            read_scheduler_operations_from_connection(&connection, utc("2026-05-07T09:00:00Z"))
+                .unwrap();
+        let schedule = operations
+            .schedules
+            .iter()
+            .find(|schedule| schedule.id == "schedule_disabled")
+            .unwrap();
+
+        assert!(!schedule.enabled);
+        assert_eq!(schedule.schedule_kind, "one_shot");
+        assert!(schedule.last_run.is_none());
+        assert!(schedule
+            .limitations
+            .contains(&"disabled schedules are shown for inspection only".to_string()));
+
+        connection.execute("DELETE FROM schedules", []).unwrap();
+        let empty =
+            read_scheduler_operations_from_connection(&connection, utc("2026-05-07T09:00:00Z"))
+                .unwrap();
+        assert!(empty.schedules.is_empty());
     }
 
     fn test_connection() -> Connection {

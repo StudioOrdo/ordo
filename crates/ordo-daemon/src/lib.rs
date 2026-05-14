@@ -59,6 +59,7 @@ pub mod security;
 pub mod server;
 pub mod studio_promos;
 pub mod story_image_artifacts;
+pub mod story_intake_artifacts;
 pub mod surface_briefs;
 pub mod surface_object_timeline;
 pub mod surface_work_items;

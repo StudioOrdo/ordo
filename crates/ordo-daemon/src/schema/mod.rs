@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::capabilities::seed_builtin_capabilities;
+use crate::llm_method_contracts::seed_builtin_llm_method_contracts;
 use crate::scheduler::ensure_default_system_brief_schedule;
 use crate::templates::seed_builtin_templates;
 
@@ -123,9 +124,11 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "preferences",
     "actor_experience_preferences",
     "local_account_sessions",
+    "llm_method_contracts",
+    "llm_method_contract_lookup_audit",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 44;
+pub const CURRENT_SCHEMA_VERSION: i64 = 45;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -137,6 +140,7 @@ pub fn init_database(db_path: &Path) -> Result<()> {
     let connection = Connection::open(db_path)?;
     init_schema(&connection)?;
     seed_builtin_capabilities(&connection)?;
+    seed_builtin_llm_method_contracts(&connection)?;
     seed_builtin_templates(&connection)?;
     ensure_default_system_brief_schedule(&connection)?;
     Ok(())
@@ -236,9 +240,10 @@ mod tests {
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
                 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
+                45,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 44);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 45);
     }
 
     #[test]
@@ -1404,6 +1409,65 @@ mod tests {
             &connection,
             "graph_candidate_promotions",
             "candidate_kind"
+        ));
+    }
+
+    #[test]
+    fn llm_method_contract_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "llm_method_contracts"));
+        assert!(column_exists(&connection, "llm_method_contracts", "name"));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contracts",
+            "input_schema_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contracts",
+            "output_schema_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contracts",
+            "visibility_ceiling"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contracts",
+            "provider_expectation"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contracts",
+            "live_call_allowed"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contracts",
+            "execution_status"
+        ));
+        assert!(index_exists(&connection, "idx_llm_method_contracts_family"));
+
+        assert!(table_exists(
+            &connection,
+            "llm_method_contract_lookup_audit"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contract_lookup_audit",
+            "method_name"
+        ));
+        assert!(column_exists(
+            &connection,
+            "llm_method_contract_lookup_audit",
+            "output_hash"
+        ));
+        assert!(index_exists(
+            &connection,
+            "idx_llm_method_contract_lookup_audit_method"
         ));
     }
 

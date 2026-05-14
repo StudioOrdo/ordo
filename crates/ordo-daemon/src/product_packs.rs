@@ -671,11 +671,13 @@ fn validate_product_pack_manifest(
     for binding in &manifest.graph_node_kinds {
         require_binding_key(&mut keys, "graph_node_kind", &binding.key)?;
         require_identifier(&binding.node_kind, "Graph node kind")?;
+        require_declared_graph_node_kind(&binding.node_kind)?;
         validate_contract(&binding.contract, "graph node contract")?;
     }
     for binding in &manifest.graph_edge_kinds {
         require_binding_key(&mut keys, "graph_edge_kind", &binding.key)?;
         require_identifier(&binding.edge_kind, "Graph edge kind")?;
+        require_declared_graph_edge_kind(&binding.edge_kind)?;
         validate_contract(&binding.contract, "graph edge contract")?;
     }
     for binding in &manifest.projection_surfaces {
@@ -1081,6 +1083,84 @@ fn require_method_name(value: &str) -> Result<()> {
         bail!("LLM method name must not grant generic authority");
     }
     Ok(())
+}
+
+fn require_declared_graph_node_kind(node_kind: &str) -> Result<()> {
+    if declared_graph_node_kinds().contains(&node_kind) {
+        Ok(())
+    } else {
+        bail!("Unknown graph node kind: {node_kind}")
+    }
+}
+
+fn require_declared_graph_edge_kind(edge_kind: &str) -> Result<()> {
+    if declared_graph_edge_kinds().contains(&edge_kind) {
+        Ok(())
+    } else {
+        bail!("Unknown graph edge kind: {edge_kind}")
+    }
+}
+
+fn declared_graph_node_kinds() -> &'static [&'static str] {
+    &[
+        "actor",
+        "connection",
+        "conversation",
+        "conversation_message",
+        "visitor_session",
+        "tracked_entry_point",
+        "offer",
+        "offer_acceptance",
+        "trial",
+        "request",
+        "handoff",
+        "artifact",
+        "job",
+        "job_task",
+        "event",
+        "claim",
+        "homepage_section",
+        "story_profile",
+        "reward_program",
+        "reward_event",
+        "benefit_grant",
+        "business_outcome",
+        "pack",
+        "capability",
+        "corpus_item",
+    ]
+}
+
+fn declared_graph_edge_kinds() -> &'static [&'static str] {
+    &[
+        "AUTHORED",
+        "MENTIONS",
+        "SUPPORTS",
+        "CONTRADICTS",
+        "DERIVED_FROM",
+        "PRODUCED",
+        "USES",
+        "REQUESTED",
+        "APPROVED",
+        "REJECTED",
+        "GRANTED",
+        "REVOKED",
+        "REFERRED",
+        "ATTRIBUTED_TO",
+        "ACCEPTED",
+        "TRIGGERED",
+        "HANDED_OFF_TO",
+        "REQUIRES",
+        "DEPENDS_ON",
+        "INSTALLED",
+        "EMITTED",
+        "APPEARS_IN",
+        "CONTAINS_CLAIM",
+        "PUBLISHED_TO",
+        "INFLUENCED",
+        "REVISED_BY_FEEDBACK",
+        "PRODUCED_FROM_INPUT",
+    ]
 }
 
 fn require_non_empty(value: &str, label: &str) -> Result<String> {
@@ -1629,6 +1709,32 @@ mod tests {
         assert!(error
             .to_string()
             .contains("unsupported hidden-authority field"));
+
+        let mut unknown_graph_node = story_pack_manifest();
+        unknown_graph_node.graph_node_kinds[0].node_kind = "provider_internal".to_string();
+        let error = install_product_pack(
+            &db_path,
+            ProductPackInstallRequest {
+                manifest: unknown_graph_node,
+            },
+            "test",
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Unknown graph node kind"));
+
+        let mut unknown_graph_edge = story_pack_manifest();
+        unknown_graph_edge.graph_edge_kinds[0].edge_kind = "LEAKS_TO".to_string();
+        let error = install_product_pack(
+            &db_path,
+            ProductPackInstallRequest {
+                manifest: unknown_graph_edge,
+            },
+            "test",
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Unknown graph edge kind"));
 
         install_story_pack_manifest(&db_path, "test", Some(LOCAL_OWNER_ACTOR_ID)).unwrap();
         let summary = read_product_pack_member_summary(&db_path, "studio.story").unwrap();

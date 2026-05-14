@@ -1425,6 +1425,27 @@ mod tests {
         let error = create_or_refresh_qr_asset(&db_path, &entry_point.id, None).unwrap_err();
         assert!(error.to_string().contains("not active"));
 
+        update_entry_point(
+            &db_path,
+            &entry_point.id,
+            EntryPointWriteRequest {
+                slug: "closed-qr".to_string(),
+                label: "Closed QR".to_string(),
+                status: Some(EntryPointStatus::Archived),
+                source_kind: "event_qr".to_string(),
+                source_label: Some("Closed event".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let error = create_or_refresh_qr_asset(&db_path, &entry_point.id, None).unwrap_err();
+        assert!(error.to_string().contains("not active"));
+
         let connection = Connection::open(&db_path).unwrap();
         let artifact_count: i64 = connection
             .query_row(

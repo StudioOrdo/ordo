@@ -211,6 +211,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_compiled_plan_snapshots",
         apply: add_compiled_plan_snapshots,
     },
+    SchemaMigration {
+        version: 41,
+        name: "add_job_start_idempotency",
+        apply: add_job_start_idempotency,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3031,6 +3036,19 @@ fn add_compiled_plan_snapshots(connection: &Connection) -> Result<()> {
             'tasks', json('[]')
          )
          WHERE compiled_plan_json = '{}'",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn add_job_start_idempotency(connection: &Connection) -> Result<()> {
+    ensure_column(connection, "jobs", "idempotency_key", "TEXT")?;
+    ensure_column(connection, "jobs", "idempotency_request_json", "TEXT")?;
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_start_idempotency
+            ON jobs(template_id, template_version, origin, COALESCE(actor_id, ''), idempotency_key)
+            WHERE idempotency_key IS NOT NULL",
         [],
     )?;
 

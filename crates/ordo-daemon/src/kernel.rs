@@ -171,26 +171,71 @@ pub fn create_job_from_template(
     actor_id: Option<&str>,
     input: Value,
 ) -> Result<String> {
+    create_job_from_template_with_idempotency(connection, template, origin, actor_id, input, None)
+}
+
+pub fn create_job_from_template_with_idempotency(
+    connection: &mut Connection,
+    template: &ProcessTemplate,
+    origin: &str,
+    actor_id: Option<&str>,
+    input: Value,
+    idempotency_key: Option<&str>,
+) -> Result<String> {
     validate_task_dag(&template.tasks)?;
     validate_job_capabilities(connection, template)?;
     validate_template_variables(template, &input)?;
 
-    let transaction = connection.transaction()?;
-    let now = Utc::now().to_rfc3339();
-    let job_id = format!("job_{}", Uuid::new_v4());
+    let idempotency_key = normalize_job_idempotency_key(idempotency_key)?;
     let required_task_count = template
         .tasks
         .iter()
         .filter(|task_definition| task_definition.required)
         .count();
     let compiled_plan = compile_plan_snapshot(template, &input);
+    let idempotency_request_json = idempotency_key.as_ref().map(|_| {
+        canonical_json_string(&json!({
+            "template": {
+                "id": template.id,
+                "version": template.version,
+                "kind": template.kind,
+                "capabilityId": template.effective_capability_id(),
+            },
+            "origin": origin,
+            "actorId": actor_id,
+            "input": input,
+            "compiledPlan": compiled_plan,
+        }))
+    });
+
+    let transaction = connection.transaction()?;
+    if let Some(key) = idempotency_key.as_deref() {
+        if let Some(existing) = load_job_idempotency_record(
+            &transaction,
+            &template.id,
+            template.version,
+            origin,
+            actor_id,
+            key,
+        )? {
+            if Some(existing.request_json.as_str()) == idempotency_request_json.as_deref() {
+                transaction.commit()?;
+                return Ok(existing.job_id);
+            }
+            bail!("Job idempotency key conflicts with a different request");
+        }
+    }
+
+    let now = Utc::now().to_rfc3339();
+    let job_id = format!("job_{}", Uuid::new_v4());
 
     transaction.execute(
         "INSERT INTO jobs (
             id, template_id, template_version, capability_id, kind, status, origin, actor_id, input_json,
-            compiled_plan_json, current_task_key, required_task_count, completed_required_task_count,
-            started_at, completed_at, created_at, updated_at, failure_message
-         ) VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7, ?8, ?9, NULL, ?10, 0, NULL, NULL, ?11, ?11, NULL)",
+            compiled_plan_json, idempotency_key, idempotency_request_json, current_task_key,
+            required_task_count, completed_required_task_count, started_at, completed_at, created_at,
+            updated_at, failure_message
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12, 0, NULL, NULL, ?13, ?13, NULL)",
         params![
             job_id,
             template.id,
@@ -201,6 +246,8 @@ pub fn create_job_from_template(
             actor_id,
             input.to_string(),
             compiled_plan.to_string(),
+            idempotency_key.as_deref(),
+            idempotency_request_json.as_deref(),
             required_task_count as i64,
             now,
         ],
@@ -268,6 +315,63 @@ pub fn create_job_from_template(
     Ok(job_id)
 }
 
+#[derive(Debug, Clone)]
+struct JobIdempotencyRecord {
+    job_id: String,
+    request_json: String,
+}
+
+fn normalize_job_idempotency_key(idempotency_key: Option<&str>) -> Result<Option<String>> {
+    let Some(key) = idempotency_key else {
+        return Ok(None);
+    };
+    let key = key.trim();
+    if key.is_empty() {
+        bail!("Job idempotency key cannot be blank");
+    }
+    if key.len() > 200 {
+        bail!("Job idempotency key is too long");
+    }
+    Ok(Some(key.to_string()))
+}
+
+fn load_job_idempotency_record(
+    connection: &Connection,
+    template_id: &str,
+    template_version: i64,
+    origin: &str,
+    actor_id: Option<&str>,
+    idempotency_key: &str,
+) -> Result<Option<JobIdempotencyRecord>> {
+    connection
+        .query_row(
+            "SELECT id, idempotency_request_json
+             FROM jobs
+             WHERE template_id = ?1
+               AND template_version = ?2
+               AND origin = ?3
+               AND COALESCE(actor_id, '') = COALESCE(?4, '')
+               AND idempotency_key = ?5
+             ORDER BY created_at, id
+             LIMIT 1",
+            params![
+                template_id,
+                template_version,
+                origin,
+                actor_id,
+                idempotency_key,
+            ],
+            |row| {
+                Ok(JobIdempotencyRecord {
+                    job_id: row.get(0)?,
+                    request_json: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
 fn validate_template_variables(template: &ProcessTemplate, input: &Value) -> Result<()> {
     validate_json_value(&template.variable_schema, input, "template variables")
 }
@@ -297,6 +401,28 @@ fn compile_plan_snapshot(template: &ProcessTemplate, input: &Value) -> Value {
             })
         }).collect::<Vec<_>>(),
     })
+}
+
+fn canonical_json_string(value: &Value) -> String {
+    canonical_json_value(value).to_string()
+}
+
+fn canonical_json_value(value: &Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(canonical_json_value).collect()),
+        Value::Object(map) => {
+            let mut sorted = serde_json::Map::new();
+            let mut keys: Vec<_> = map.keys().collect();
+            keys.sort();
+            for key in keys {
+                if let Some(value) = map.get(key) {
+                    sorted.insert(key.clone(), canonical_json_value(value));
+                }
+            }
+            Value::Object(sorted)
+        }
+        _ => value.clone(),
+    }
 }
 
 fn validate_job_capabilities(connection: &Connection, template: &ProcessTemplate) -> Result<()> {
@@ -1239,6 +1365,163 @@ mod tests {
         let compiled_plan: Value = serde_json::from_str(&compiled_plan_json).unwrap();
         assert_eq!(compiled_plan["variableSchema"], json!({}));
         assert_eq!(compiled_plan["input"]["freeform"], true);
+    }
+
+    #[test]
+    fn repeated_job_start_with_same_idempotency_key_returns_original_job() {
+        let mut connection = test_connection();
+        let template = variable_template();
+        register_template(&connection, &template);
+
+        let first_job_id = create_job_from_template_with_idempotency(
+            &mut connection,
+            &template,
+            "studio.story",
+            Some("actor_owner"),
+            json!({ "priority": "urgent", "topic": "NYC pilot" }),
+            Some("job-start-1"),
+        )
+        .unwrap();
+        let repeated_job_id = create_job_from_template_with_idempotency(
+            &mut connection,
+            &template,
+            "studio.story",
+            Some("actor_owner"),
+            json!({ "topic": "NYC pilot", "priority": "urgent" }),
+            Some("job-start-1"),
+        )
+        .unwrap();
+
+        assert_eq!(repeated_job_id, first_job_id);
+
+        let job_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM jobs WHERE idempotency_key = 'job-start-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let task_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM job_tasks WHERE job_id = ?1",
+                [&first_job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = ?1",
+                [&first_job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(job_count, 1);
+        assert_eq!(task_count, 2);
+        assert_eq!(event_count, 2);
+
+        let duplicate_index_error = connection
+            .execute(
+                "INSERT INTO jobs (
+                    id, template_id, template_version, capability_id, kind, status, origin,
+                    actor_id, input_json, compiled_plan_json, idempotency_key,
+                    idempotency_request_json, required_task_count, completed_required_task_count,
+                    created_at, updated_at
+                 ) VALUES (
+                    'job_duplicate_key', ?1, ?2, ?3, ?4, 'queued', 'studio.story',
+                    'actor_owner', '{}', '{}', 'job-start-1', '{}', 0, 0, 'now', 'now'
+                 )",
+                params![
+                    template.id,
+                    template.version,
+                    template.effective_capability_id(),
+                    template.kind,
+                ],
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(duplicate_index_error.contains("UNIQUE constraint failed"));
+    }
+
+    #[test]
+    fn conflicting_job_start_idempotency_key_rejects_without_mutation() {
+        let mut connection = test_connection();
+        let template = variable_template();
+        register_template(&connection, &template);
+
+        create_job_from_template_with_idempotency(
+            &mut connection,
+            &template,
+            "studio.story",
+            Some("actor_owner"),
+            json!({ "topic": "NYC pilot", "priority": "normal" }),
+            Some("job-start-conflict"),
+        )
+        .unwrap();
+
+        let before_jobs: i64 = connection
+            .query_row("SELECT COUNT(*) FROM jobs", [], |row| row.get(0))
+            .unwrap();
+        let before_tasks: i64 = connection
+            .query_row("SELECT COUNT(*) FROM job_tasks", [], |row| row.get(0))
+            .unwrap();
+        let before_events: i64 = connection
+            .query_row("SELECT COUNT(*) FROM job_events", [], |row| row.get(0))
+            .unwrap();
+
+        let error = create_job_from_template_with_idempotency(
+            &mut connection,
+            &template,
+            "studio.story",
+            Some("actor_owner"),
+            json!({ "topic": "Different private brief", "priority": "normal" }),
+            Some("job-start-conflict"),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("Job idempotency key conflicts with a different request"));
+        assert!(!error.contains("Different private brief"));
+
+        let after_jobs: i64 = connection
+            .query_row("SELECT COUNT(*) FROM jobs", [], |row| row.get(0))
+            .unwrap();
+        let after_tasks: i64 = connection
+            .query_row("SELECT COUNT(*) FROM job_tasks", [], |row| row.get(0))
+            .unwrap();
+        let after_events: i64 = connection
+            .query_row("SELECT COUNT(*) FROM job_events", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(after_jobs, before_jobs);
+        assert_eq!(after_tasks, before_tasks);
+        assert_eq!(after_events, before_events);
+    }
+
+    #[test]
+    fn job_starts_without_idempotency_key_preserve_existing_create_behavior() {
+        let mut connection = test_connection();
+        let template = variable_template();
+        register_template(&connection, &template);
+
+        let first_job_id = create_job_from_template(
+            &mut connection,
+            &template,
+            "studio.story",
+            Some("actor_owner"),
+            json!({ "topic": "NYC pilot", "priority": "normal" }),
+        )
+        .unwrap();
+        let second_job_id = create_job_from_template(
+            &mut connection,
+            &template,
+            "studio.story",
+            Some("actor_owner"),
+            json!({ "topic": "NYC pilot", "priority": "normal" }),
+        )
+        .unwrap();
+
+        assert_ne!(first_job_id, second_job_id);
     }
 
     #[test]

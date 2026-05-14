@@ -149,6 +149,13 @@ pub fn ingest_generated_content_memory_candidates(
             "generated content memory artifact version must belong to source artifact"
         );
     }
+    for item in &input.items {
+        validate_memory_item(
+            item,
+            item.candidate_state
+                .unwrap_or_else(|| default_state_for_kind(item.memory_kind)),
+        )?;
+    }
 
     let mut candidates = Vec::new();
     let mut events = Vec::new();
@@ -797,6 +804,55 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn rejects_invalid_batch_without_partial_memory_or_events() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-batch-private");
+
+        let valid_item =
+            claim_item("A safe candidate claim should not persist from a failed batch.");
+        let mut invalid_item =
+            claim_item("Provider internal payload should reject the whole batch.");
+        invalid_item.body = json!({
+            "claim": "This includes raw policy internals and task private payload data",
+        });
+
+        let error = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id,
+                artifact_version_id: None,
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_story_batch".to_string()),
+                job_id: Some("job_story_batch".to_string()),
+                extraction_fixture_id: "fixture.story.claims.batch.v1".to_string(),
+                items: vec![valid_item, invalid_item],
+            },
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("private/internal or unsupported claim"));
+        let candidate_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(candidate_count, 0);
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM realtime_events WHERE event_type LIKE 'generated_content_memory.%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 0);
     }
 
     #[test]

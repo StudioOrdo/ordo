@@ -236,6 +236,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_llm_method_contract_registry",
         apply: add_llm_method_contract_registry,
     },
+    SchemaMigration {
+        version: 46,
+        name: "add_workflow_template_kernel",
+        apply: add_workflow_template_kernel,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3309,6 +3314,54 @@ fn add_llm_method_contract_registry(connection: &Connection) -> Result<()> {
             ON llm_method_contracts(visibility_ceiling, access_mode);
         CREATE INDEX IF NOT EXISTS idx_llm_method_contract_lookup_audit_method
             ON llm_method_contract_lookup_audit(method_name, created_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_workflow_template_kernel(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS workflow_templates (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            pack_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility_ceiling TEXT NOT NULL,
+            idempotency_strategy TEXT NOT NULL,
+            definition_json TEXT NOT NULL,
+            input_schema_json TEXT NOT NULL,
+            variable_schema_json TEXT NOT NULL,
+            task_bindings_json TEXT NOT NULL,
+            fanout_groups_json TEXT NOT NULL,
+            approval_gates_json TEXT NOT NULL,
+            provider_requirements_json TEXT NOT NULL,
+            deterministic_mocks_json TEXT NOT NULL,
+            audit_events_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(template_id, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS workflow_template_compilations (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            template_version INTEGER NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            input_hash TEXT NOT NULL,
+            safe_compiled_plan_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(template_id, template_version, idempotency_key),
+            FOREIGN KEY (template_id, template_version)
+                REFERENCES workflow_templates(template_id, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workflow_templates_pack_status
+            ON workflow_templates(pack_id, status, template_id, version);
+        CREATE INDEX IF NOT EXISTS idx_workflow_template_compilations_template
+            ON workflow_template_compilations(template_id, template_version, created_at DESC);
         "#,
     )?;
     Ok(())

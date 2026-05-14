@@ -1,8 +1,9 @@
 import { StudioArtifactPatchAcceptForm } from "@/components/studio-artifact-patch-actions";
 import { statusClass } from "@/components/system-panels";
 import type { StudioArtifactPatchSnapshot } from "@/lib/daemon-client";
+import type { ProductRole } from "@/lib/product-navigation";
 
-export function StudioArtifactPatchReviewPanel({ snapshot }: { snapshot: StudioArtifactPatchSnapshot }) {
+export function StudioArtifactPatchReviewPanel({ snapshot, role }: { snapshot: StudioArtifactPatchSnapshot; role: ProductRole }) {
   const degraded = Boolean(snapshot.degradedReason);
 
   return (
@@ -53,7 +54,7 @@ export function StudioArtifactPatchReviewPanel({ snapshot }: { snapshot: StudioA
                   {proposal.previewTruncated ? <span className="table-subtle">Preview truncated</span> : null}
                 </td>
                 <td>
-                  <StudioArtifactPatchAcceptForm proposalId={proposal.id} disabled={proposal.reviewState !== "proposed"} />
+                  <StudioArtifactPatchAcceptForm proposalId={proposal.id} disabled={proposal.reviewState !== "proposed"} role={role} />
                 </td>
               </tr>
             ))}

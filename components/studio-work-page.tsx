@@ -71,7 +71,7 @@ export async function StudioWorkPage({ searchParams, currentItemId, title, descr
 
       <StudioWorkTable title={room?.label ?? "All Studio Work"} items={visibleItems} emptyLabel={room?.emptyLabel ?? "No durable Studio work items are available."} />
 
-      {artifactPatchSnapshot ? <StudioArtifactPatchReviewPanel snapshot={artifactPatchSnapshot} /> : null}
+      {artifactPatchSnapshot ? <StudioArtifactPatchReviewPanel snapshot={artifactPatchSnapshot} role={role} /> : null}
 
       <DeferredActionsPanel actions={snapshot.deferredActions} />
     </ProductShell>

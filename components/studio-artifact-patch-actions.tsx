@@ -3,8 +3,17 @@
 import { useState } from "react";
 
 import { statusClass } from "@/components/system-panels";
+import type { ProductRole } from "@/lib/product-navigation";
 
-export function StudioArtifactPatchAcceptForm({ proposalId, disabled }: { proposalId: string; disabled: boolean }) {
+export function StudioArtifactPatchAcceptForm({
+  proposalId,
+  disabled,
+  role,
+}: {
+  proposalId: string;
+  disabled: boolean;
+  role: ProductRole;
+}) {
   const [currentText, setCurrentText] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "accepted" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -20,7 +29,7 @@ export function StudioArtifactPatchAcceptForm({ proposalId, disabled }: { propos
     try {
       const response = await fetch(`/api/studio/artifact-patches/${encodeURIComponent(proposalId)}/accept`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-ordo-product-role": role },
         body: JSON.stringify({ currentText }),
       });
       if (!response.ok) {

@@ -218,6 +218,20 @@ test("Studio artifacts room renders artifact review state without publishing cla
   }
 });
 
+test("Studio artifact patch accept proxy refuses missing Studio role before daemon mutation", async ({ page }) => {
+  const daemon = await startMockDaemon();
+  try {
+    const response = await page.request.post("/api/studio/artifact-patches/patch_copy_1/accept", {
+      data: { currentText: "old claim" },
+    });
+
+    expect(response.status()).toBe(403);
+    expect(daemon.state.requests.some((request) => request.includes("/studio/artifact-patches/patch_copy_1/accept"))).toBe(false);
+  } finally {
+    await daemon.close();
+  }
+});
+
 test("Studio shell refuses member role before daemon read", async ({ page }) => {
   const daemon = await startMockDaemon();
   try {

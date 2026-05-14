@@ -202,6 +202,8 @@ pub fn record_generated_image_candidate_artifact(
     input: GeneratedImageCandidateInput,
 ) -> Result<GeneratedImageCandidateArtifact> {
     let contract = generated_image_candidate_contract(input)?;
+    let brief_artifact =
+        require_story_image_brief_artifact(connection, &contract.brief_artifact_id)?;
     let contract_json = serde_json::to_value(&contract)?;
     let content_hash = stable_json_hash(&contract_json)?;
 
@@ -255,6 +257,8 @@ pub fn record_generated_image_candidate_artifact(
             provenance: json!({
                 "schemaVersion": CONTRACT_SCHEMA_VERSION,
                 "generatedBy": "image.generateVariants.guard",
+                "briefArtifactId": brief_artifact.id,
+                "briefArtifactContentHash": brief_artifact.content_hash,
                 "contract": contract_json,
                 "liveProviderCalled": false,
             }),
@@ -281,6 +285,20 @@ pub fn record_generated_image_candidate_artifact(
         version: Some(version),
         contract,
     })
+}
+
+fn require_story_image_brief_artifact(
+    connection: &Connection,
+    artifact_id: &str,
+) -> Result<ArtifactView> {
+    let artifact = load_artifact(connection, artifact_id).map_err(|_| {
+        anyhow::anyhow!("generated image candidate requires a known image brief artifact")
+    })?;
+    ensure!(
+        artifact.artifact_kind == STORY_IMAGE_BRIEF_ARTIFACT_KIND,
+        "generated image candidate source must be a story image brief artifact"
+    );
+    Ok(artifact)
 }
 
 fn story_image_brief_contract(
@@ -720,6 +738,70 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("storage evidence"));
+    }
+
+    #[test]
+    fn generated_candidate_requires_known_story_image_brief_artifact() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let missing = record_generated_image_candidate_artifact(
+            &connection,
+            GeneratedImageCandidateInput {
+                brief_artifact_id: "artifact_missing".to_string(),
+                candidate_id: "candidate_missing".to_string(),
+                state: GeneratedImageCandidateState::Requested,
+                provider_status: "provider_request_recorded".to_string(),
+                storage_uri: None,
+                visibility: "staff".to_string(),
+                approval_state: "draft".to_string(),
+                evidence_refs: vec!["artifact_missing".to_string()],
+                limitations: vec![],
+            },
+        );
+        assert!(missing
+            .unwrap_err()
+            .to_string()
+            .contains("known image brief artifact"));
+
+        let (wrong_kind, _) = record_artifact(
+            &connection,
+            ArtifactInput {
+                artifact_kind: "homepage.storyboard".to_string(),
+                title: "Storyboard".to_string(),
+                status: "draft".to_string(),
+                visibility_ceiling: "staff".to_string(),
+                summary: "Wrong source kind for generated image candidate.".to_string(),
+                source_kind: Some("homepage_story_slide".to_string()),
+                source_id: Some("hero".to_string()),
+                evidence_refs: vec!["business_fact:homepage".to_string()],
+                provenance: json!({"test": true}),
+                content_hash: "sha256:storyboard".to_string(),
+                storage_uri: None,
+                health_status: Some("contract_only".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap();
+
+        let wrong_kind_result = record_generated_image_candidate_artifact(
+            &connection,
+            GeneratedImageCandidateInput {
+                brief_artifact_id: wrong_kind.id,
+                candidate_id: "candidate_wrong_kind".to_string(),
+                state: GeneratedImageCandidateState::Requested,
+                provider_status: "provider_request_recorded".to_string(),
+                storage_uri: None,
+                visibility: "staff".to_string(),
+                approval_state: "draft".to_string(),
+                evidence_refs: vec!["business_fact:homepage".to_string()],
+                limitations: vec![],
+            },
+        );
+        assert!(wrong_kind_result
+            .unwrap_err()
+            .to_string()
+            .contains("story image brief artifact"));
     }
 
     #[test]

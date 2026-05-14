@@ -87,6 +87,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "artifact_links",
     "artifact_deliverables",
     "surface_briefs",
+    "surface_object_timeline",
     "surface_work_items",
     "customer_feedback",
     "feedback_tags",
@@ -123,7 +124,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 41;
+pub const CURRENT_SCHEMA_VERSION: i64 = 42;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -233,10 +234,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 41);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 42);
     }
 
     #[test]
@@ -1248,6 +1249,31 @@ mod tests {
             "superseded_at"
         ));
         assert!(table_exists(&connection, "surface_work_items"));
+        assert!(table_exists(&connection, "surface_object_timeline"));
+        assert!(column_exists(
+            &connection,
+            "surface_object_timeline",
+            "object_kind"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_object_timeline",
+            "source_kind"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_object_timeline",
+            "operational_context_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "surface_object_timeline",
+            "evidence_refs_json"
+        ));
+        assert!(index_exists(
+            &connection,
+            "idx_surface_object_timeline_object_order"
+        ));
         assert!(column_exists(
             &connection,
             "surface_work_items",

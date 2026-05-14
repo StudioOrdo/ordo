@@ -55,6 +55,7 @@ pub mod security;
 pub mod server;
 pub mod studio_promos;
 pub mod surface_briefs;
+pub mod surface_object_timeline;
 pub mod surface_work_items;
 pub mod templates;
 pub mod vault;

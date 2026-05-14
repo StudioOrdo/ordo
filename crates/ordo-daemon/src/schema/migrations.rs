@@ -216,6 +216,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_job_start_idempotency",
         apply: add_job_start_idempotency,
     },
+    SchemaMigration {
+        version: 42,
+        name: "add_surface_object_timeline_projection",
+        apply: add_surface_object_timeline_projection,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3052,6 +3057,41 @@ fn add_job_start_idempotency(connection: &Connection) -> Result<()> {
         [],
     )?;
 
+    Ok(())
+}
+
+fn add_surface_object_timeline_projection(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS surface_object_timeline (
+            id TEXT PRIMARY KEY,
+            object_kind TEXT NOT NULL,
+            object_id TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            occurred_at TEXT NOT NULL,
+            sequence INTEGER NOT NULL DEFAULT 0,
+            operational_context_json TEXT NOT NULL DEFAULT '{}',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            projected_at TEXT NOT NULL,
+            UNIQUE(object_kind, object_id, source_kind, source_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_surface_object_timeline_object_order
+            ON surface_object_timeline(object_kind, object_id, occurred_at DESC, sequence DESC, id ASC);
+        CREATE INDEX IF NOT EXISTS idx_surface_object_timeline_source
+            ON surface_object_timeline(source_kind, source_id);
+        CREATE INDEX IF NOT EXISTS idx_surface_object_timeline_visibility
+            ON surface_object_timeline(visibility, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_surface_object_timeline_event_type
+            ON surface_object_timeline(event_type, occurred_at DESC);
+        "#,
+    )?;
     Ok(())
 }
 

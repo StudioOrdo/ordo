@@ -123,7 +123,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 40;
+pub const CURRENT_SCHEMA_VERSION: i64 = 41;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -196,6 +196,17 @@ mod tests {
         column_names.iter().any(|column| column == column_name)
     }
 
+    fn index_exists(connection: &Connection, index_name: &str) -> bool {
+        let exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'index' AND name = ?1",
+                [index_name],
+                |row| row.get(0),
+            )
+            .unwrap();
+        exists == 1
+    }
+
     #[test]
     fn initializes_required_tables() {
         let connection = Connection::open_in_memory().unwrap();
@@ -222,10 +233,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 40);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 41);
     }
 
     #[test]
@@ -373,6 +384,13 @@ mod tests {
             "variable_schema_json"
         ));
         assert!(column_exists(&connection, "jobs", "compiled_plan_json"));
+        assert!(column_exists(&connection, "jobs", "idempotency_key"));
+        assert!(column_exists(
+            &connection,
+            "jobs",
+            "idempotency_request_json"
+        ));
+        assert!(index_exists(&connection, "idx_jobs_start_idempotency"));
 
         let compiled_plan_json: String = connection
             .query_row(

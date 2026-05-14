@@ -7,6 +7,7 @@ use crate::capabilities::seed_builtin_capabilities;
 use crate::llm_method_contracts::seed_builtin_llm_method_contracts;
 use crate::scheduler::ensure_default_system_brief_schedule;
 use crate::templates::seed_builtin_templates;
+use crate::workflow_templates::seed_builtin_workflow_templates;
 
 pub mod db;
 pub use db::*;
@@ -126,9 +127,11 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
     "llm_method_contracts",
     "llm_method_contract_lookup_audit",
+    "workflow_templates",
+    "workflow_template_compilations",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 45;
+pub const CURRENT_SCHEMA_VERSION: i64 = 46;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -141,6 +144,7 @@ pub fn init_database(db_path: &Path) -> Result<()> {
     init_schema(&connection)?;
     seed_builtin_capabilities(&connection)?;
     seed_builtin_llm_method_contracts(&connection)?;
+    seed_builtin_workflow_templates(&connection)?;
     seed_builtin_templates(&connection)?;
     ensure_default_system_brief_schedule(&connection)?;
     Ok(())
@@ -240,10 +244,10 @@ mod tests {
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
                 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
-                45,
+                45, 46,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 45);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 46);
     }
 
     #[test]
@@ -1468,6 +1472,38 @@ mod tests {
         assert!(index_exists(
             &connection,
             "idx_llm_method_contract_lookup_audit_method"
+        ));
+    }
+
+    #[test]
+    fn workflow_template_kernel_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(&connection, "workflow_templates"));
+        assert!(table_exists(&connection, "workflow_template_compilations"));
+        assert!(column_exists(
+            &connection,
+            "workflow_templates",
+            "definition_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "workflow_templates",
+            "idempotency_strategy"
+        ));
+        assert!(column_exists(
+            &connection,
+            "workflow_template_compilations",
+            "safe_compiled_plan_json"
+        ));
+        assert!(index_exists(
+            &connection,
+            "idx_workflow_templates_pack_status"
+        ));
+        assert!(index_exists(
+            &connection,
+            "idx_workflow_template_compilations_template"
         ));
     }
 

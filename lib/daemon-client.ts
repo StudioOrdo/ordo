@@ -245,6 +245,38 @@ export interface RealtimeEventSummary {
   occurredAt: string;
 }
 
+export interface SchedulerOperationsRun {
+  id: string;
+  jobId: string | null;
+  dueAt: string;
+  claimedAt: string | null;
+  completedAt: string | null;
+  status: string;
+  hasError: boolean;
+}
+
+export interface SchedulerOperationsSchedule {
+  id: string;
+  name: string;
+  templateId: string;
+  templateVersion: number;
+  scheduleKind: string;
+  enabled: boolean;
+  timezone: string;
+  cronExpression: string | null;
+  intervalSeconds: number | null;
+  runAt: string | null;
+  lastDueAt: string | null;
+  nextDueAt: string;
+  lastRun: SchedulerOperationsRun | null;
+  limitations: string[];
+}
+
+export interface SchedulerOperationsResponse {
+  generatedAt: string;
+  schedules: SchedulerOperationsSchedule[];
+}
+
 export interface DiagnosticLogEntry {
   id: string;
   timestamp: string;
@@ -407,6 +439,14 @@ export interface EventReplaySnapshot {
   createdAt: string;
   events: RealtimeEventSummary[];
   nextCursor: number | null;
+  degradedReason: string | null;
+}
+
+export interface SchedulerOperationsSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  generatedAt: string | null;
+  schedules: SchedulerOperationsSchedule[];
   degradedReason: string | null;
 }
 
@@ -577,6 +617,20 @@ export async function getEventReplaySnapshot(after?: number): Promise<EventRepla
     events: eventResult.data?.events ?? [],
     nextCursor: eventResult.data?.nextCursor ?? null,
     degradedReason: eventResult.error,
+  };
+}
+
+export async function getSchedulerOperationsSnapshot(): Promise<SchedulerOperationsSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const schedulesResult = await readEndpoint<SchedulerOperationsResponse>(baseUrl, "/schedules");
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    generatedAt: schedulesResult.data?.generatedAt ?? null,
+    schedules: schedulesResult.data?.schedules ?? [],
+    degradedReason: schedulesResult.error,
   };
 }
 

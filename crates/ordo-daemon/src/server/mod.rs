@@ -200,6 +200,7 @@ pub async fn serve(
         .route("/backups/create", post(create_backup_handler))
         .route("/restore/validate", post(validate_restore_handler))
         .route("/events", get(events_handler))
+        .route("/schedules", get(schedules_handler))
         .route("/surface/work-items", get(surface_work_items_handler))
         .route(
             "/studio/promo-video-packages",

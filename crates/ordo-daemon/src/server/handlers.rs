@@ -126,6 +126,7 @@ use crate::rewards::{
     RewardEventTransitionRequest, RewardQualificationRequest, RewardQualificationResponse,
     RewardQuery, RewardSummaryResponse,
 };
+use crate::scheduler::{read_scheduler_operations, SchedulerOperationsResponse};
 use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
 use crate::studio_promos::{
     create_promo_video_package, review_promo_video_package, PromoVideoPackageRequest,
@@ -1613,6 +1614,25 @@ pub(crate) async fn events_handler(
     Query(query): Query<EventReplayQuery>,
 ) -> Result<Json<EventReplayResponse>, (StatusCode, Json<ErrorResponse>)> {
     replay_events(&state.db_path, query.after, query.limit)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn schedules_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<SchedulerOperationsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/schedules"),
+        Some("schedules.operations.read"),
+    )?;
+    read_scheduler_operations(&state.db_path)
         .map(Json)
         .map_err(internal_error)
 }

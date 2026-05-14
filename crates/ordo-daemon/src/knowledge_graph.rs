@@ -1,6 +1,6 @@
 use anyhow::{ensure, Result};
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -10,6 +10,7 @@ use crate::conversations::{append_conversation_event, ConversationMessageView};
 use crate::events::RealtimeEvent;
 
 pub const KNOWLEDGE_GRAPH_SCHEMA_VERSION: &str = "knowledge_graph.candidates.v1";
+pub const CONFIRMED_GRAPH_SCHEMA_VERSION: &str = "graph.confirmed.v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnowledgeGraphCandidateTarget {
@@ -70,6 +71,61 @@ pub struct KnowledgeGraphEdgeCandidateView {
 pub struct KnowledgeGraphCandidateList {
     pub nodes: Vec<KnowledgeGraphNodeCandidateView>,
     pub edges: Vec<KnowledgeGraphEdgeCandidateView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphNodeView {
+    pub id: String,
+    pub node_kind: String,
+    pub resource_kind: String,
+    pub resource_id: String,
+    pub label: String,
+    pub status: String,
+    pub visibility_ceiling: String,
+    pub content_hash: String,
+    pub provenance: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphEdgeView {
+    pub id: String,
+    pub source_node_id: String,
+    pub target_node_id: String,
+    pub relationship_kind: String,
+    pub status: String,
+    pub confidence: f64,
+    pub visibility_ceiling: String,
+    pub evidence_refs: Vec<String>,
+    pub provenance: Value,
+    pub content_hash: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphNeighborhood {
+    pub nodes: Vec<GraphNodeView>,
+    pub edges: Vec<GraphEdgeView>,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphPromotionOutcome {
+    pub promotion_id: String,
+    pub node: Option<GraphNodeView>,
+    pub edge: Option<GraphEdgeView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphViewer {
+    pub actor_id: Option<String>,
+    pub visibility: String,
 }
 
 #[derive(Debug, Clone)]
@@ -386,6 +442,303 @@ pub fn transition_graph_candidate(
     }
 }
 
+pub fn promote_node_candidate(
+    connection: &Connection,
+    candidate_id: &str,
+    actor_id: Option<&str>,
+    reason: &str,
+) -> Result<GraphPromotionOutcome> {
+    ensure!(!reason.trim().is_empty(), "promotion reason is required");
+    let candidate = load_node_candidate(connection, candidate_id)?;
+    ensure!(
+        matches!(candidate.candidate_state.as_str(), "proposed" | "confirmed"),
+        "only proposed or confirmed node candidates can be promoted"
+    );
+    let now = Utc::now().to_rfc3339();
+    let node_id = stable_candidate_id(
+        "graph_node",
+        &stable_hash(&format!(
+            "knowledge_graph_node_candidate|{}|{}",
+            candidate.id, candidate.content_hash
+        )),
+    );
+    let provenance = json!({
+        "schemaVersion": CONFIRMED_GRAPH_SCHEMA_VERSION,
+        "source": "knowledge_graph_node_candidate",
+        "candidateId": candidate.id,
+        "jobId": candidate.job_id,
+        "conversationId": candidate.conversation_id,
+        "sourceAnalysisCandidateId": candidate.source_analysis_candidate_id,
+        "candidateProvenance": candidate.provenance,
+    });
+    connection.execute(
+        "INSERT OR IGNORE INTO graph_nodes (
+            id, node_kind, resource_kind, resource_id, label, status, visibility_ceiling,
+            content_hash, provenance_json, created_at, updated_at
+         ) VALUES (?1, ?2, 'knowledge_graph_node_candidate', ?3, ?4, 'confirmed', ?5, ?6, ?7, ?8, ?8)",
+        params![
+            node_id,
+            candidate.node_kind,
+            candidate.id,
+            candidate.label,
+            normalize_graph_visibility(&candidate.visibility),
+            candidate.content_hash,
+            provenance.to_string(),
+            now,
+        ],
+    )?;
+    connection.execute(
+        "UPDATE knowledge_graph_node_candidates
+         SET candidate_state = 'confirmed', state_changed_at = COALESCE(state_changed_at, ?2),
+             state_reason = COALESCE(state_reason, ?3), updated_at = ?2
+         WHERE id = ?1",
+        params![candidate.id, now, sanitize_text(reason)],
+    )?;
+    let promotion_id = record_candidate_promotion(
+        connection,
+        "node",
+        &candidate.id,
+        Some(&node_id),
+        None,
+        actor_id,
+        reason,
+        &candidate.evidence_refs,
+        &provenance,
+        &now,
+    )?;
+    append_promotion_event(
+        connection,
+        &candidate.conversation_id,
+        candidate.segment_id.as_deref(),
+        "node",
+        &candidate.id,
+        Some(&node_id),
+        None,
+        &candidate.evidence_refs,
+    )?;
+    Ok(GraphPromotionOutcome {
+        promotion_id,
+        node: Some(load_graph_node(connection, &node_id)?),
+        edge: None,
+    })
+}
+
+pub fn promote_edge_candidate(
+    connection: &Connection,
+    candidate_id: &str,
+    actor_id: Option<&str>,
+    reason: &str,
+) -> Result<GraphPromotionOutcome> {
+    ensure!(!reason.trim().is_empty(), "promotion reason is required");
+    let candidate = load_edge_candidate(connection, candidate_id)?;
+    ensure!(
+        matches!(candidate.candidate_state.as_str(), "proposed" | "confirmed"),
+        "only proposed or confirmed edge candidates can be promoted"
+    );
+    let source = promote_node_candidate(
+        connection,
+        &candidate.source_node_candidate_id,
+        actor_id,
+        "Promoted as edge endpoint.",
+    )?
+    .node
+    .ok_or_else(|| anyhow::anyhow!("source node promotion did not return a graph node"))?;
+    let target = promote_node_candidate(
+        connection,
+        &candidate.target_node_candidate_id,
+        actor_id,
+        "Promoted as edge endpoint.",
+    )?
+    .node
+    .ok_or_else(|| anyhow::anyhow!("target node promotion did not return a graph node"))?;
+    let now = Utc::now().to_rfc3339();
+    let edge_hash = stable_hash(&format!(
+        "knowledge_graph_edge_candidate|{}|{}|{}|{}",
+        candidate.id, source.id, target.id, candidate.content_hash
+    ));
+    let edge_id = stable_candidate_id("graph_edge", &edge_hash);
+    let provenance = json!({
+        "schemaVersion": CONFIRMED_GRAPH_SCHEMA_VERSION,
+        "source": "knowledge_graph_edge_candidate",
+        "candidateId": candidate.id,
+        "jobId": candidate.job_id,
+        "conversationId": candidate.conversation_id,
+        "sourceNodeCandidateId": candidate.source_node_candidate_id,
+        "targetNodeCandidateId": candidate.target_node_candidate_id,
+        "candidateProvenance": candidate.provenance,
+    });
+    connection.execute(
+        "INSERT OR IGNORE INTO graph_edges (
+            id, source_node_id, target_node_id, relationship_kind, status, confidence,
+            visibility_ceiling, evidence_refs_json, provenance_json, content_hash,
+            created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, 'confirmed', ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+        params![
+            edge_id,
+            source.id,
+            target.id,
+            candidate.relationship_kind,
+            candidate.confidence,
+            normalize_graph_visibility(&candidate.visibility),
+            json!(candidate.evidence_refs).to_string(),
+            provenance.to_string(),
+            edge_hash,
+            now,
+        ],
+    )?;
+    for evidence_ref in &candidate.evidence_refs {
+        let evidence_id = stable_candidate_id(
+            "graph_edge_evidence",
+            &stable_hash(&format!("{edge_id}|{evidence_ref}")),
+        );
+        connection.execute(
+            "INSERT OR IGNORE INTO graph_edge_evidence (
+                id, edge_id, evidence_kind, evidence_ref, summary, created_at
+             ) VALUES (?1, ?2, 'candidate_evidence', ?3, ?4, ?5)",
+            params![
+                evidence_id,
+                edge_id,
+                evidence_ref,
+                "Evidence retained from knowledge graph edge candidate",
+                now,
+            ],
+        )?;
+    }
+    connection.execute(
+        "UPDATE knowledge_graph_edge_candidates
+         SET candidate_state = 'confirmed', state_changed_at = COALESCE(state_changed_at, ?2),
+             state_reason = COALESCE(state_reason, ?3), updated_at = ?2
+         WHERE id = ?1",
+        params![candidate.id, now, sanitize_text(reason)],
+    )?;
+    let promotion_id = record_candidate_promotion(
+        connection,
+        "edge",
+        &candidate.id,
+        None,
+        Some(&edge_id),
+        actor_id,
+        reason,
+        &candidate.evidence_refs,
+        &provenance,
+        &now,
+    )?;
+    append_promotion_event(
+        connection,
+        &candidate.conversation_id,
+        candidate.segment_id.as_deref(),
+        "edge",
+        &candidate.id,
+        None,
+        Some(&edge_id),
+        &candidate.evidence_refs,
+    )?;
+    Ok(GraphPromotionOutcome {
+        promotion_id,
+        node: None,
+        edge: Some(load_graph_edge(connection, &edge_id)?),
+    })
+}
+
+pub fn graph_nodes_for_resource(
+    connection: &Connection,
+    resource_kind: &str,
+    resource_id: &str,
+    viewer: &GraphViewer,
+) -> Result<Vec<GraphNodeView>> {
+    let mut statement = connection.prepare(
+        "SELECT id, node_kind, resource_kind, resource_id, label, status, visibility_ceiling,
+                content_hash, provenance_json, created_at, updated_at
+         FROM graph_nodes
+         WHERE resource_kind = ?1 AND resource_id = ?2 AND status = 'confirmed'
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let nodes = statement
+        .query_map(params![resource_kind, resource_id], graph_node_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|node| viewer_can_see(viewer, &node.visibility_ceiling))
+        .collect::<Vec<_>>();
+    audit_graph_query(
+        connection,
+        "graph.get_resource_nodes",
+        viewer,
+        &json!({"resourceKind": resource_kind, "resourceId": resource_id}),
+        &json!({"nodeIds": nodes.iter().map(|node| &node.id).collect::<Vec<_>>()}),
+    )?;
+    Ok(nodes)
+}
+
+pub fn graph_one_hop_neighborhood(
+    connection: &Connection,
+    node_id: &str,
+    viewer: &GraphViewer,
+) -> Result<GraphNeighborhood> {
+    let Some(root) = load_graph_node_optional(connection, node_id)? else {
+        return Ok(GraphNeighborhood {
+            nodes: vec![],
+            edges: vec![],
+            limitations: vec!["Graph node was not found.".to_string()],
+        });
+    };
+    if !viewer_can_see(viewer, &root.visibility_ceiling) {
+        audit_graph_query(
+            connection,
+            "graph.get_resource_neighborhood",
+            viewer,
+            &json!({"nodeId": node_id}),
+            &json!({"denied": true}),
+        )?;
+        return Ok(GraphNeighborhood {
+            nodes: vec![],
+            edges: vec![],
+            limitations: vec!["Graph neighborhood is not visible to this viewer.".to_string()],
+        });
+    }
+    let mut edge_statement = connection.prepare(
+        "SELECT id, source_node_id, target_node_id, relationship_kind, status, confidence,
+                visibility_ceiling, evidence_refs_json, provenance_json, content_hash,
+                created_at, updated_at
+         FROM graph_edges
+         WHERE status = 'confirmed' AND (source_node_id = ?1 OR target_node_id = ?1)
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let edges = edge_statement
+        .query_map([node_id], graph_edge_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|edge| viewer_can_see(viewer, &edge.visibility_ceiling))
+        .collect::<Vec<_>>();
+    let mut nodes = vec![root];
+    for edge in &edges {
+        for related_id in [&edge.source_node_id, &edge.target_node_id] {
+            if nodes.iter().any(|node| node.id == *related_id) {
+                continue;
+            }
+            if let Some(node) = load_graph_node_optional(connection, related_id)? {
+                if viewer_can_see(viewer, &node.visibility_ceiling) {
+                    nodes.push(node);
+                }
+            }
+        }
+    }
+    audit_graph_query(
+        connection,
+        "graph.get_resource_neighborhood",
+        viewer,
+        &json!({"nodeId": node_id}),
+        &json!({
+            "nodeIds": nodes.iter().map(|node| &node.id).collect::<Vec<_>>(),
+            "edgeIds": edges.iter().map(|edge| &edge.id).collect::<Vec<_>>(),
+        }),
+    )?;
+    Ok(GraphNeighborhood {
+        nodes,
+        edges,
+        limitations: vec!["One-hop confirmed graph traversal only.".to_string()],
+    })
+}
+
 pub fn list_graph_candidates(
     connection: &Connection,
     conversation_id: &str,
@@ -633,6 +986,229 @@ fn edge_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeGraphEdge
         state_changed_at: row.get(18)?,
         state_reason: row.get(19)?,
     })
+}
+
+fn load_graph_node(connection: &Connection, node_id: &str) -> Result<GraphNodeView> {
+    load_graph_node_optional(connection, node_id)?
+        .ok_or_else(|| anyhow::anyhow!("graph node not found: {node_id}"))
+}
+
+fn load_graph_node_optional(
+    connection: &Connection,
+    node_id: &str,
+) -> Result<Option<GraphNodeView>> {
+    connection
+        .query_row(
+            "SELECT id, node_kind, resource_kind, resource_id, label, status, visibility_ceiling,
+                    content_hash, provenance_json, created_at, updated_at
+             FROM graph_nodes
+             WHERE id = ?1",
+            [node_id],
+            graph_node_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn load_graph_edge(connection: &Connection, edge_id: &str) -> Result<GraphEdgeView> {
+    connection
+        .query_row(
+            "SELECT id, source_node_id, target_node_id, relationship_kind, status, confidence,
+                    visibility_ceiling, evidence_refs_json, provenance_json, content_hash,
+                    created_at, updated_at
+             FROM graph_edges
+             WHERE id = ?1",
+            [edge_id],
+            graph_edge_from_row,
+        )
+        .map_err(Into::into)
+}
+
+fn graph_node_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNodeView> {
+    Ok(GraphNodeView {
+        id: row.get(0)?,
+        node_kind: row.get(1)?,
+        resource_kind: row.get(2)?,
+        resource_id: row.get(3)?,
+        label: row.get(4)?,
+        status: row.get(5)?,
+        visibility_ceiling: row.get(6)?,
+        content_hash: row.get(7)?,
+        provenance: json_object(row.get(8)?),
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
+fn graph_edge_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphEdgeView> {
+    Ok(GraphEdgeView {
+        id: row.get(0)?,
+        source_node_id: row.get(1)?,
+        target_node_id: row.get(2)?,
+        relationship_kind: row.get(3)?,
+        status: row.get(4)?,
+        confidence: row.get(5)?,
+        visibility_ceiling: row.get(6)?,
+        evidence_refs: json_string_array(row.get(7)?),
+        provenance: json_object(row.get(8)?),
+        content_hash: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+fn record_candidate_promotion(
+    connection: &Connection,
+    candidate_kind: &str,
+    candidate_id: &str,
+    graph_node_id: Option<&str>,
+    graph_edge_id: Option<&str>,
+    actor_id: Option<&str>,
+    reason: &str,
+    evidence_refs: &[String],
+    provenance: &Value,
+    now: &str,
+) -> Result<String> {
+    let promotion_id = stable_candidate_id(
+        "graph_candidate_promotion",
+        &stable_hash(&format!("{candidate_kind}|{candidate_id}|confirmed")),
+    );
+    connection.execute(
+        "INSERT OR IGNORE INTO graph_candidate_promotions (
+            id, candidate_kind, candidate_id, graph_node_id, graph_edge_id, decision,
+            reason, actor_id, evidence_refs_json, provenance_json, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'confirmed', ?6, ?7, ?8, ?9, ?10)",
+        params![
+            promotion_id,
+            candidate_kind,
+            candidate_id,
+            graph_node_id,
+            graph_edge_id,
+            sanitize_text(reason),
+            actor_id,
+            json!(evidence_refs).to_string(),
+            provenance.to_string(),
+            now,
+        ],
+    )?;
+    Ok(promotion_id)
+}
+
+fn append_promotion_event(
+    connection: &Connection,
+    conversation_id: &str,
+    segment_id: Option<&str>,
+    candidate_kind: &str,
+    candidate_id: &str,
+    graph_node_id: Option<&str>,
+    graph_edge_id: Option<&str>,
+    evidence_refs: &[String],
+) -> Result<Option<RealtimeEvent>> {
+    let already_logged: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM conversation_events
+         WHERE conversation_id = ?1 AND event_type = 'knowledge_graph.candidate.promoted'
+           AND payload_json LIKE ?2",
+        params![conversation_id, format!("%{candidate_id}%")],
+        |row| row.get(0),
+    )?;
+    if already_logged > 0 {
+        return Ok(None);
+    }
+    Ok(Some(append_conversation_event(
+        connection,
+        conversation_id,
+        segment_id,
+        None,
+        "knowledge_graph.candidate.promoted",
+        json!({
+            "candidateKind": candidate_kind,
+            "candidateId": candidate_id,
+            "graphNodeId": graph_node_id,
+            "graphEdgeId": graph_edge_id,
+            "evidenceRefs": evidence_refs,
+        }),
+        None,
+    )?))
+}
+
+fn audit_graph_query(
+    connection: &Connection,
+    method_name: &str,
+    viewer: &GraphViewer,
+    input: &Value,
+    output: &Value,
+) -> Result<()> {
+    let input_hash = stable_hash(&canonical_json_string(input));
+    let output_hash = stable_hash(&canonical_json_string(output));
+    let id = stable_candidate_id(
+        "graph_query_audit",
+        &stable_hash(&format!("{method_name}|{input_hash}|{output_hash}")),
+    );
+    connection.execute(
+        "INSERT OR IGNORE INTO graph_query_audit (
+            id, method_name, viewer_context_json, input_hash, output_hash,
+            policy_decision_id, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+        params![
+            id,
+            method_name,
+            json!({
+                "actorId": viewer.actor_id,
+                "visibility": viewer.visibility,
+            })
+            .to_string(),
+            input_hash,
+            output_hash,
+            Utc::now().to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+fn canonical_json_string(value: &Value) -> String {
+    canonical_json_value(value).to_string()
+}
+
+fn canonical_json_value(value: &Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(canonical_json_value).collect()),
+        Value::Object(map) => {
+            let mut sorted = serde_json::Map::new();
+            let mut keys = map.keys().collect::<Vec<_>>();
+            keys.sort();
+            for key in keys {
+                if let Some(value) = map.get(key) {
+                    sorted.insert(key.clone(), canonical_json_value(value));
+                }
+            }
+            Value::Object(sorted)
+        }
+        other => other.clone(),
+    }
+}
+
+fn normalize_graph_visibility(visibility: &str) -> String {
+    match visibility {
+        "public" => "public".to_string(),
+        "authenticated" | "member" | "participants" => "member".to_string(),
+        "staff" | "staff_private" => "staff".to_string(),
+        "owner" | "owner_private" => "owner".to_string(),
+        _ => "staff".to_string(),
+    }
+}
+
+fn viewer_can_see(viewer: &GraphViewer, visibility_ceiling: &str) -> bool {
+    visibility_rank(&viewer.visibility) >= visibility_rank(visibility_ceiling)
+}
+
+fn visibility_rank(visibility: &str) -> u8 {
+    match normalize_graph_visibility(visibility).as_str() {
+        "public" => 0,
+        "member" => 1,
+        "staff" => 2,
+        "owner" => 3,
+        _ => 2,
+    }
 }
 
 fn extract_entity_labels(text: &str) -> Vec<String> {
@@ -960,6 +1536,123 @@ mod tests {
                 .candidate_state,
             "rejected"
         );
+    }
+
+    #[test]
+    fn confirmed_graph_promotion_is_idempotent_and_retains_evidence() {
+        let connection = test_connection();
+        let job = completed_analysis_job(&connection, "Ada works with Acme on Ordo.");
+        let (list, _events) =
+            extract_graph_candidates_for_analysis_job(&connection, &job.id).unwrap();
+
+        let first = promote_edge_candidate(
+            &connection,
+            &list.edges[0].id,
+            Some("actor_staff"),
+            "Staff verified relationship from durable conversation evidence.",
+        )
+        .unwrap();
+        let second = promote_edge_candidate(
+            &connection,
+            &list.edges[0].id,
+            Some("actor_staff"),
+            "Staff verified relationship from durable conversation evidence.",
+        )
+        .unwrap();
+
+        assert_eq!(first, second);
+        let edge = first.edge.unwrap();
+        assert_eq!(edge.status, "confirmed");
+        assert!(!edge.evidence_refs.is_empty());
+        assert_eq!(
+            load_edge_candidate(&connection, &list.edges[0].id)
+                .unwrap()
+                .candidate_state,
+            "confirmed"
+        );
+        let promotion_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM graph_candidate_promotions WHERE candidate_kind = 'edge' AND candidate_id = ?1",
+                [&list.edges[0].id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(promotion_count, 1);
+        let edge_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(edge_count, 1);
+        let evidence_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM graph_edge_evidence WHERE edge_id = ?1",
+                [&edge.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(evidence_count >= 1);
+    }
+
+    #[test]
+    fn confirmed_graph_traversal_is_visibility_filtered() {
+        let connection = test_connection();
+        let job = completed_analysis_job(&connection, "Ada works with Acme on Ordo.");
+        let (list, _events) =
+            extract_graph_candidates_for_analysis_job(&connection, &job.id).unwrap();
+        let edge = promote_edge_candidate(
+            &connection,
+            &list.edges[0].id,
+            Some("actor_staff"),
+            "Staff verified relationship from durable conversation evidence.",
+        )
+        .unwrap()
+        .edge
+        .unwrap();
+
+        let staff_viewer = GraphViewer {
+            actor_id: Some("actor_staff".to_string()),
+            visibility: "staff".to_string(),
+        };
+        let public_viewer = GraphViewer {
+            actor_id: None,
+            visibility: "public".to_string(),
+        };
+
+        let staff_neighborhood =
+            graph_one_hop_neighborhood(&connection, &edge.source_node_id, &staff_viewer).unwrap();
+        assert_eq!(staff_neighborhood.edges.len(), 1);
+        assert!(staff_neighborhood.nodes.len() >= 2);
+
+        let public_neighborhood =
+            graph_one_hop_neighborhood(&connection, &edge.source_node_id, &public_viewer).unwrap();
+        assert!(public_neighborhood.edges.is_empty());
+        assert!(public_neighborhood.nodes.is_empty());
+        assert!(public_neighborhood
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("not visible")));
+
+        let staff_nodes = graph_nodes_for_resource(
+            &connection,
+            "knowledge_graph_node_candidate",
+            &list.nodes[0].id,
+            &staff_viewer,
+        )
+        .unwrap();
+        let public_nodes = graph_nodes_for_resource(
+            &connection,
+            "knowledge_graph_node_candidate",
+            &list.nodes[0].id,
+            &public_viewer,
+        )
+        .unwrap();
+        assert_eq!(staff_nodes.len(), 1);
+        assert!(public_nodes.is_empty());
+        let audit_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_query_audit", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(audit_count >= 3);
     }
 
     #[test]

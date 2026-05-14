@@ -434,6 +434,48 @@ export interface StudioWorkSnapshot extends StudioWorkSnapshotView {
   degradedReason: string | null;
 }
 
+export interface ArtifactPatchPreview {
+  changed: boolean;
+  addedLines: number;
+  removedLines: number;
+  hunks: number;
+}
+
+export interface StudioArtifactPatchProposal {
+  id: string;
+  sourceArtifactId: string;
+  sourceArtifactKind: string;
+  sourceArtifactTitle: string;
+  sourceArtifactStatus: string;
+  sourceArtifactVisibility: string;
+  sourceVersionId: string;
+  baseHash: string;
+  proposedHash: string;
+  preview: ArtifactPatchPreview;
+  boundedPatchPreview: string;
+  previewTruncated: boolean;
+  evidenceRefs: string[];
+  provenance: Record<string, unknown>;
+  reviewState: string;
+  acceptedVersionId: string | null;
+  proposedByActorId: string;
+  appliedByActorId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  appliedAt: string | null;
+}
+
+interface StudioArtifactPatchListResponse {
+  proposals: StudioArtifactPatchProposal[];
+}
+
+export interface StudioArtifactPatchSnapshot {
+  daemonUrl: string;
+  createdAt: string;
+  proposals: StudioArtifactPatchProposal[];
+  degradedReason: string | null;
+}
+
 export interface EventReplaySnapshot {
   daemonUrl: string;
   createdAt: string;
@@ -507,10 +549,10 @@ async function fetchJson<T>(baseUrl: string, path: string): Promise<T> {
   }
 }
 
-export async function postDaemonJson<T>(path: string, body?: unknown): Promise<T> {
+async function sendDaemonJson<T>(method: "POST" | "PUT", path: string, body?: unknown): Promise<T> {
   const baseUrl = daemonUrl();
   const response = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
+    method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
@@ -521,6 +563,14 @@ export async function postDaemonJson<T>(path: string, body?: unknown): Promise<T
   }
 
   return response.json() as Promise<T>;
+}
+
+export async function postDaemonJson<T>(path: string, body?: unknown): Promise<T> {
+  return sendDaemonJson("POST", path, body);
+}
+
+export async function putDaemonJson<T>(path: string, body?: unknown): Promise<T> {
+  return sendDaemonJson("PUT", path, body);
 }
 
 async function readEndpoint<T>(baseUrl: string, path: string): Promise<{ data: T | null; error: string | null }> {
@@ -602,6 +652,22 @@ export async function getStudioWorkSnapshot(viewer: StudioWorkViewer, roomKind?:
     viewer,
     roomKind: roomKind ?? null,
     degradedReason: workResult.error,
+  };
+}
+
+export async function getStudioArtifactPatchSnapshot(): Promise<StudioArtifactPatchSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const patchResult = await readEndpoint<StudioArtifactPatchListResponse>(
+    baseUrl,
+    "/studio/artifact-patches?reviewState=proposed&limit=50",
+  );
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    proposals: patchResult.data?.proposals ?? [],
+    degradedReason: patchResult.error,
   };
 }
 

@@ -513,6 +513,27 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
     ),
     protected(
         HttpMethod::Get,
+        "/studio/artifact-patches",
+        "/studio/artifact-patches",
+        PolicyAction::Inspect,
+        "studio.artifact_patch.review",
+    ),
+    protected(
+        HttpMethod::Get,
+        "/studio/artifact-patches/:proposal_id",
+        "/studio/artifact-patches/patch_1",
+        PolicyAction::Inspect,
+        "studio.artifact_patch.review",
+    ),
+    protected(
+        HttpMethod::Put,
+        "/studio/artifact-patches/:proposal_id/accept",
+        "/studio/artifact-patches/patch_1/accept",
+        PolicyAction::Approve,
+        "studio.artifact_patch.accept",
+    ),
+    protected(
+        HttpMethod::Get,
         "/reports/issues",
         "/reports/issues",
         PolicyAction::Inspect,

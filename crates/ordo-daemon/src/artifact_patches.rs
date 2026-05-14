@@ -19,6 +19,7 @@ use crate::events::{append_realtime_event, system_event, RealtimeEvent};
 const REVIEW_STATE_PROPOSED: &str = "proposed";
 const REVIEW_STATE_NO_OP: &str = "no_op";
 const REVIEW_STATE_ACCEPTED: &str = "accepted";
+const PATCH_REVIEW_PREVIEW_LIMIT: usize = 800;
 
 #[derive(Debug, Clone)]
 pub struct CreateArtifactPatchProposalInput {
@@ -73,6 +74,51 @@ pub struct AppliedArtifactPatch {
     pub proposal: ArtifactPatchProposalView,
     pub artifact_version: ArtifactVersionView,
     pub event: RealtimeEvent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactPatchReviewProposal {
+    pub id: String,
+    pub source_artifact_id: String,
+    pub source_artifact_kind: String,
+    pub source_artifact_title: String,
+    pub source_artifact_status: String,
+    pub source_artifact_visibility: String,
+    pub source_version_id: String,
+    pub base_hash: String,
+    pub proposed_hash: String,
+    pub preview: PatchPreview,
+    pub bounded_patch_preview: String,
+    pub preview_truncated: bool,
+    pub evidence_refs: Vec<String>,
+    pub provenance: Value,
+    pub review_state: String,
+    pub accepted_version_id: Option<String>,
+    pub proposed_by_actor_id: String,
+    pub applied_by_actor_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub applied_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactPatchReviewListResponse {
+    pub proposals: Vec<ArtifactPatchReviewProposal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactPatchReviewResponse {
+    pub proposal: ArtifactPatchReviewProposal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactPatchApplyResponse {
+    pub proposal: ArtifactPatchReviewProposal,
+    pub artifact_version: ArtifactVersionView,
 }
 
 #[derive(Debug, Clone)]
@@ -306,6 +352,64 @@ pub fn load_artifact_patch_proposal(
         .map_err(Into::into)
 }
 
+pub fn list_artifact_patch_review_proposals(
+    connection: &Connection,
+    review_state: Option<&str>,
+    limit: usize,
+) -> Result<ArtifactPatchReviewListResponse> {
+    let limit = limit.clamp(1, 100);
+    let mut statement = connection.prepare(
+        "SELECT p.id, p.source_artifact_id, a.artifact_kind, a.title, a.status,
+                a.visibility_ceiling, p.source_version_id, p.base_hash, p.proposed_hash,
+                p.patch_text, p.preview_json, p.evidence_refs_json, p.provenance_json,
+                p.review_state, p.accepted_version_id, p.proposed_by_actor_id,
+                p.applied_by_actor_id, p.created_at, p.updated_at, p.applied_at
+         FROM artifact_patch_proposals p
+         JOIN artifacts a ON a.id = p.source_artifact_id
+         WHERE (?1 IS NULL OR p.review_state = ?1)
+         ORDER BY p.updated_at DESC, p.id ASC
+         LIMIT ?2",
+    )?;
+    let proposals = statement
+        .query_map(
+            params![review_state, limit as i64],
+            review_proposal_from_row,
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(ArtifactPatchReviewListResponse { proposals })
+}
+
+pub fn load_artifact_patch_review_proposal(
+    connection: &Connection,
+    proposal_id: &str,
+) -> Result<ArtifactPatchReviewResponse> {
+    let proposal = connection.query_row(
+        "SELECT p.id, p.source_artifact_id, a.artifact_kind, a.title, a.status,
+                a.visibility_ceiling, p.source_version_id, p.base_hash, p.proposed_hash,
+                p.patch_text, p.preview_json, p.evidence_refs_json, p.provenance_json,
+                p.review_state, p.accepted_version_id, p.proposed_by_actor_id,
+                p.applied_by_actor_id, p.created_at, p.updated_at, p.applied_at
+         FROM artifact_patch_proposals p
+         JOIN artifacts a ON a.id = p.source_artifact_id
+         WHERE p.id = ?1",
+        [proposal_id],
+        review_proposal_from_row,
+    )?;
+    Ok(ArtifactPatchReviewResponse { proposal })
+}
+
+pub fn apply_artifact_patch_review_proposal(
+    connection: &Connection,
+    input: ApplyArtifactPatchProposalInput,
+) -> Result<ArtifactPatchApplyResponse> {
+    let applied = apply_artifact_patch_proposal(connection, input)?;
+    let proposal = load_artifact_patch_review_proposal(connection, &applied.proposal.id)?.proposal;
+    Ok(ArtifactPatchApplyResponse {
+        proposal,
+        artifact_version: applied.artifact_version,
+    })
+}
+
 fn preview_from_patch(patch: &Patch<'_, str>, changed: bool) -> PatchPreview {
     let patch_text = patch.to_string();
     let added_lines = patch_text
@@ -469,6 +573,51 @@ fn proposal_from_row(row: &Row<'_>) -> rusqlite::Result<ArtifactPatchProposalVie
         updated_at: row.get(14)?,
         applied_at: row.get(15)?,
     })
+}
+
+fn review_proposal_from_row(row: &Row<'_>) -> rusqlite::Result<ArtifactPatchReviewProposal> {
+    let patch_text: String = row.get(9)?;
+    let preview_json: String = row.get(10)?;
+    let evidence_refs_json: String = row.get(11)?;
+    let provenance_json: String = row.get(12)?;
+    let (bounded_patch_preview, preview_truncated) = bounded_patch_preview(&patch_text);
+    Ok(ArtifactPatchReviewProposal {
+        id: row.get(0)?,
+        source_artifact_id: row.get(1)?,
+        source_artifact_kind: row.get(2)?,
+        source_artifact_title: row.get(3)?,
+        source_artifact_status: row.get(4)?,
+        source_artifact_visibility: row.get(5)?,
+        source_version_id: row.get(6)?,
+        base_hash: row.get(7)?,
+        proposed_hash: row.get(8)?,
+        preview: serde_json::from_str(&preview_json).unwrap_or(PatchPreview {
+            changed: false,
+            added_lines: 0,
+            removed_lines: 0,
+            hunks: 0,
+        }),
+        bounded_patch_preview,
+        preview_truncated,
+        evidence_refs: serde_json::from_str(&evidence_refs_json).unwrap_or_default(),
+        provenance: serde_json::from_str(&provenance_json).unwrap_or_else(|_| json!({})),
+        review_state: row.get(13)?,
+        accepted_version_id: row.get(14)?,
+        proposed_by_actor_id: row.get(15)?,
+        applied_by_actor_id: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
+        applied_at: row.get(19)?,
+    })
+}
+
+fn bounded_patch_preview(patch_text: &str) -> (String, bool) {
+    let truncated = patch_text.chars().count() > PATCH_REVIEW_PREVIEW_LIMIT;
+    let preview = patch_text
+        .chars()
+        .take(PATCH_REVIEW_PREVIEW_LIMIT)
+        .collect::<String>();
+    (preview, truncated)
 }
 
 #[cfg(test)]
@@ -771,5 +920,75 @@ mod tests {
         assert_eq!(first.proposed_hash, second.proposed_hash);
         assert_eq!(first.preview, second.preview);
         assert_eq!(first.patch_text, second.patch_text);
+    }
+
+    #[test]
+    fn review_list_shapes_bounded_metadata_without_actor_contexts() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let large_base = (0..400)
+            .map(|index| format!("line {index}\n"))
+            .collect::<String>();
+        let large_proposed = (0..400)
+            .map(|index| format!("line {index} updated\n"))
+            .collect::<String>();
+        let (artifact_id, version_id) = setup_text_artifact(&connection, "markdown", &large_base);
+
+        let (proposal, _) = create_artifact_patch_proposal(
+            &connection,
+            proposal_input(&artifact_id, &version_id, &large_base, &large_proposed),
+        )
+        .unwrap();
+        let review = list_artifact_patch_review_proposals(&connection, Some("proposed"), 10)
+            .unwrap()
+            .proposals
+            .remove(0);
+        let serialized = serde_json::to_string(&review).unwrap();
+
+        assert_eq!(review.id, proposal.id);
+        assert_eq!(review.source_artifact_title, "Landing page copy");
+        assert_eq!(review.source_artifact_visibility, "owner");
+        assert!(review.preview.changed);
+        assert!(review.preview_truncated);
+        assert!(review.bounded_patch_preview.chars().count() <= PATCH_REVIEW_PREVIEW_LIMIT);
+        assert!(!serialized.contains("rawPrompt"));
+        assert!(!serialized.contains("provider"));
+        assert!(!serialized.contains("policy"));
+        assert!(!serialized.contains("sk_live"));
+    }
+
+    #[test]
+    fn review_apply_uses_governed_apply_path_and_returns_safe_proposal() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let base = "alpha\n";
+        let proposed = "beta\n";
+        let (artifact_id, version_id) = setup_text_artifact(&connection, "markdown", base);
+        let (proposal, _) = create_artifact_patch_proposal(
+            &connection,
+            proposal_input(&artifact_id, &version_id, base, proposed),
+        )
+        .unwrap();
+
+        let response = apply_artifact_patch_review_proposal(
+            &connection,
+            ApplyArtifactPatchProposalInput {
+                proposal_id: proposal.id,
+                current_text: base.to_string(),
+                applied_by_actor_id: "owner:local_owner".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(response.proposal.review_state, "accepted");
+        assert_eq!(
+            response.proposal.accepted_version_id.as_deref(),
+            Some(response.artifact_version.id.as_str())
+        );
+        assert_eq!(response.artifact_version.version, 2);
+        assert_eq!(
+            response.artifact_version.content_hash,
+            stable_text_hash(proposed)
+        );
     }
 }

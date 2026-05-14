@@ -15,6 +15,11 @@ use crate::answer_drafts::{
     list_answer_drafts, prepare_answer_draft, read_answer_draft, AnswerDraftListResponse,
     AnswerDraftRequest, AnswerDraftResponse,
 };
+use crate::artifact_patches::{
+    apply_artifact_patch_review_proposal, list_artifact_patch_review_proposals,
+    load_artifact_patch_review_proposal, ApplyArtifactPatchProposalInput,
+    ArtifactPatchApplyResponse, ArtifactPatchReviewListResponse, ArtifactPatchReviewResponse,
+};
 use crate::availability::{
     create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox_with_query,
     list_handoff_receipts, read_availability_state, read_handoff_inbox_item,
@@ -1725,6 +1730,113 @@ pub(crate) async fn studio_promo_video_package_review_handler(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ArtifactPatchReviewQuery {
+    review_state: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ArtifactPatchAcceptRequest {
+    current_text: String,
+}
+
+pub(crate) async fn studio_artifact_patch_review_list_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<ArtifactPatchReviewQuery>,
+) -> Result<Json<ArtifactPatchReviewListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/studio/artifact-patches"),
+        Some("studio.artifact_patch.review"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    list_artifact_patch_review_proposals(
+        &connection,
+        query.review_state.as_deref(),
+        query.limit.unwrap_or(50),
+    )
+    .map(Json)
+    .map_err(internal_error)
+}
+
+pub(crate) async fn studio_artifact_patch_review_read_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(proposal_id): AxumPath<String>,
+) -> Result<Json<ArtifactPatchReviewResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/studio/artifact-patches/{proposal_id}"),
+        ),
+        Some("studio.artifact_patch.review"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    load_artifact_patch_review_proposal(&connection, &proposal_id)
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn studio_artifact_patch_accept_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(proposal_id): AxumPath<String>,
+    Json(request): Json<ArtifactPatchAcceptRequest>,
+) -> Result<Json<ArtifactPatchApplyResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let decision = authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/studio/artifact-patches/{proposal_id}/accept"),
+        ),
+        Some("studio.artifact_patch.accept"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    let response = apply_artifact_patch_review_proposal(
+        &connection,
+        ApplyArtifactPatchProposalInput {
+            proposal_id,
+            current_text: request.current_text,
+            applied_by_actor_id: artifact_patch_actor_id(&decision).to_string(),
+        },
+    )
+    .map_err(invalid_request_error)?;
+    emit_system_event(
+        &state.db_path,
+        &state.event_sender,
+        "studio.artifact_patch.accept.route_completed",
+        json!({
+            "artifactPatchProposalId": response.proposal.id,
+            "artifactId": response.proposal.source_artifact_id,
+            "acceptedVersionId": response.artifact_version.id,
+        }),
+    );
+    Ok(Json(response))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CorpusReadQuery {
     viewer: Option<CorpusViewer>,
     source_id: Option<String>,
@@ -2550,6 +2662,16 @@ fn protected_daemon_route_allowed(
 
 fn actor_id(decision: &PolicyDecision) -> Option<&str> {
     Some(decision.actor.kind.as_str())
+}
+
+fn artifact_patch_actor_id(decision: &PolicyDecision) -> &'static str {
+    match decision.actor.kind {
+        crate::policy::ActorKind::LocalOwner | crate::policy::ActorKind::BrowserOperator => {
+            "owner:local_owner"
+        }
+        crate::policy::ActorKind::System | crate::policy::ActorKind::Scheduler => "system",
+        crate::policy::ActorKind::McpClient => "staff:mcp_client",
+    }
 }
 
 fn request_has_access_token(headers: &HeaderMap, expected_token: &OrdoSecretString) -> bool {
@@ -3847,6 +3969,69 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 3);
+    }
+
+    #[test]
+    fn studio_artifact_patch_routes_use_protected_access_boundary() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/artifact-patches"),
+            Some("studio.artifact_patch.review"),
+        );
+        assert!(denied.is_err());
+
+        for (route, action, capability) in [
+            (
+                "/studio/artifact-patches",
+                PolicyAction::Inspect,
+                "studio.artifact_patch.review",
+            ),
+            (
+                "/studio/artifact-patches/patch_1",
+                PolicyAction::Inspect,
+                "studio.artifact_patch.review",
+            ),
+            (
+                "/studio/artifact-patches/patch_1/accept",
+                PolicyAction::Approve,
+                "studio.artifact_patch.accept",
+            ),
+        ] {
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(
+                allowed.is_ok(),
+                "{route} should be protected but usable locally"
+            );
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('studio.artifact_patch.review', 'studio.artifact_patch.accept')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 4);
     }
 
     #[test]

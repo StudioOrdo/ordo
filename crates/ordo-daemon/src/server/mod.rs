@@ -210,6 +210,18 @@ pub async fn serve(
             "/studio/promo-video-packages/:artifact_id/review",
             put(studio_promo_video_package_review_handler),
         )
+        .route(
+            "/studio/artifact-patches",
+            get(studio_artifact_patch_review_list_handler),
+        )
+        .route(
+            "/studio/artifact-patches/:proposal_id",
+            get(studio_artifact_patch_review_read_handler),
+        )
+        .route(
+            "/studio/artifact-patches/:proposal_id/accept",
+            put(studio_artifact_patch_accept_handler),
+        )
         .route("/corpus/sources", get(corpus_sources_handler))
         .route("/corpus/sources", post(corpus_source_create_handler))
         .route(

@@ -10,6 +10,7 @@ use crate::capabilities::assert_capability_ids_registered;
 use crate::diagnostics::{diagnostic_log, insert_diagnostic_log_connection, NewDiagnosticLogEntry};
 use crate::events::{append_realtime_event, append_realtime_event_tx, job_event};
 use crate::json_contracts::validate_json_value;
+use crate::security::redaction;
 use crate::templates::{ProcessTemplate, TaskDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +51,17 @@ pub struct ClaimedTask {
 pub enum TaskRetryOutcome {
     Retrying,
     Exhausted,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskResultEnvelope {
+    pub status: String,
+    pub summary: String,
+    pub safe_output: Value,
+    pub artifact_refs: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
 }
 
 pub fn validate_task_dag(tasks: &[TaskDefinition]) -> Result<()> {
@@ -557,10 +569,30 @@ pub fn complete_leased_task(
     output: Value,
     now: DateTime<Utc>,
 ) -> Result<()> {
+    complete_leased_task_with_result_envelope(
+        connection,
+        job_id,
+        task_key,
+        worker_id,
+        legacy_task_result_envelope(job_id, task_key, output),
+        now,
+    )
+}
+
+pub fn complete_leased_task_with_result_envelope(
+    connection: &mut Connection,
+    job_id: &str,
+    task_key: &str,
+    worker_id: &str,
+    envelope: TaskResultEnvelope,
+    now: DateTime<Utc>,
+) -> Result<()> {
     let transaction = connection.transaction()?;
     ensure_task_lease_owner(&transaction, job_id, task_key, worker_id)?;
+    validate_task_result_envelope(&transaction, &envelope)?;
     let now = now.to_rfc3339();
     let was_required = task_required(&transaction, job_id, task_key)?;
+    let output = task_result_envelope_json(&envelope);
 
     transaction.execute(
         "UPDATE job_tasks
@@ -590,12 +622,177 @@ pub fn complete_leased_task(
         job_id,
         Some(task_key),
         "task.succeeded",
-        json!({ "taskKey": task_key }),
+        json!({
+            "taskKey": task_key,
+            "result": task_result_event_json(&envelope),
+        }),
     )?;
     mark_newly_ready_tasks(&transaction, job_id, &now)?;
     complete_job_if_done(&transaction, job_id, &now)?;
     transaction.commit()?;
     Ok(())
+}
+
+fn legacy_task_result_envelope(job_id: &str, task_key: &str, output: Value) -> TaskResultEnvelope {
+    TaskResultEnvelope {
+        status: "succeeded".to_string(),
+        summary: "Task completed with legacy output.".to_string(),
+        safe_output: output,
+        artifact_refs: Vec::new(),
+        evidence_refs: vec![
+            format!("job:{job_id}"),
+            format!("job_task:{job_id}:{task_key}"),
+        ],
+        limitations: vec![
+            "Legacy completion path; output was wrapped deterministically.".to_string(),
+        ],
+    }
+}
+
+fn task_result_envelope_json(envelope: &TaskResultEnvelope) -> Value {
+    json!({
+        "schemaVersion": 1,
+        "status": envelope.status,
+        "summary": envelope.summary,
+        "safeOutput": envelope.safe_output,
+        "artifactRefs": envelope.artifact_refs,
+        "evidenceRefs": envelope.evidence_refs,
+        "limitations": envelope.limitations,
+    })
+}
+
+fn task_result_event_json(envelope: &TaskResultEnvelope) -> Value {
+    json!({
+        "schemaVersion": 1,
+        "status": envelope.status,
+        "summary": envelope.summary,
+        "artifactRefs": envelope.artifact_refs,
+        "evidenceRefs": envelope.evidence_refs,
+        "limitations": envelope.limitations,
+    })
+}
+
+fn validate_task_result_envelope(
+    connection: &Connection,
+    envelope: &TaskResultEnvelope,
+) -> Result<()> {
+    if envelope.status != "succeeded" {
+        bail!("task result envelope status must be succeeded");
+    }
+    validate_task_result_text(&envelope.summary, false)?;
+    validate_safe_output_value(&envelope.safe_output)?;
+    validate_task_result_refs(&envelope.evidence_refs, "evidenceRefs", true)?;
+    validate_task_result_refs(&envelope.artifact_refs, "artifactRefs", false)?;
+    for artifact_ref in &envelope.artifact_refs {
+        if !artifact_exists(connection, artifact_ref)? {
+            bail!("task result envelope artifact ref is unknown");
+        }
+    }
+    for limitation in &envelope.limitations {
+        validate_task_result_text(limitation, true)?;
+    }
+    Ok(())
+}
+
+fn validate_task_result_refs(refs: &[String], label: &str, required: bool) -> Result<()> {
+    if required && refs.is_empty() {
+        bail!("task result envelope {label} are required");
+    }
+    if refs.len() > 50 {
+        bail!("task result envelope {label} exceed the supported limit");
+    }
+    let mut seen = BTreeSet::new();
+    for value in refs {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            bail!("task result envelope {label} cannot include blank refs");
+        }
+        if trimmed.len() > 200 {
+            bail!("task result envelope {label} include an oversized ref");
+        }
+        if trimmed != value {
+            bail!("task result envelope {label} refs must already be normalized");
+        }
+        if !seen.insert(trimmed.to_string()) {
+            bail!("task result envelope {label} include duplicate refs");
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.starts_with("publishing:")
+            || lower.starts_with("provider:")
+            || lower.starts_with("prompt:")
+            || lower.starts_with("policy:")
+            || lower.starts_with("analytics:")
+            || lower.starts_with("metric:")
+        {
+            bail!("task result envelope {label} include unsupported claim refs");
+        }
+    }
+    Ok(())
+}
+
+fn validate_safe_output_value(value: &Value) -> Result<()> {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if is_forbidden_result_key(key) {
+                    bail!("task result envelope safe output contains private or internal fields");
+                }
+                validate_safe_output_value(child)?;
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                validate_safe_output_value(child)?;
+            }
+        }
+        Value::String(text) => validate_task_result_text(text, false)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+fn validate_task_result_text(value: &str, allow_empty: bool) -> Result<()> {
+    let trimmed = value.trim();
+    if !allow_empty && trimmed.is_empty() {
+        bail!("task result envelope text is required");
+    }
+    if trimmed.len() > 2000 {
+        bail!("task result envelope text exceeds the supported limit");
+    }
+    if redaction::contains_sensitive_text(trimmed, &[]) {
+        bail!("task result envelope text contains sensitive content");
+    }
+    Ok(())
+}
+
+fn is_forbidden_result_key(key: &str) -> bool {
+    let normalized = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    [
+        "private",
+        "secret",
+        "prompt",
+        "provider",
+        "policy",
+        "staffrouting",
+        "unsupportedclaim",
+        "raw",
+        "owneronly",
+        "privateartifacttext",
+    ]
+    .iter()
+    .any(|forbidden| normalized.contains(forbidden))
+}
+
+fn artifact_exists(connection: &Connection, artifact_id: &str) -> Result<bool> {
+    Ok(connection.query_row(
+        "SELECT COUNT(*) FROM artifacts WHERE id = ?1",
+        [artifact_id],
+        |row| row.get::<_, i64>(0),
+    )? == 1)
 }
 
 pub fn fail_leased_task_attempt(
@@ -1145,6 +1342,22 @@ mod tests {
             .unwrap();
     }
 
+    fn insert_test_artifact(connection: &Connection, artifact_id: &str) {
+        connection
+            .execute(
+                "INSERT INTO artifacts (
+                    id, artifact_kind, title, status, visibility_ceiling, summary,
+                    evidence_refs_json, provenance_json, content_hash, created_at, updated_at
+                 ) VALUES (
+                    ?1, 'studio.storyboard', 'Storyboard', 'draft', 'staff',
+                    'Safe storyboard summary', '[\"job:test\"]',
+                    '{\"generatedBy\":\"kernel.test\"}', 'sha256:test-artifact', 'now', 'now'
+                 )",
+                [artifact_id],
+            )
+            .unwrap();
+    }
+
     #[test]
     fn dag_validation_rejects_cycles() {
         let tasks = vec![test_task("a", &["b"]), test_task("b", &["a"])];
@@ -1613,6 +1826,180 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ready_count, 1);
+    }
+
+    #[test]
+    fn leased_task_completion_persists_result_envelope_and_safe_event() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        let artifact_id = "artifact_storyboard_1";
+        insert_test_artifact(&connection, artifact_id);
+        let claimed = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            60,
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+
+        complete_leased_task_with_result_envelope(
+            &mut connection,
+            &job_id,
+            &claimed.task_key,
+            "worker_a",
+            TaskResultEnvelope {
+                status: "succeeded".to_string(),
+                summary: "Storyboard draft created from approved prompt slots.".to_string(),
+                safe_output: json!({ "sectionCount": 5, "reviewState": "draft" }),
+                artifact_refs: vec![artifact_id.to_string()],
+                evidence_refs: vec![
+                    format!("job:{job_id}"),
+                    format!("job_task:{}:{}", job_id, claimed.task_key),
+                    format!("artifact:{artifact_id}"),
+                ],
+                limitations: vec!["Draft artifact only; no publishing occurred.".to_string()],
+            },
+            utc("2026-05-14T10:00:30Z"),
+        )
+        .unwrap();
+
+        let output_json: String = connection
+            .query_row(
+                "SELECT output_json FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+                params![job_id, claimed.task_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let output: Value = serde_json::from_str(&output_json).unwrap();
+        assert_eq!(output["schemaVersion"], 1);
+        assert_eq!(output["status"], "succeeded");
+        assert_eq!(
+            output["summary"],
+            "Storyboard draft created from approved prompt slots."
+        );
+        assert_eq!(output["safeOutput"]["sectionCount"], 5);
+        assert_eq!(output["artifactRefs"][0], artifact_id);
+        assert_eq!(output["evidenceRefs"][2], format!("artifact:{artifact_id}"));
+        assert_eq!(
+            output["limitations"][0],
+            "Draft artifact only; no publishing occurred."
+        );
+
+        let event_payload_json: String = connection
+            .query_row(
+                "SELECT payload_json FROM job_events
+                 WHERE job_id = ?1 AND task_key = ?2 AND event_type = 'task.succeeded'",
+                params![job_id, claimed.task_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let event_payload: Value = serde_json::from_str(&event_payload_json).unwrap();
+        assert_eq!(event_payload["result"]["summary"], output["summary"]);
+        assert_eq!(event_payload["result"]["artifactRefs"][0], artifact_id);
+        assert!(event_payload["result"].get("safeOutput").is_none());
+    }
+
+    #[test]
+    fn malformed_result_envelope_rejects_without_completing_task() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        let claimed = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            60,
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+
+        let error = complete_leased_task_with_result_envelope(
+            &mut connection,
+            &job_id,
+            &claimed.task_key,
+            "worker_a",
+            TaskResultEnvelope {
+                status: "succeeded".to_string(),
+                summary: "Unsafe result".to_string(),
+                safe_output: json!({
+                    "providerInternals": "sk-live-secret",
+                    "unsupportedClaims": ["published to TikTok"]
+                }),
+                artifact_refs: vec!["artifact_missing".to_string()],
+                evidence_refs: vec!["publishing:fake_metric".to_string()],
+                limitations: vec![],
+            },
+            utc("2026-05-14T10:00:30Z"),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("task result envelope"));
+        assert!(!error.contains("sk-live-secret"));
+        assert!(!error.contains("published to TikTok"));
+
+        let state: (String, Option<String>, i64) = connection
+            .query_row(
+                "SELECT status, output_json, COUNT(*) OVER ()
+                 FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+                params![job_id, claimed.task_key],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(state.0, "running");
+        assert!(state.1.is_none());
+
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM job_events
+                 WHERE job_id = ?1 AND task_key = ?2 AND event_type = 'task.succeeded'",
+                params![job_id, claimed.task_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 0);
+    }
+
+    #[test]
+    fn legacy_task_output_is_wrapped_in_result_envelope() {
+        let mut connection = test_connection();
+        let job_id = test_job(&mut connection);
+        let claimed = claim_ready_task(
+            &mut connection,
+            &job_id,
+            "worker_a",
+            60,
+            utc("2026-05-14T10:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+
+        complete_leased_task(
+            &mut connection,
+            &job_id,
+            &claimed.task_key,
+            "worker_a",
+            json!({ "ok": true }),
+            utc("2026-05-14T10:00:30Z"),
+        )
+        .unwrap();
+
+        let output_json: String = connection
+            .query_row(
+                "SELECT output_json FROM job_tasks WHERE job_id = ?1 AND task_key = ?2",
+                params![job_id, claimed.task_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let output: Value = serde_json::from_str(&output_json).unwrap();
+        assert_eq!(output["schemaVersion"], 1);
+        assert_eq!(output["status"], "succeeded");
+        assert_eq!(output["summary"], "Task completed with legacy output.");
+        assert_eq!(output["safeOutput"]["ok"], true);
+        assert_eq!(output["artifactRefs"], json!([]));
+        assert_eq!(output["evidenceRefs"][0], format!("job:{job_id}"));
     }
 
     #[test]

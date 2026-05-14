@@ -535,6 +535,33 @@ fn safe_variable_value(variable: &WorkflowVariable, value: Value) -> Value {
     }
 }
 
+fn safe_fanout_item_value(variable: &WorkflowVariable, value: Value) -> Value {
+    if is_public_safe_visibility(&variable.visibility) {
+        value
+    } else {
+        json!({
+            "privateValueHash": content_hash(&canonical_json_string(&value)),
+            "visibility": variable.visibility,
+        })
+    }
+}
+
+fn safe_fanout_item_key(
+    variable: &WorkflowVariable,
+    index: usize,
+    value: &Value,
+    internal_item_key: &str,
+) -> String {
+    if is_public_safe_visibility(&variable.visibility) {
+        internal_item_key.to_string()
+    } else {
+        let hash = content_hash(&canonical_json_string(value));
+        let suffix = hash.trim_start_matches("sha256:");
+        let short_hash = suffix.get(0..12).unwrap_or(suffix);
+        format!("item-{index}-{short_hash}")
+    }
+}
+
 fn resolve_fanouts(
     template: &WorkflowTemplateDefinition,
     input: &Value,
@@ -574,17 +601,18 @@ fn resolve_fanouts(
         let mut item_keys = BTreeSet::new();
         let mut safe_items = Vec::new();
         for (index, item) in items.iter().enumerate() {
-            let item_key = stable_item_key(index, item);
-            if !item_keys.insert(item_key.clone()) {
+            let internal_item_key = stable_item_key(index, item);
+            if !item_keys.insert(internal_item_key.clone()) {
                 bail!(
-                    "Workflow fanout {} has duplicate item key {item_key}",
+                    "Workflow fanout {} has duplicate item key {internal_item_key}",
                     fanout.key
                 );
             }
+            let item_key = safe_fanout_item_key(variable, index, item, &internal_item_key);
             safe_items.push(json!({
                 "itemKey": item_key,
                 "idempotencyKey": format!("{}:{}", fanout.key, item_key),
-                "value": item,
+                "value": safe_fanout_item_value(variable, item.clone()),
                 "visibility": variable.visibility,
             }));
         }
@@ -1098,7 +1126,7 @@ mod tests {
             json!({
                 "founderProfile": "private founder story",
                 "businessPositioning": "answer enshittification with owned local tools",
-                "sections": ["origin", "method", "offer"],
+                "sections": ["private-origin-section", "private-method-section", "private-offer-section"],
                 "publishMode": "manual"
             }),
             "story-homepage-1",
@@ -1116,14 +1144,11 @@ mod tests {
                 .starts_with("sha256:"),
             true
         );
-        assert!(compilation
-            .safe_compiled_plan
-            .to_string()
-            .contains("origin"));
-        assert!(!compilation
-            .safe_compiled_plan
-            .to_string()
-            .contains("private founder story"));
+        let safe_plan_json = compilation.safe_compiled_plan.to_string();
+        assert!(!safe_plan_json.contains("private-origin-section"));
+        assert!(!safe_plan_json.contains("private-method-section"));
+        assert!(!safe_plan_json.contains("private-offer-section"));
+        assert!(!safe_plan_json.contains("private founder story"));
         assert_eq!(
             compilation.safe_compiled_plan["approvalGates"][0]["action"],
             "publish"
@@ -1134,15 +1159,15 @@ mod tests {
         );
 
         let expanded_tasks = compilation.safe_compiled_plan["tasks"].as_array().unwrap();
+        assert_eq!(expanded_tasks.len(), 5);
+        assert!(expanded_tasks.iter().any(|task| task["key"]
+            .as_str()
+            .unwrap()
+            .starts_with("section.image_brief[item-0-")));
         assert!(expanded_tasks
             .iter()
-            .any(|task| task["key"] == "section.image_brief[origin]"));
-        assert!(expanded_tasks
-            .iter()
-            .any(|task| task["key"] == "section.image_brief[method]"));
-        assert!(expanded_tasks
-            .iter()
-            .any(|task| task["key"] == "section.image_brief[offer]"));
+            .filter_map(|task| task["input"]["section"]["privateValueHash"].as_str())
+            .any(|hash| hash.starts_with("sha256:")));
     }
 
     #[test]

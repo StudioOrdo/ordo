@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+use crate::security::redaction;
+
 const CONTRACT_SCHEMA_VERSION: &str = "ordo.llm_method_contract.v1";
 const LOOKUP_AUDIT_SCHEMA_VERSION: &str = "ordo.llm_method_lookup_audit.v1";
 const CONTRACT_ONLY_EXECUTION_STATUS: &str = "contract_only";
@@ -417,7 +419,8 @@ fn record_lookup_audit(
     contract: Option<&LlmMethodContractView>,
 ) -> Result<()> {
     let now = Utc::now().to_rfc3339();
-    let viewer_context_json = viewer_context.to_string();
+    let safe_viewer_context = sanitize_viewer_context(viewer_context.clone());
+    let viewer_context_json = safe_viewer_context.to_string();
     let output = match contract {
         Some(contract) => json!({
             "status": "found",
@@ -440,7 +443,7 @@ fn record_lookup_audit(
             lookup_audit_id(method_name, &viewer_context_json, &output.to_string(), &now),
             method_name,
             viewer_context_json,
-            stable_hash(&format!("{method_name}|{viewer_context}")),
+            stable_hash(&format!("{method_name}|{safe_viewer_context}")),
             stable_hash(&output.to_string()),
             if contract.is_some() {
                 "found"
@@ -452,6 +455,57 @@ fn record_lookup_audit(
         ],
     )?;
     Ok(())
+}
+
+fn sanitize_viewer_context(value: Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .map(|(key, value)| {
+                    if is_sensitive_context_key(&key) {
+                        (
+                            "redactedContextField".to_string(),
+                            json!("[REDACTED_CONTEXT]"),
+                        )
+                    } else {
+                        (key, sanitize_viewer_context(value))
+                    }
+                })
+                .collect(),
+        ),
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(sanitize_viewer_context).collect())
+        }
+        other => redaction::sanitize_json_strings(other),
+    }
+}
+
+fn is_sensitive_context_key(key: &str) -> bool {
+    let normalized = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    [
+        "apikey",
+        "compiledplanprivateinputs",
+        "ownersonly",
+        "owneronly",
+        "password",
+        "policyinternal",
+        "privateartifacttext",
+        "privatepayload",
+        "promptinternal",
+        "providerinternal",
+        "providersecret",
+        "rawpolicyinternal",
+        "secret",
+        "taskprivatepayload",
+        "token",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
 }
 
 fn contract_id(name: &str, version: i64) -> String {
@@ -709,7 +763,15 @@ mod tests {
         let contract = lookup_llm_method_contract(
             &db_path,
             "graph.get_resource_neighborhood",
-            json!({"viewerRole": "staff", "surface": "studio"}),
+            json!({
+                "viewerRole": "staff",
+                "surface": "studio",
+                "providerSecret": "sk-test-secret-value",
+                "promptInternal": "do not store raw prompt notes",
+                "nested": {
+                    "privateArtifactText": "Project Orchid private artifact text"
+                }
+            }),
         )
         .unwrap()
         .expect("seeded contract should be found");
@@ -746,6 +808,12 @@ mod tests {
             .unwrap();
         assert!(stored_context.contains("viewerRole"));
         assert!(!stored_context.contains("providerSecret"));
+        assert!(!stored_context.contains("sk-test-secret-value"));
+        assert!(!stored_context.contains("promptInternal"));
+        assert!(!stored_context.contains("do not store raw prompt notes"));
+        assert!(!stored_context.contains("privateArtifactText"));
+        assert!(!stored_context.contains("Project Orchid"));
+        assert!(stored_context.contains("redactedContextField"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -7,9 +7,16 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use uuid::Uuid;
 
+use crate::artifacts::{
+    add_artifact_version, link_artifact, load_artifact, record_artifact, ArtifactInput,
+    ArtifactLinkInput, ArtifactVersionView, ArtifactView,
+};
 use crate::events::{append_realtime_event_tx, system_event, RealtimeEvent};
 use crate::offers::list_public_available_offers;
 use crate::public_surfaces::public_surfaces;
+
+pub const QR_ASSET_ARTIFACT_KIND: &str = "tracked_entry.qr_asset";
+const QR_ASSET_CONTRACT_SCHEMA_VERSION: &str = "ordo.qr_asset_contract.v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -174,6 +181,20 @@ pub struct PublicVisitorSessionView {
     pub destination_id: Option<String>,
     pub attribution: Value,
     pub last_seen_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QrAssetView {
+    pub artifact: ArtifactView,
+    pub version: Option<ArtifactVersionView>,
+    pub entry_point_id: String,
+    pub entry_point_slug: String,
+    pub destination_surface: PublicDestinationSurface,
+    pub destination_id: Option<String>,
+    pub public_path: String,
+    pub payload: String,
+    pub payload_hash: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -566,6 +587,116 @@ pub fn create_visitor_session(
     Ok((session.into_view(), event))
 }
 
+pub fn create_or_refresh_qr_asset(
+    db_path: &Path,
+    entry_point_id: &str,
+    actor_id: Option<&str>,
+) -> Result<QrAssetView> {
+    let mut connection = Connection::open(db_path)?;
+    let entry_point = find_entry_point_by_id(&connection, entry_point_id)?
+        .ok_or_else(|| anyhow::anyhow!("Tracked entry point was not found: {entry_point_id}"))?;
+    ensure!(
+        entry_point.status == EntryPointStatus::Active,
+        "Tracked entry point is not active."
+    );
+    ensure_public_destination(
+        db_path,
+        entry_point.destination_surface,
+        entry_point.destination_id.as_deref(),
+    )?;
+
+    let contract = qr_asset_contract(&entry_point, actor_id)?;
+    let contract_json = serde_json::to_value(&contract)?;
+    let content_hash = stable_json_hash(&contract_json)?;
+    if let Some(existing) = load_existing_qr_asset(&connection, &entry_point.id, &content_hash)? {
+        return Ok(QrAssetView {
+            artifact: existing,
+            version: None,
+            entry_point_id: entry_point.id,
+            entry_point_slug: entry_point.slug,
+            destination_surface: entry_point.destination_surface,
+            destination_id: entry_point.destination_id,
+            public_path: entry_point.public_path.clone(),
+            payload: contract.payload,
+            payload_hash: content_hash,
+        });
+    }
+
+    let transaction = connection.transaction()?;
+    let (artifact, _) = record_artifact(
+        &transaction,
+        ArtifactInput {
+            artifact_kind: QR_ASSET_ARTIFACT_KIND.to_string(),
+            title: format!("QR asset for tracked entry `{}`", entry_point.slug),
+            status: "ready".to_string(),
+            visibility_ceiling: "public".to_string(),
+            summary: format!(
+                "Durable QR asset contract for public entry path `{}`.",
+                entry_point.public_path
+            ),
+            source_kind: Some("tracked_entry_point".to_string()),
+            source_id: Some(entry_point.id.clone()),
+            evidence_refs: contract.evidence_refs.clone(),
+            provenance: json!({
+                "schemaVersion": QR_ASSET_CONTRACT_SCHEMA_VERSION,
+                "generatedBy": "entry_points.create_or_refresh_qr_asset",
+                "entryPointId": entry_point.id,
+                "entryPointSlug": entry_point.slug,
+                "contract": contract_json,
+            }),
+            content_hash: content_hash.clone(),
+            storage_uri: Some(format!(
+                "ordo://artifacts/qr-assets/{}/{}.svg",
+                entry_point.id,
+                content_hash_suffix(&content_hash)
+            )),
+            health_status: Some("contract_only".to_string()),
+            created_by_job_id: None,
+        },
+    )?;
+    let version = add_artifact_version(
+        &transaction,
+        &artifact.id,
+        &content_hash,
+        artifact.storage_uri.as_deref(),
+        json!({
+            "schemaVersion": QR_ASSET_CONTRACT_SCHEMA_VERSION,
+            "contract": contract,
+            "liveProviderCalled": false,
+            "externalEncoderCalled": false,
+        }),
+    )?;
+    let _ = link_artifact(
+        &transaction,
+        &artifact.id,
+        ArtifactLinkInput {
+            link_kind: "tracked_entry_qr_asset".to_string(),
+            source_kind: "tracked_entry_point".to_string(),
+            source_id: entry_point.id.clone(),
+            relation: "renders_scan_route_for".to_string(),
+            evidence_refs: vec![format!("entry_point:{}", entry_point.id)],
+            provenance: json!({
+                "schemaVersion": QR_ASSET_CONTRACT_SCHEMA_VERSION,
+                "entryPointSlug": entry_point.slug,
+                "publicPath": entry_point.public_path,
+            }),
+        },
+    )?;
+    transaction.commit()?;
+
+    Ok(QrAssetView {
+        artifact,
+        version: Some(version),
+        entry_point_id: entry_point.id,
+        entry_point_slug: entry_point.slug,
+        destination_surface: entry_point.destination_surface,
+        destination_id: entry_point.destination_id,
+        public_path: entry_point.public_path.clone(),
+        payload: contract.payload,
+        payload_hash: content_hash,
+    })
+}
+
 fn append_visitor_session_event_tx(
     transaction: &rusqlite::Transaction<'_>,
     id: &str,
@@ -588,6 +719,135 @@ fn append_visitor_session_event_tx(
             occurred_at
         ],
     )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QrAssetContract {
+    schema_version: String,
+    entry_point_id: String,
+    entry_point_slug: String,
+    public_path: String,
+    payload: String,
+    payload_kind: String,
+    destination_surface: String,
+    destination_id: Option<String>,
+    artifact_format: String,
+    encoding_status: String,
+    public_context: Value,
+    evidence_refs: Vec<String>,
+    limitations: Vec<String>,
+}
+
+fn qr_asset_contract(
+    entry_point: &TrackedEntryPointRecord,
+    actor_id: Option<&str>,
+) -> Result<QrAssetContract> {
+    ensure_safe_qr_text(&entry_point.slug)?;
+    ensure_safe_qr_text(&entry_point.public_path)?;
+    if let Some(destination_id) = &entry_point.destination_id {
+        ensure_safe_qr_text(destination_id)?;
+    }
+    if let Some(actor_id) = actor_id {
+        ensure_safe_qr_text(actor_id)?;
+    }
+    let public_context = sanitize_public_attribution(Some(entry_point.attribution.clone()))
+        .unwrap_or_else(|| {
+            json!({
+                "source": entry_point.source_kind,
+            })
+        });
+    let payload = entry_point.public_path.clone();
+    Ok(QrAssetContract {
+        schema_version: QR_ASSET_CONTRACT_SCHEMA_VERSION.to_string(),
+        entry_point_id: entry_point.id.clone(),
+        entry_point_slug: entry_point.slug.clone(),
+        public_path: entry_point.public_path.clone(),
+        payload,
+        payload_kind: "relative_url".to_string(),
+        destination_surface: entry_point.destination_surface.as_str().to_string(),
+        destination_id: entry_point.destination_id.clone(),
+        artifact_format: "svg".to_string(),
+        encoding_status: "contract_only".to_string(),
+        public_context,
+        evidence_refs: vec![
+            format!("entry_point:{}", entry_point.id),
+            format!("public_path:{}", entry_point.public_path),
+        ],
+        limitations: vec![
+            "QR asset is a deterministic local artifact contract; no live image provider was called."
+                .to_string(),
+            "The first QR payload uses the tracked entry public path so server-side context owns meaning."
+                .to_string(),
+            "Private attribution, owner metadata, provider internals, prompts, and policy internals are omitted."
+                .to_string(),
+        ],
+    })
+}
+
+fn load_existing_qr_asset(
+    connection: &Connection,
+    entry_point_id: &str,
+    content_hash: &str,
+) -> Result<Option<ArtifactView>> {
+    let artifact_id = connection
+        .query_row(
+            "SELECT id FROM artifacts
+             WHERE artifact_kind = ?1
+               AND source_kind = 'tracked_entry_point'
+               AND source_id = ?2
+               AND content_hash = ?3
+             ORDER BY created_at ASC
+             LIMIT 1",
+            params![QR_ASSET_ARTIFACT_KIND, entry_point_id, content_hash],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    artifact_id
+        .map(|id| load_artifact(connection, &id))
+        .transpose()
+}
+
+fn stable_json_hash(value: &Value) -> Result<String> {
+    let serialized = serde_json::to_string(value)?;
+    let mut hasher = Sha256::new();
+    hasher.update(serialized.as_bytes());
+    Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
+fn content_hash_suffix(content_hash: &str) -> String {
+    content_hash
+        .strip_prefix("sha256:")
+        .unwrap_or(content_hash)
+        .chars()
+        .take(16)
+        .collect()
+}
+
+fn ensure_safe_qr_text(text: &str) -> Result<()> {
+    let lower = text.to_ascii_lowercase();
+    let blocked = [
+        "staff routing",
+        "provider internal",
+        "prompt internal",
+        "raw policy",
+        "policy internal",
+        "owner-only",
+        "private artifact text",
+        "compiled-plan",
+        "task private payload",
+        "secret",
+        "api_key",
+        "password",
+        "bearer ",
+        "graph certainty",
+        "unsupported claim",
+    ];
+    ensure!(
+        !blocked.iter().any(|needle| lower.contains(needle)),
+        "QR asset text contains private/internal or unsupported claim text"
+    );
     Ok(())
 }
 
@@ -1037,6 +1297,164 @@ mod tests {
         assert_eq!(entry_point.qr_payload["kind"], "ordo.tracked_entry_point");
         assert_eq!(entry_point.attribution["campaign"], "spring");
         assert_eq!(event.event_type, "entry_point.created");
+    }
+
+    #[test]
+    fn qr_asset_artifact_is_durable_public_safe_and_idempotent() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        seed_public_about(&db_path);
+        let (entry_point, _) = create_entry_point(
+            &db_path,
+            EntryPointWriteRequest {
+                slug: "nyc-founder-table".to_string(),
+                label: "NYC Founder Table QR".to_string(),
+                status: None,
+                source_kind: "event_qr".to_string(),
+                source_label: Some("NYC Founder Table".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: Some(json!({
+                    "campaign": "nyc-pilot",
+                    "medium": "qr",
+                    "privateReferrerNote": "do not expose",
+                })),
+                metadata: Some(json!({
+                    "ownerOnlyLeadScore": "hot",
+                    "promptInternal": "do not expose",
+                })),
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let first =
+            create_or_refresh_qr_asset(&db_path, &entry_point.id, Some(LOCAL_OWNER_ACTOR_ID))
+                .unwrap();
+        let second =
+            create_or_refresh_qr_asset(&db_path, &entry_point.id, Some(LOCAL_OWNER_ACTOR_ID))
+                .unwrap();
+
+        assert_eq!(first.artifact.id, second.artifact.id);
+        assert!(first.version.is_some());
+        assert!(second.version.is_none());
+        assert_eq!(first.artifact.artifact_kind, QR_ASSET_ARTIFACT_KIND);
+        assert_eq!(first.artifact.status, "ready");
+        assert_eq!(first.artifact.visibility_ceiling, "public");
+        assert_eq!(first.entry_point_id, entry_point.id);
+        assert_eq!(first.entry_point_slug, "nyc-founder-table");
+        assert_eq!(first.payload, "/public/e/nyc-founder-table");
+        assert_eq!(first.destination_surface, PublicDestinationSurface::About);
+        assert!(first
+            .artifact
+            .evidence_refs
+            .contains(&format!("entry_point:{}", entry_point.id)));
+        assert_eq!(
+            first.artifact.provenance["contract"]["publicPath"],
+            "/public/e/nyc-founder-table"
+        );
+        assert_eq!(
+            first.artifact.provenance["contract"]["encodingStatus"],
+            "contract_only"
+        );
+        assert_eq!(
+            first.artifact.provenance["contract"]["publicContext"]["campaign"],
+            "nyc-pilot"
+        );
+        assert_eq!(
+            first.artifact.provenance["contract"]["publicContext"]["medium"],
+            "qr"
+        );
+
+        let serialized = serde_json::to_string(&first.artifact).unwrap();
+        assert!(!serialized.contains("privateReferrerNote"));
+        assert!(!serialized.contains("ownerOnlyLeadScore"));
+        assert!(!serialized.contains("promptInternal"));
+
+        let connection = Connection::open(&db_path).unwrap();
+        let artifact_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [QR_ASSET_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let version_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifact_versions WHERE artifact_id = ?1",
+                [&first.artifact.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let link_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifact_links WHERE artifact_id = ?1 AND source_kind = 'tracked_entry_point'",
+                [&first.artifact.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(artifact_count, 1);
+        assert_eq!(version_count, 1);
+        assert_eq!(link_count, 1);
+    }
+
+    #[test]
+    fn qr_asset_generation_rejects_inactive_or_private_destinations_without_partial_artifacts() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        seed_public_about(&db_path);
+        let (entry_point, _) = create_entry_point(
+            &db_path,
+            EntryPointWriteRequest {
+                slug: "closed-qr".to_string(),
+                label: "Closed QR".to_string(),
+                status: Some(EntryPointStatus::Disabled),
+                source_kind: "event_qr".to_string(),
+                source_label: Some("Closed event".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let error = create_or_refresh_qr_asset(&db_path, &entry_point.id, None).unwrap_err();
+        assert!(error.to_string().contains("not active"));
+
+        update_entry_point(
+            &db_path,
+            &entry_point.id,
+            EntryPointWriteRequest {
+                slug: "closed-qr".to_string(),
+                label: "Closed QR".to_string(),
+                status: Some(EntryPointStatus::Archived),
+                source_kind: "event_qr".to_string(),
+                source_label: Some("Closed event".to_string()),
+                destination_surface: PublicDestinationSurface::About,
+                destination_id: None,
+                attribution: None,
+                metadata: None,
+            },
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap();
+
+        let error = create_or_refresh_qr_asset(&db_path, &entry_point.id, None).unwrap_err();
+        assert!(error.to_string().contains("not active"));
+
+        let connection = Connection::open(&db_path).unwrap();
+        let artifact_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [QR_ASSET_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(artifact_count, 0);
     }
 
     #[test]

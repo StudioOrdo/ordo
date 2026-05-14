@@ -493,7 +493,7 @@ fn next_action_for_status(status: &str) -> String {
     }
 }
 
-fn load_artifact(connection: &Connection, artifact_id: &str) -> Result<ArtifactView> {
+pub fn load_artifact(connection: &Connection, artifact_id: &str) -> Result<ArtifactView> {
     connection
         .query_row(
             "SELECT id, artifact_kind, title, status, visibility_ceiling, summary,

@@ -241,6 +241,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_workflow_template_kernel",
         apply: add_workflow_template_kernel,
     },
+    SchemaMigration {
+        version: 47,
+        name: "add_generated_content_memory_candidates",
+        apply: add_generated_content_memory_candidates,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3260,6 +3265,55 @@ fn add_confirmed_graph_kernel(connection: &Connection) -> Result<()> {
             ON graph_edge_evidence(evidence_ref);
         CREATE INDEX IF NOT EXISTS idx_graph_candidate_promotions_candidate
             ON graph_candidate_promotions(candidate_kind, candidate_id, decision);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_generated_content_memory_candidates(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS generated_content_memory_candidates (
+            id TEXT PRIMARY KEY,
+            artifact_id TEXT NOT NULL,
+            artifact_version_id TEXT,
+            source_artifact_kind TEXT NOT NULL,
+            source_content_hash TEXT NOT NULL,
+            workflow_template_id TEXT,
+            workflow_compilation_id TEXT,
+            job_id TEXT,
+            extraction_fixture_id TEXT NOT NULL,
+            memory_kind TEXT NOT NULL,
+            memory_tier TEXT NOT NULL,
+            candidate_state TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            summary_text TEXT NOT NULL,
+            body_json TEXT NOT NULL DEFAULT '{}',
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            limitations_json TEXT NOT NULL DEFAULT '[]',
+            visibility TEXT NOT NULL,
+            approval_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            publication_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            feedback_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            outcome_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            rejection_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            content_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            state_changed_at TEXT,
+            state_reason TEXT,
+            FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE,
+            FOREIGN KEY (artifact_version_id) REFERENCES artifact_versions(id) ON DELETE SET NULL,
+            UNIQUE(artifact_id, artifact_version_id, memory_kind, content_hash)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_generated_content_memory_artifact
+            ON generated_content_memory_candidates(artifact_id, artifact_version_id, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_generated_content_memory_review
+            ON generated_content_memory_candidates(candidate_state, memory_tier, visibility, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_generated_content_memory_job
+            ON generated_content_memory_candidates(job_id, created_at ASC);
         "#,
     )?;
     Ok(())

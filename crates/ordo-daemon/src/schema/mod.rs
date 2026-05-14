@@ -129,9 +129,10 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "llm_method_contract_lookup_audit",
     "workflow_templates",
     "workflow_template_compilations",
+    "generated_content_memory_candidates",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 46;
+pub const CURRENT_SCHEMA_VERSION: i64 = 47;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -244,10 +245,10 @@ mod tests {
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
                 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
-                45, 46,
+                45, 46, 47,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 46);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 47);
     }
 
     #[test]
@@ -1413,6 +1414,45 @@ mod tests {
             &connection,
             "graph_candidate_promotions",
             "candidate_kind"
+        ));
+    }
+
+    #[test]
+    fn generated_content_memory_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        assert!(table_exists(
+            &connection,
+            "generated_content_memory_candidates"
+        ));
+        assert!(column_exists(
+            &connection,
+            "generated_content_memory_candidates",
+            "artifact_id"
+        ));
+        assert!(column_exists(
+            &connection,
+            "generated_content_memory_candidates",
+            "memory_tier"
+        ));
+        assert!(column_exists(
+            &connection,
+            "generated_content_memory_candidates",
+            "approval_evidence_refs_json"
+        ));
+        assert!(column_exists(
+            &connection,
+            "generated_content_memory_candidates",
+            "outcome_evidence_refs_json"
+        ));
+        assert!(index_exists(
+            &connection,
+            "idx_generated_content_memory_artifact"
+        ));
+        assert!(index_exists(
+            &connection,
+            "idx_generated_content_memory_review"
         ));
     }
 

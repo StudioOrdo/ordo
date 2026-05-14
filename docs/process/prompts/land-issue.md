@@ -40,7 +40,8 @@ After merge:
 - close implementation issue if Definition Of Done allows it;
 - comment on linked Test Plan issue with merge-backed coverage evidence;
 - close linked Test Plan issue if coverage is complete;
-- update Batch Execution Manifest with next eligible implementation issue.
+- update Batch Execution Manifest with landed evidence and next eligible
+  implementation issue.
 
 Final response:
 - PR created/updated;

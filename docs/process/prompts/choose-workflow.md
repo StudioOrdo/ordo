@@ -32,6 +32,8 @@ Decision rules:
 - If there is failed QA, recommend QA/fix before new work.
 - If the manifest or issue queue is stale, recommend Research Batch or Triage
   Issue Queue.
+- If a product/doc shift changed workflow templates, tools, memory, analytics,
+  packs, or scrollytelling direction, recommend Research Batch before Execute.
 - If the user asks to implement one issue and gates are clear, recommend
   Execute Issue.
 - If the user asks to review latest work, recommend QA Issue.

@@ -226,6 +226,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_product_request_spine_projection",
         apply: add_product_request_spine_projection,
     },
+    SchemaMigration {
+        version: 44,
+        name: "add_confirmed_graph_kernel",
+        apply: add_confirmed_graph_kernel,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3140,6 +3145,111 @@ fn add_product_request_spine_projection(connection: &Connection) -> Result<()> {
             ON product_request_spine(actor_kind, actor_id, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_product_request_spine_connection
             ON product_request_spine(connection_id, updated_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_confirmed_graph_kernel(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS graph_nodes (
+            id TEXT PRIMARY KEY,
+            node_kind TEXT NOT NULL,
+            resource_kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            visibility_ceiling TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(resource_kind, resource_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS graph_node_aliases (
+            id TEXT PRIMARY KEY,
+            node_id TEXT NOT NULL,
+            alias_kind TEXT NOT NULL,
+            alias_value TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (node_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+            UNIQUE(node_id, alias_kind, alias_value)
+        );
+
+        CREATE TABLE IF NOT EXISTS graph_edges (
+            id TEXT PRIMARY KEY,
+            source_node_id TEXT NOT NULL,
+            target_node_id TEXT NOT NULL,
+            relationship_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            visibility_ceiling TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            content_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (source_node_id) REFERENCES graph_nodes(id) ON DELETE RESTRICT,
+            FOREIGN KEY (target_node_id) REFERENCES graph_nodes(id) ON DELETE RESTRICT,
+            UNIQUE(source_node_id, target_node_id, relationship_kind, content_hash)
+        );
+
+        CREATE TABLE IF NOT EXISTS graph_edge_evidence (
+            id TEXT PRIMARY KEY,
+            edge_id TEXT NOT NULL,
+            evidence_kind TEXT NOT NULL,
+            evidence_ref TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (edge_id) REFERENCES graph_edges(id) ON DELETE CASCADE,
+            UNIQUE(edge_id, evidence_ref)
+        );
+
+        CREATE TABLE IF NOT EXISTS graph_query_audit (
+            id TEXT PRIMARY KEY,
+            method_name TEXT NOT NULL,
+            viewer_context_json TEXT NOT NULL DEFAULT '{}',
+            input_hash TEXT NOT NULL,
+            output_hash TEXT NOT NULL,
+            policy_decision_id TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS graph_candidate_promotions (
+            id TEXT PRIMARY KEY,
+            candidate_kind TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            graph_node_id TEXT,
+            graph_edge_id TEXT,
+            decision TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            actor_id TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (graph_node_id) REFERENCES graph_nodes(id) ON DELETE SET NULL,
+            FOREIGN KEY (graph_edge_id) REFERENCES graph_edges(id) ON DELETE SET NULL,
+            UNIQUE(candidate_kind, candidate_id, decision)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_graph_nodes_resource
+            ON graph_nodes(resource_kind, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_graph_nodes_status_visibility
+            ON graph_nodes(status, visibility_ceiling);
+        CREATE INDEX IF NOT EXISTS idx_graph_edges_source
+            ON graph_edges(source_node_id, relationship_kind, status, visibility_ceiling);
+        CREATE INDEX IF NOT EXISTS idx_graph_edges_target
+            ON graph_edges(target_node_id, relationship_kind, status, visibility_ceiling);
+        CREATE INDEX IF NOT EXISTS idx_graph_edges_status_visibility
+            ON graph_edges(status, visibility_ceiling);
+        CREATE INDEX IF NOT EXISTS idx_graph_edge_evidence_ref
+            ON graph_edge_evidence(evidence_ref);
+        CREATE INDEX IF NOT EXISTS idx_graph_candidate_promotions_candidate
+            ON graph_candidate_promotions(candidate_kind, candidate_id, decision);
         "#,
     )?;
     Ok(())

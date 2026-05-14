@@ -71,6 +71,9 @@ creating or executing implementation issues:
   designed for useful but unreliable LLMs.
 - [Pack Kernel](pack-kernel.md) for internal packs and future developer
   ecosystem boundaries.
+- [Workflow Template Kernel](workflow-template-kernel.md) for typed variables,
+  bounded fanout, governed tool composition, task bindings, approval gates, and
+  deterministic provider mocks.
 
 Issue batches should explicitly call out whether a slice touches graph records,
 LLM methods, pack registration, or process completion gates. If it does, the
@@ -211,6 +214,58 @@ Remaining doc cleanup:
       QR path, approval, and failure can be explained in text for accessibility,
       future voice/phone/SMS, and agent-to-agent handoff.
 
+14. **Workflow Template Kernel**
+    - Job/task DAG foundations exist.
+    - Missing versioned workflow templates with typed inputs, workflow
+      variables, variable bindings, fanout groups, approval gates, visibility
+      classes, provider requirements, idempotency/retry policy, deterministic
+      mocks, and projection expectations.
+    - This is future/needed, not shipped behavior.
+
+15. **Generic Provider / Tool Capability Kernel**
+    - Capability catalog and pack binding foundations exist.
+    - Missing a reusable provider/tool kernel for image generation, image
+      review, TTS, transcription, search, QR generation, page render,
+      screenshot QA, and public derivative preparation.
+    - Tool capability must remain generic machinery while product-shaped
+      methods and workflows own authority.
+    - This is future/needed, not shipped behavior.
+
+16. **Generated Content Memory Ingestion**
+    - Artifacts, graph candidates, claims, public surfaces, feedback, and
+      outcomes exist as separate foundations.
+    - Missing a governed path from generated artifacts to extracted candidate
+      claims/preferences, owner approval/rejection, publication evidence,
+      outcome evidence, and graph memory promotion.
+    - Generated content must remain evidence, not automatic truth.
+    - This is future/needed, not shipped behavior.
+
+17. **Content Analytics Spine**
+    - Growth already has attribution and outcome foundations.
+    - Missing event-first content analytics for published artifact/version,
+      claim set, generated media version, section impression or scroll
+      milestone, CTA click, QR/referral source, request, trial, feedback,
+      referral, reward, and downstream outcome.
+    - Analytics must be privacy-aware, local-first, outcome-linked, and honest
+      about limitations.
+    - This is future/needed, not shipped behavior.
+
+18. **Image Generation / Review Artifact Contracts**
+    - Artifact foundations exist.
+    - Missing first-class contracts for image briefs, generated image variants,
+      revised prompts, provider metadata, local file checksums, public
+      derivatives, reviewer feedback, alt text, palette, visibility, approval,
+      and safe publication state.
+    - This is future/needed, not shipped behavior.
+
+19. **Story Pack Workflow Declarations**
+    - Pack manifest foundations exist.
+    - Missing Story Pack workflow declarations for founder intake, narrative
+      deck, image briefs, generated image variants, reviewer feedback,
+      scrollytelling draft, QA review, manual/scheduled publish, analytics
+      feedback, and memory candidate updates.
+    - This is future/needed, not shipped behavior.
+
 ## Frontend Gap Map
 
 ### Strong Foundations Already Present
@@ -343,3 +398,34 @@ Remaining doc cleanup:
      artifacts, failures, QR paths, and approvals.
    - Use it as the bridge for accessibility, future voice/phone/SMS, and
      agent-to-agent handoffs.
+
+13. **Workflow Template Kernel Slice**
+   - Add versioned workflow template records, typed inputs, variables, bindings,
+     fanout expansion, approval gates, and deterministic fixture behavior.
+   - Keep templates below product authority: canonical tables own truth,
+     events own audit/replay, graph owns relationships, and projections own
+     surface experience.
+
+14. **Creative Tool Capability Slice**
+   - Add reusable image-generation and image-review capability contracts with
+     deterministic mocks.
+   - Ensure generated outputs become artifacts with provider metadata,
+     visibility, checksums, evidence refs, approval state, and no public leak of
+     raw prompts or provider internals.
+
+15. **Generated Content Memory Slice**
+   - Extract claims and preferences from generated/published content into graph
+     candidates.
+   - Require owner approval, publication evidence, feedback, or outcome
+     evidence before stronger memory promotion.
+
+16. **Content Analytics Slice**
+   - Add event-first content analytics for scrollytelling/public artifacts,
+     tracked entry points, section/CTA behavior, requests, trials, feedback,
+     referrals, rewards, and outcomes.
+   - Keep LLM interpretation separate from analytics truth.
+
+17. **Story Pack Workflow Slice**
+   - Declare the Story Pack workflow from founder intake through narrative
+     deck, image briefs, generated image variants, review, scrollytelling draft,
+     QA, publish approval, analytics, and memory candidates.

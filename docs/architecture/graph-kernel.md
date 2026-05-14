@@ -145,6 +145,41 @@ promotion path that records:
 
 LLM output should normally create candidates, not confirmed graph records.
 
+Generated content follows the same rule. Generated artifacts are evidence, not
+truth. A draft homepage, article, image brief, TTS script, video storyboard, or
+review note may contain useful claims, but those claims enter memory as
+candidate graph facts until confirmed by deterministic evidence, owner
+approval, publication, customer feedback, or outcome evidence.
+
+Generated-content memory rules:
+
+- generated artifacts are evidence, not truth;
+- draft claims become candidate graph facts;
+- approved or published claims may become stronger evidence;
+- customer feedback and outcomes can confirm, weaken, or correct claims;
+- rejected content can become negative or preference memory when useful;
+- raw prompt internals, provider payloads, private artifact text, and private
+  task outputs must not become public graph labels or member-visible memory.
+
+## Memory Tiers
+
+Use explicit memory tiers instead of one undifferentiated "memory" bucket:
+
+- canonical memory: user/business-entered facts and approved operational
+  records owned by canonical tables;
+- graph memory: confirmed relationships and evidence paths between canonical
+  records, artifacts, claims, people, jobs, packs, and outcomes;
+- candidate memory: proposed claims or relationships extracted from generated
+  content, conversations, reviews, or imports;
+- published memory: claims and artifacts approved for public/member surfaces;
+- preference memory: style, tone, audience, recurring choices, and approved
+  patterns;
+- negative memory: rejected claims, disliked directions, banned language, and
+  failed approaches.
+
+Promotion between tiers must record evidence refs, actor or job origin, policy
+decision when available, and an event.
+
 ## Node Kinds
 
 Initial node kinds should mirror Ordo's product spine:
@@ -201,6 +236,11 @@ Initial relationship kinds:
 - `INSTALLED`
 - `EMITTED`
 - `APPEARS_IN`
+- `CONTAINS_CLAIM`
+- `PUBLISHED_TO`
+- `INFLUENCED`
+- `REVISED_BY_FEEDBACK`
+- `PRODUCED_FROM_INPUT`
 
 Each relationship kind must define:
 
@@ -286,6 +326,14 @@ A job can produce graph edges such as:
 ```text
 job PRODUCED artifact
 artifact SUPPORTS claim
+artifact CONTAINS_CLAIM claim
+claim DERIVED_FROM artifact
+actor APPROVED claim
+actor REJECTED claim
+homepage_version PUBLISHED_TO narrative_surface
+content_event INFLUENCED business_outcome
+feedback REVISED_BY_FEEDBACK claim
+workflow_input PRODUCED_FROM_INPUT artifact
 job EMITTED event
 pack INSTALLED capability
 offer ACCEPTED trial

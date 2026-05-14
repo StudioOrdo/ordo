@@ -38,8 +38,18 @@ Required reading:
 - selected implementation issue;
 - linked Test Plan issue;
 - Batch Execution Manifest;
+- process docs listed above;
 - architecture docs named by the issue;
 - current source and tests.
+
+Architecture gates:
+- preserve canonical/event/graph/projection/access/artifact/job/DAG/pack/workflow
+  boundaries;
+- do not fake providers, analytics, rewards, publishing, graph certainty, task
+  execution, AI capability, hosted capacity, or pack execution;
+- do not leak staff routing, provider internals, prompt internals, secrets, raw
+  policy internals, owner-only data, private artifact text, compiled-plan
+  inputs, task private payloads, graph certainty, or unsupported claims.
 
 Git workflow:
 - start from updated main unless manifest requires a stack branch;

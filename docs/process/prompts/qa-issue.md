@@ -34,8 +34,13 @@ Required reading:
 QA checklist:
 - inspect committed diff against parent;
 - verify acceptance criteria;
-- verify linked test-plan coverage;
-- verify architecture invariants;
+- verify linked test-plan coverage, including positive, negative, edge,
+  privacy/security, idempotency/retry, schema/migration, unit, integration, and
+  E2E/smoke coverage or explicit deferral;
+- verify canonical/event/graph/projection/access/artifact/job/DAG/pack/workflow
+  architecture invariants;
+- verify no public/member leaks and no live-provider requirement in default
+  validation;
 - check correctness, security/privacy, idempotency, rollback/retry,
   schema/migration safety, event/projection/graph consistency, UI behavior,
   dependency cost, and test quality where relevant.
@@ -46,7 +51,8 @@ Validation:
 - formatting check for touched files;
 - git diff --check;
 - broader tests for shared schema, policy, auth, providers, rewards, access,
-  jobs, artifacts, graph, projections, routes, or navigation.
+  jobs, artifacts, graph, projections, routes, navigation, workflow templates,
+  packs, public/member surfaces, or content analytics.
 
 Defect handling:
 - If a real defect exists, make the smallest scoped fix, add/adjust tests where

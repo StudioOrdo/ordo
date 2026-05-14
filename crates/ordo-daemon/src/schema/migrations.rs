@@ -246,6 +246,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_generated_content_memory_candidates",
         apply: add_generated_content_memory_candidates,
     },
+    SchemaMigration {
+        version: 48,
+        name: "add_content_analytics_events",
+        apply: add_content_analytics_events,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -3314,6 +3319,56 @@ fn add_generated_content_memory_candidates(connection: &Connection) -> Result<()
             ON generated_content_memory_candidates(candidate_state, memory_tier, visibility, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_generated_content_memory_job
             ON generated_content_memory_candidates(job_id, created_at ASC);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn add_content_analytics_events(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS content_analytics_events (
+            id TEXT PRIMARY KEY,
+            event_kind TEXT NOT NULL,
+            content_ref_kind TEXT NOT NULL,
+            content_ref_id TEXT NOT NULL,
+            content_version_id TEXT,
+            artifact_id TEXT,
+            artifact_version_id TEXT,
+            surface TEXT NOT NULL,
+            section_id TEXT,
+            cta_id TEXT,
+            workflow_template_id TEXT,
+            workflow_compilation_id TEXT,
+            job_id TEXT,
+            tracked_entry_point_id TEXT,
+            visitor_session_id TEXT,
+            referral_id TEXT,
+            outcome_id TEXT,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            source_status TEXT NOT NULL,
+            visibility TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            limitation_labels_json TEXT NOT NULL DEFAULT '[]',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            payload_hash TEXT NOT NULL,
+            occurred_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(source_kind, source_id, idempotency_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_content_analytics_content
+            ON content_analytics_events(content_ref_kind, content_ref_id, occurred_at DESC, id ASC);
+        CREATE INDEX IF NOT EXISTS idx_content_analytics_surface
+            ON content_analytics_events(surface, event_kind, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_content_analytics_source
+            ON content_analytics_events(source_kind, source_id, idempotency_key);
+        CREATE INDEX IF NOT EXISTS idx_content_analytics_entry_session
+            ON content_analytics_events(tracked_entry_point_id, visitor_session_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_content_analytics_outcome
+            ON content_analytics_events(outcome_id, occurred_at DESC);
         "#,
     )?;
     Ok(())

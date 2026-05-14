@@ -13,6 +13,7 @@ pub mod conversation_analysis;
 pub mod conversation_gateway;
 pub mod conversation_protocol;
 pub mod conversations;
+pub mod content_analytics;
 pub mod corpus;
 pub mod diagnostics;
 pub mod entry_points;

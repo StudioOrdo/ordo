@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::capabilities::assert_capability_ids_registered;
 use crate::diagnostics::{diagnostic_log, insert_diagnostic_log_connection, NewDiagnosticLogEntry};
 use crate::events::{append_realtime_event, append_realtime_event_tx, job_event};
+use crate::json_contracts::validate_json_value;
 use crate::templates::{ProcessTemplate, TaskDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +173,7 @@ pub fn create_job_from_template(
 ) -> Result<String> {
     validate_task_dag(&template.tasks)?;
     validate_job_capabilities(connection, template)?;
+    validate_template_variables(template, &input)?;
 
     let transaction = connection.transaction()?;
     let now = Utc::now().to_rfc3339();
@@ -181,13 +183,14 @@ pub fn create_job_from_template(
         .iter()
         .filter(|task_definition| task_definition.required)
         .count();
+    let compiled_plan = compile_plan_snapshot(template, &input);
 
     transaction.execute(
         "INSERT INTO jobs (
             id, template_id, template_version, capability_id, kind, status, origin, actor_id, input_json,
-            current_task_key, required_task_count, completed_required_task_count,
+            compiled_plan_json, current_task_key, required_task_count, completed_required_task_count,
             started_at, completed_at, created_at, updated_at, failure_message
-         ) VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7, ?8, NULL, ?9, 0, NULL, NULL, ?10, ?10, NULL)",
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, ?7, ?8, ?9, NULL, ?10, 0, NULL, NULL, ?11, ?11, NULL)",
         params![
             job_id,
             template.id,
@@ -197,6 +200,7 @@ pub fn create_job_from_template(
             origin,
             actor_id,
             input.to_string(),
+            compiled_plan.to_string(),
             required_task_count as i64,
             now,
         ],
@@ -226,6 +230,12 @@ pub fn create_job_from_template(
             "templateVersion": template.version,
             "kind": template.kind,
             "origin": origin,
+            "compiledPlan": {
+                "templateId": template.id,
+                "templateVersion": template.version,
+                "taskCount": template.tasks.len(),
+                "requiredTaskCount": required_task_count,
+            },
         }),
     )?;
 
@@ -258,6 +268,37 @@ pub fn create_job_from_template(
     Ok(job_id)
 }
 
+fn validate_template_variables(template: &ProcessTemplate, input: &Value) -> Result<()> {
+    validate_json_value(&template.variable_schema, input, "template variables")
+}
+
+fn compile_plan_snapshot(template: &ProcessTemplate, input: &Value) -> Value {
+    json!({
+        "schemaVersion": 1,
+        "template": {
+            "id": template.id,
+            "version": template.version,
+            "kind": template.kind,
+            "capabilityId": template.effective_capability_id(),
+            "name": template.name,
+        },
+        "variableSchema": template.variable_schema,
+        "input": input,
+        "tasks": template.tasks.iter().map(|task_definition| {
+            json!({
+                "key": task_definition.key,
+                "kind": task_definition.kind,
+                "capabilityId": task_definition.effective_capability_id(),
+                "label": task_definition.label,
+                "required": task_definition.required,
+                "dependsOn": task_definition.depends_on,
+                "input": task_definition.input,
+                "retryPolicy": task_definition.retry_policy,
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
 fn validate_job_capabilities(connection: &Connection, template: &ProcessTemplate) -> Result<()> {
     let mut capability_ids = vec![template.effective_capability_id().to_string()];
     capability_ids.extend(
@@ -278,8 +319,8 @@ fn insert_task(
     transaction.execute(
         "INSERT INTO job_tasks (
             id, job_id, task_key, capability_id, task_kind, label, required, status, input_json,
-            output_json, attempt_count, started_at, completed_at, created_at, updated_at, error_message
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, NULL, 0, NULL, NULL, ?9, ?9, NULL)",
+            retry_policy_json, output_json, attempt_count, started_at, completed_at, created_at, updated_at, error_message
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, ?9, NULL, 0, NULL, NULL, ?10, ?10, NULL)",
         params![
             format!("task_{}", Uuid::new_v4()),
             job_id,
@@ -289,6 +330,7 @@ fn insert_task(
             task_definition.label,
             if task_definition.required { 1 } else { 0 },
             task_definition.input.to_string(),
+            task_definition.retry_policy.to_string(),
             now,
         ],
     )?;
@@ -910,7 +952,71 @@ mod tests {
                 .map(|dependency| dependency.to_string())
                 .collect(),
             input: json!({}),
+            retry_policy: json!({}),
         }
+    }
+
+    fn variable_template() -> ProcessTemplate {
+        ProcessTemplate {
+            id: "test.variable.plan".to_string(),
+            capability_id: "system.health.check".to_string(),
+            kind: "system.health.check".to_string(),
+            name: "Variable Plan".to_string(),
+            version: 7,
+            description: "exercise compiled plan snapshots".to_string(),
+            variable_schema: json!({
+                "type": "object",
+                "required": ["topic"],
+                "properties": {
+                    "topic": { "type": "string", "minLength": 1 },
+                    "priority": { "enum": ["normal", "urgent"] }
+                },
+                "additionalProperties": false
+            }),
+            tasks: vec![
+                TaskDefinition {
+                    key: "probe".to_string(),
+                    capability_id: "system.health.probe".to_string(),
+                    kind: "system.health.probe".to_string(),
+                    label: "Probe".to_string(),
+                    required: true,
+                    depends_on: vec![],
+                    input: json!({ "from": "template" }),
+                    retry_policy: json!({ "maxAttempts": 3 }),
+                },
+                TaskDefinition {
+                    key: "record".to_string(),
+                    capability_id: "system.health.record".to_string(),
+                    kind: "system.health.record".to_string(),
+                    label: "Record".to_string(),
+                    required: true,
+                    depends_on: vec!["probe".to_string()],
+                    input: json!({}),
+                    retry_policy: json!({ "maxAttempts": 2 }),
+                },
+            ],
+        }
+    }
+
+    fn register_template(connection: &Connection, template: &ProcessTemplate) {
+        connection
+            .execute(
+                "INSERT INTO process_templates (
+                    id, capability_id, kind, name, version, description, variable_schema_json,
+                    tasks_json, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'now', 'now')",
+                params![
+                    template.id,
+                    template.effective_capability_id(),
+                    template.kind,
+                    template.name,
+                    template.version,
+                    template.description,
+                    template.variable_schema.to_string(),
+                    serde_json::to_string(&template.tasks).unwrap(),
+                ],
+            )
+            .unwrap();
     }
 
     #[test]
@@ -1021,6 +1127,118 @@ mod tests {
             .unwrap();
 
         assert_eq!(replay_count, 2);
+    }
+
+    #[test]
+    fn creates_job_with_compiled_plan_snapshot_and_validated_variables() {
+        let mut connection = test_connection();
+        let template = variable_template();
+        register_template(&connection, &template);
+
+        let job_id = create_job_from_template(
+            &mut connection,
+            &template,
+            "test",
+            Some("actor_owner"),
+            json!({ "topic": "NYC pilot", "priority": "urgent" }),
+        )
+        .unwrap();
+
+        let compiled_plan_json: String = connection
+            .query_row(
+                "SELECT compiled_plan_json FROM jobs WHERE id = ?1",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let compiled_plan: Value = serde_json::from_str(&compiled_plan_json).unwrap();
+
+        assert_eq!(compiled_plan["template"]["id"], "test.variable.plan");
+        assert_eq!(compiled_plan["template"]["version"], 7);
+        assert_eq!(compiled_plan["input"]["topic"], "NYC pilot");
+        assert_eq!(compiled_plan["variableSchema"]["required"][0], "topic");
+        assert_eq!(compiled_plan["tasks"][0]["key"], "probe");
+        assert_eq!(
+            compiled_plan["tasks"][0]["capabilityId"],
+            "system.health.probe"
+        );
+        assert_eq!(compiled_plan["tasks"][0]["required"], true);
+        assert_eq!(compiled_plan["tasks"][0]["retryPolicy"]["maxAttempts"], 3);
+        assert_eq!(compiled_plan["tasks"][1]["dependsOn"][0], "probe");
+
+        let job_created_payload_json: String = connection
+            .query_row(
+                "SELECT payload_json FROM job_events
+                 WHERE job_id = ?1 AND event_type = 'job.created'",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let job_created_payload: Value = serde_json::from_str(&job_created_payload_json).unwrap();
+        assert_eq!(job_created_payload["compiledPlan"]["taskCount"], 2);
+        assert!(job_created_payload.get("input").is_none());
+    }
+
+    #[test]
+    fn invalid_template_variables_reject_without_partial_job_rows() {
+        let mut connection = test_connection();
+        let template = variable_template();
+        register_template(&connection, &template);
+
+        let before_jobs: i64 = connection
+            .query_row("SELECT COUNT(*) FROM jobs", [], |row| row.get(0))
+            .unwrap();
+        let before_tasks: i64 = connection
+            .query_row("SELECT COUNT(*) FROM job_tasks", [], |row| row.get(0))
+            .unwrap();
+
+        let error = create_job_from_template(
+            &mut connection,
+            &template,
+            "test",
+            None,
+            json!({ "topic": "", "extra": "not allowed" }),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("template variables failed JSON Schema validation"));
+        let after_jobs: i64 = connection
+            .query_row("SELECT COUNT(*) FROM jobs", [], |row| row.get(0))
+            .unwrap();
+        let after_tasks: i64 = connection
+            .query_row("SELECT COUNT(*) FROM job_tasks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(after_jobs, before_jobs);
+        assert_eq!(after_tasks, before_tasks);
+    }
+
+    #[test]
+    fn legacy_template_without_variable_schema_gets_empty_schema_snapshot() {
+        let mut connection = test_connection();
+        let mut template =
+            crate::templates::require_builtin_template("system.health.check").unwrap();
+        template.variable_schema = json!({});
+
+        let job_id = create_job_from_template(
+            &mut connection,
+            &template,
+            "legacy",
+            None,
+            json!({ "freeform": true }),
+        )
+        .unwrap();
+
+        let compiled_plan_json: String = connection
+            .query_row(
+                "SELECT compiled_plan_json FROM jobs WHERE id = ?1",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let compiled_plan: Value = serde_json::from_str(&compiled_plan_json).unwrap();
+        assert_eq!(compiled_plan["variableSchema"], json!({}));
+        assert_eq!(compiled_plan["input"]["freeform"], true);
     }
 
     #[test]

@@ -206,6 +206,11 @@ pub(crate) const MIGRATIONS: &[SchemaMigration] = &[
         name: "add_job_task_lease_state",
         apply: add_job_task_lease_state,
     },
+    SchemaMigration {
+        version: 40,
+        name: "add_compiled_plan_snapshots",
+        apply: add_compiled_plan_snapshots,
+    },
 ];
 
 pub(crate) fn validate_migration_order() -> Result<()> {
@@ -2989,6 +2994,43 @@ fn add_job_task_lease_state(connection: &Connection) -> Result<()> {
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_job_tasks_ready_lease
             ON job_tasks(job_id, status, lease_expires_at)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn add_compiled_plan_snapshots(connection: &Connection) -> Result<()> {
+    ensure_column(
+        connection,
+        "process_templates",
+        "variable_schema_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    ensure_column(
+        connection,
+        "jobs",
+        "compiled_plan_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    connection.execute(
+        "UPDATE jobs
+         SET compiled_plan_json = json_object(
+            'schemaVersion', 1,
+            'template', json_object(
+                'id', template_id,
+                'version', template_version,
+                'kind', kind,
+                'capabilityId', capability_id
+            ),
+            'variableSchema', json('{}'),
+            'input', CASE
+                WHEN json_valid(input_json) THEN json(input_json)
+                ELSE json('{}')
+            END,
+            'tasks', json('[]')
+         )
+         WHERE compiled_plan_json = '{}'",
         [],
     )?;
 

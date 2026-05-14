@@ -15,6 +15,7 @@ use crate::policy::{
 };
 use crate::schema::db::ConnectionExt;
 use crate::templates::require_builtin_template_version;
+use crate::workflow_templates::load_workflow_template;
 
 pub const PRODUCT_PACK_STATUS_ENABLED: &str = "enabled";
 pub const PRODUCT_PACK_STATUS_DISABLED: &str = "disabled";
@@ -39,9 +40,19 @@ pub struct ProductPackManifest {
     #[serde(default)]
     pub job_template_bindings: Vec<ProductPackJobTemplateBinding>,
     #[serde(default)]
+    pub workflow_template_bindings: Vec<ProductPackWorkflowTemplateBinding>,
+    #[serde(default)]
     pub request_templates: Vec<ProductPackRequestTemplateBinding>,
     #[serde(default)]
     pub artifact_contracts: Vec<ProductPackArtifactContractBinding>,
+    #[serde(default)]
+    pub graph_node_kinds: Vec<ProductPackGraphNodeKindBinding>,
+    #[serde(default)]
+    pub graph_edge_kinds: Vec<ProductPackGraphEdgeKindBinding>,
+    #[serde(default)]
+    pub projection_surfaces: Vec<ProductPackProjectionSurfaceBinding>,
+    #[serde(default)]
+    pub llm_method_bindings: Vec<ProductPackLlmMethodBinding>,
     #[serde(default)]
     pub visibility: Value,
     #[serde(default)]
@@ -79,6 +90,18 @@ pub struct ProductPackJobTemplateBinding {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProductPackWorkflowTemplateBinding {
+    pub key: String,
+    pub template_id: String,
+    pub template_version: i64,
+    #[serde(default)]
+    pub visibility: Value,
+    #[serde(default)]
+    pub limits: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProductPackRequestTemplateBinding {
     pub key: String,
     pub title: String,
@@ -96,6 +119,58 @@ pub struct ProductPackRequestTemplateBinding {
 pub struct ProductPackArtifactContractBinding {
     pub key: String,
     pub artifact_kind: String,
+    #[serde(default)]
+    pub contract: Value,
+    #[serde(default)]
+    pub visibility: Value,
+    #[serde(default)]
+    pub limits: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPackGraphNodeKindBinding {
+    pub key: String,
+    pub node_kind: String,
+    #[serde(default)]
+    pub contract: Value,
+    #[serde(default)]
+    pub visibility: Value,
+    #[serde(default)]
+    pub limits: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPackGraphEdgeKindBinding {
+    pub key: String,
+    pub edge_kind: String,
+    #[serde(default)]
+    pub contract: Value,
+    #[serde(default)]
+    pub visibility: Value,
+    #[serde(default)]
+    pub limits: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPackProjectionSurfaceBinding {
+    pub key: String,
+    pub surface: String,
+    #[serde(default)]
+    pub contract: Value,
+    #[serde(default)]
+    pub visibility: Value,
+    #[serde(default)]
+    pub limits: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPackLlmMethodBinding {
+    pub key: String,
+    pub method_name: String,
     #[serde(default)]
     pub contract: Value,
     #[serde(default)]
@@ -296,6 +371,195 @@ pub fn install_product_pack(
     read_product_pack(db_path, &request.manifest.id)
 }
 
+pub fn story_pack_manifest() -> ProductPackManifest {
+    ProductPackManifest {
+        id: "studio.story".to_string(),
+        name: "Studio Story Pack".to_string(),
+        version: "0.1.0".to_string(),
+        description: Some(
+            "Internal governed workflow declarations for scrollytelling homepage production."
+                .to_string(),
+        ),
+        provenance: json!({
+            "source": "docs/architecture/pack-kernel.md",
+            "reviewedBy": "owner",
+            "reason": "Internal Story Pack manifest for scrollytelling homepage workflow"
+        }),
+        capability_bindings: vec![
+            ProductPackCapabilityBinding {
+                key: "surface_brief_generate".to_string(),
+                capability_id: "surface.brief.generate".to_string(),
+                visibility: json!({ "surface": "studio", "member": false }),
+                limits: json!({ "deterministicOnly": true }),
+            },
+            ProductPackCapabilityBinding {
+                key: "artifact_brief_generate".to_string(),
+                capability_id: "artifacts.brief.generate".to_string(),
+                visibility: json!({ "surface": "studio", "member": false }),
+                limits: json!({ "deterministicOnly": true }),
+            },
+            ProductPackCapabilityBinding {
+                key: "promo_video_package".to_string(),
+                capability_id: "studio.promo_video.package".to_string(),
+                visibility: json!({ "surface": "studio", "member": false }),
+                limits: json!({
+                    "contractOnly": true,
+                    "externalReleaseAllowed": false,
+                    "liveProviderDefault": false
+                }),
+            },
+        ],
+        job_template_bindings: vec![
+            ProductPackJobTemplateBinding {
+                key: "surface_brief_refresh".to_string(),
+                template_id: "surface.brief.generate".to_string(),
+                template_version: 1,
+                visibility: json!({ "surface": "studio" }),
+                limits: json!({ "maxQueued": 1 }),
+            },
+            ProductPackJobTemplateBinding {
+                key: "video_storyboard_placeholder".to_string(),
+                template_id: "studio.promo_video.package".to_string(),
+                template_version: 1,
+                visibility: json!({ "surface": "studio" }),
+                limits: json!({
+                    "rendersVideo": false,
+                    "externalReleaseAllowed": false,
+                    "liveProviderDefault": false
+                }),
+            },
+        ],
+        workflow_template_bindings: vec![ProductPackWorkflowTemplateBinding {
+            key: "scrollytelling_homepage".to_string(),
+            template_id: "studio.story.scrollytelling_homepage".to_string(),
+            template_version: 1,
+            visibility: json!({ "surface": "studio", "member": false }),
+            limits: json!({
+                "typedVariables": true,
+                "boundedFanout": true,
+                "approvalRequired": true,
+                "defaultValidationRequiresLiveProviders": false
+            }),
+        }],
+        request_templates: vec![
+            ProductPackRequestTemplateBinding {
+                key: "founder_intake".to_string(),
+                title: "Founder story intake".to_string(),
+                capability_id: "surface.brief.generate".to_string(),
+                contract: json_schema_object(&[
+                    "founderProfile",
+                    "businessPositioning",
+                    "audience",
+                ]),
+                visibility: json!({ "studio": true, "member": false }),
+                limits: json!({ "storesPrivateInputs": false }),
+            },
+            ProductPackRequestTemplateBinding {
+                key: "refresh_proposal".to_string(),
+                title: "Homepage story refresh proposal".to_string(),
+                capability_id: "surface.brief.generate".to_string(),
+                contract: json_schema_object(&["deckId", "reason"]),
+                visibility: json!({ "studio": true, "member": false }),
+                limits: json!({ "requiresApproval": true }),
+            },
+        ],
+        artifact_contracts: vec![
+            artifact_contract("story_profile", "story.profile"),
+            artifact_contract("narrative_deck", "story.narrative_deck"),
+            artifact_contract("image_brief", "story.image_brief"),
+            artifact_contract(
+                "generated_image_candidate",
+                "story.generated_image_candidate",
+            ),
+            artifact_contract("homepage_version", "story.homepage_version"),
+            artifact_contract("refresh_proposal", "story.refresh_proposal"),
+            artifact_contract("video_storyboard", "story.video_storyboard"),
+        ],
+        graph_node_kinds: vec![
+            graph_node_contract("story_profile", "story_profile"),
+            graph_node_contract("homepage_section", "homepage_section"),
+            graph_node_contract("claim", "claim"),
+            graph_node_contract("artifact", "artifact"),
+            graph_node_contract("pack", "pack"),
+        ],
+        graph_edge_kinds: vec![
+            graph_edge_contract("contains_claim", "CONTAINS_CLAIM"),
+            graph_edge_contract("derived_from", "DERIVED_FROM"),
+            graph_edge_contract("appears_in", "APPEARS_IN"),
+            graph_edge_contract("produced_from_input", "PRODUCED_FROM_INPUT"),
+        ],
+        projection_surfaces: vec![
+            projection_surface("studio_story", "studio.story"),
+            projection_surface("growth_story", "growth.story"),
+            projection_surface("public_homepage_story", "public.homepage_story"),
+            projection_surface("systems_pack_review", "systems.pack_review"),
+        ],
+        llm_method_bindings: vec![
+            llm_method_binding("pack_inspect_manifest", "pack.inspect_manifest"),
+            llm_method_binding("workflow_resolve_variables", "workflow.resolveVariables"),
+            llm_method_binding(
+                "homepage_prepare_image_briefs",
+                "homepage.prepare_image_briefs",
+            ),
+            llm_method_binding("image_review_against_brief", "image.reviewAgainstBrief"),
+            llm_method_binding("claim_validate_public_claim", "claim.validate_public_claim"),
+            llm_method_binding(
+                "graph_get_resource_neighborhood",
+                "graph.get_resource_neighborhood",
+            ),
+        ],
+        visibility: json!({
+            "owner": true,
+            "staff": true,
+            "memberSummary": true,
+            "publicSurface": false
+        }),
+        access: json!({ "requiredAccessKind": "owner_or_staff" }),
+        growth: json!({
+            "evidenceKinds": [
+                "content_event",
+                "publication_evidence",
+                "feedback_response",
+                "business_outcome"
+            ],
+            "recordsAnalyticsTruth": false
+        }),
+        limits: json!({
+            "maxConcurrentRuns": 1,
+            "defaultValidationRequiresLiveProviders": false,
+            "externalReleaseAllowed": false
+        }),
+        metadata: json!({
+            "status": "internal",
+            "coreOwnsTrust": true,
+            "packOwnsWorkflow": true,
+            "workflowDeclaresOnly": true,
+            "deferred": [
+                "scrollytelling_runtime",
+                "live_image_generation",
+                "external_marketplace",
+                "publication_automation",
+                "external_analytics"
+            ]
+        }),
+    }
+}
+
+pub fn install_story_pack_manifest(
+    db_path: &Path,
+    origin: &str,
+    actor_id: Option<&str>,
+) -> Result<ProductPackResponse> {
+    install_product_pack(
+        db_path,
+        ProductPackInstallRequest {
+            manifest: story_pack_manifest(),
+        },
+        origin,
+        actor_id,
+    )
+}
+
 pub fn disable_product_pack(
     db_path: &Path,
     pack_id: &str,
@@ -363,8 +627,13 @@ fn validate_product_pack_manifest(
 
     let binding_count = manifest.capability_bindings.len()
         + manifest.job_template_bindings.len()
+        + manifest.workflow_template_bindings.len()
         + manifest.request_templates.len()
-        + manifest.artifact_contracts.len();
+        + manifest.artifact_contracts.len()
+        + manifest.graph_node_kinds.len()
+        + manifest.graph_edge_kinds.len()
+        + manifest.projection_surfaces.len()
+        + manifest.llm_method_bindings.len();
     if binding_count == 0 {
         bail!("Product pack manifest requires at least one governed binding");
     }
@@ -381,6 +650,11 @@ fn validate_product_pack_manifest(
         require_identifier(&binding.template_id, "Job template id")?;
         require_builtin_template_version(&binding.template_id, binding.template_version)?;
     }
+    for binding in &manifest.workflow_template_bindings {
+        require_binding_key(&mut keys, "workflow_template", &binding.key)?;
+        require_identifier(&binding.template_id, "Workflow template id")?;
+        load_workflow_template(connection, &binding.template_id, binding.template_version)?;
+    }
     for binding in &manifest.request_templates {
         require_binding_key(&mut keys, "request_template", &binding.key)?;
         require_non_empty(&binding.title, "Request template title")?;
@@ -394,21 +668,51 @@ fn validate_product_pack_manifest(
         require_identifier(&binding.artifact_kind, "Artifact kind")?;
         validate_contract(&binding.contract, "artifact contract")?;
     }
+    for binding in &manifest.graph_node_kinds {
+        require_binding_key(&mut keys, "graph_node_kind", &binding.key)?;
+        require_identifier(&binding.node_kind, "Graph node kind")?;
+        require_declared_graph_node_kind(&binding.node_kind)?;
+        validate_contract(&binding.contract, "graph node contract")?;
+    }
+    for binding in &manifest.graph_edge_kinds {
+        require_binding_key(&mut keys, "graph_edge_kind", &binding.key)?;
+        require_identifier(&binding.edge_kind, "Graph edge kind")?;
+        require_declared_graph_edge_kind(&binding.edge_kind)?;
+        validate_contract(&binding.contract, "graph edge contract")?;
+    }
+    for binding in &manifest.projection_surfaces {
+        require_binding_key(&mut keys, "projection_surface", &binding.key)?;
+        require_identifier(&binding.surface, "Projection surface")?;
+        validate_contract(&binding.contract, "projection surface contract")?;
+    }
+    for binding in &manifest.llm_method_bindings {
+        require_binding_key(&mut keys, "llm_method", &binding.key)?;
+        require_method_name(&binding.method_name)?;
+        require_llm_method_contract(connection, &binding.method_name)?;
+        validate_contract(&binding.contract, "LLM method binding contract")?;
+    }
 
     Ok(json!({
         "status": "accepted",
         "bindingCount": binding_count,
         "capabilityBindingCount": manifest.capability_bindings.len(),
         "jobTemplateBindingCount": manifest.job_template_bindings.len(),
+        "workflowTemplateBindingCount": manifest.workflow_template_bindings.len(),
         "requestTemplateCount": manifest.request_templates.len(),
         "artifactContractCount": manifest.artifact_contracts.len(),
+        "graphNodeKindCount": manifest.graph_node_kinds.len(),
+        "graphEdgeKindCount": manifest.graph_edge_kinds.len(),
+        "projectionSurfaceCount": manifest.projection_surfaces.len(),
+        "llmMethodBindingCount": manifest.llm_method_bindings.len(),
         "unsupportedBehavior": [
             "pack_execution",
             "mcp_export_grants",
             "marketplace",
             "billing",
             "remote_registry",
-            "benefit_grants"
+            "benefit_grants",
+            "public_publishing",
+            "live_provider_default"
         ],
     }))
 }
@@ -454,6 +758,24 @@ fn insert_manifest_bindings(
             now,
         )?;
     }
+    for binding in &manifest.workflow_template_bindings {
+        insert_binding(
+            transaction,
+            manifest,
+            BindingInsert {
+                kind: "workflow_template",
+                key: &binding.key,
+                capability_id: None,
+                template_id: None,
+                template_version: None,
+                artifact_kind: Some(&binding.template_id),
+                contract: &json!({}),
+                visibility: &binding.visibility,
+                limits: &binding.limits,
+            },
+            now,
+        )?;
+    }
     for binding in &manifest.request_templates {
         insert_binding(
             transaction,
@@ -483,6 +805,78 @@ fn insert_manifest_bindings(
                 template_id: None,
                 template_version: None,
                 artifact_kind: Some(&binding.artifact_kind),
+                contract: &binding.contract,
+                visibility: &binding.visibility,
+                limits: &binding.limits,
+            },
+            now,
+        )?;
+    }
+    for binding in &manifest.graph_node_kinds {
+        insert_binding(
+            transaction,
+            manifest,
+            BindingInsert {
+                kind: "graph_node_kind",
+                key: &binding.key,
+                capability_id: None,
+                template_id: None,
+                template_version: None,
+                artifact_kind: Some(&binding.node_kind),
+                contract: &binding.contract,
+                visibility: &binding.visibility,
+                limits: &binding.limits,
+            },
+            now,
+        )?;
+    }
+    for binding in &manifest.graph_edge_kinds {
+        insert_binding(
+            transaction,
+            manifest,
+            BindingInsert {
+                kind: "graph_edge_kind",
+                key: &binding.key,
+                capability_id: None,
+                template_id: None,
+                template_version: None,
+                artifact_kind: Some(&binding.edge_kind),
+                contract: &binding.contract,
+                visibility: &binding.visibility,
+                limits: &binding.limits,
+            },
+            now,
+        )?;
+    }
+    for binding in &manifest.projection_surfaces {
+        insert_binding(
+            transaction,
+            manifest,
+            BindingInsert {
+                kind: "projection_surface",
+                key: &binding.key,
+                capability_id: None,
+                template_id: None,
+                template_version: None,
+                artifact_kind: Some(&binding.surface),
+                contract: &binding.contract,
+                visibility: &binding.visibility,
+                limits: &binding.limits,
+            },
+            now,
+        )?;
+    }
+    for binding in &manifest.llm_method_bindings {
+        insert_binding(
+            transaction,
+            manifest,
+            BindingInsert {
+                kind: "llm_method",
+                key: &binding.key,
+                capability_id: None,
+                template_id: None,
+                template_version: None,
+                artifact_kind: Some(&binding.method_name),
                 contract: &binding.contract,
                 visibility: &binding.visibility,
                 limits: &binding.limits,
@@ -545,6 +939,24 @@ fn validate_contract(contract: &Value, label: &str) -> Result<()> {
     validate_json_schema_document(contract, label)
 }
 
+fn require_llm_method_contract(connection: &Connection, method_name: &str) -> Result<()> {
+    let exists = connection
+        .query_row(
+            "SELECT 1 FROM llm_method_contracts
+             WHERE name = ?1 AND execution_status = 'contract_only'
+             LIMIT 1",
+            [method_name],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if exists {
+        Ok(())
+    } else {
+        bail!("Unknown LLM method contract: {method_name}")
+    }
+}
+
 fn require_manifest_provenance(provenance: &Value) -> Result<()> {
     if provenance
         .as_object()
@@ -574,7 +986,7 @@ fn reject_hidden_authority_at(value: &Value, path: &str) -> Result<()> {
         Value::Object(object) => {
             for (key, nested) in object {
                 if is_hidden_authority_key(key) {
-                    bail!("unsupported hidden-authority field in {path}");
+                    bail!("unsupported hidden-authority field in {path}: {key}");
                 }
                 reject_hidden_authority_at(nested, path)?;
             }
@@ -618,7 +1030,13 @@ fn is_hidden_authority_key(key: &str) -> bool {
         "payment",
         "marketplace",
         "remoteregistry",
+        "arbitraryexecution",
         "externalpublishing",
+        "externalpublish",
+        "publicpublishing",
+        "provideregress",
+        "wipereset",
+        "rewardaccessmutation",
         "benefitgrant",
         "rewardledger",
         "accessgrant",
@@ -650,12 +1068,194 @@ fn require_identifier(value: &str, label: &str) -> Result<()> {
     }
 }
 
+fn require_method_name(value: &str) -> Result<()> {
+    let normalized = require_non_empty(value, "LLM method name")?;
+    let Some((family, method)) = normalized.split_once('.') else {
+        bail!("LLM method name must use product-shaped family.method form");
+    };
+    require_identifier(family, "LLM method family")?;
+    require_identifier(method, "LLM method method")?;
+    if matches!(
+        normalized.as_str(),
+        "query_sql" | "search_database" | "get_context" | "run_tool" | "update_record"
+    ) || method.eq_ignore_ascii_case("run_tool")
+    {
+        bail!("LLM method name must not grant generic authority");
+    }
+    Ok(())
+}
+
+fn require_declared_graph_node_kind(node_kind: &str) -> Result<()> {
+    if declared_graph_node_kinds().contains(&node_kind) {
+        Ok(())
+    } else {
+        bail!("Unknown graph node kind: {node_kind}")
+    }
+}
+
+fn require_declared_graph_edge_kind(edge_kind: &str) -> Result<()> {
+    if declared_graph_edge_kinds().contains(&edge_kind) {
+        Ok(())
+    } else {
+        bail!("Unknown graph edge kind: {edge_kind}")
+    }
+}
+
+fn declared_graph_node_kinds() -> &'static [&'static str] {
+    &[
+        "actor",
+        "connection",
+        "conversation",
+        "conversation_message",
+        "visitor_session",
+        "tracked_entry_point",
+        "offer",
+        "offer_acceptance",
+        "trial",
+        "request",
+        "handoff",
+        "artifact",
+        "job",
+        "job_task",
+        "event",
+        "claim",
+        "homepage_section",
+        "story_profile",
+        "reward_program",
+        "reward_event",
+        "benefit_grant",
+        "business_outcome",
+        "pack",
+        "capability",
+        "corpus_item",
+    ]
+}
+
+fn declared_graph_edge_kinds() -> &'static [&'static str] {
+    &[
+        "AUTHORED",
+        "MENTIONS",
+        "SUPPORTS",
+        "CONTRADICTS",
+        "DERIVED_FROM",
+        "PRODUCED",
+        "USES",
+        "REQUESTED",
+        "APPROVED",
+        "REJECTED",
+        "GRANTED",
+        "REVOKED",
+        "REFERRED",
+        "ATTRIBUTED_TO",
+        "ACCEPTED",
+        "TRIGGERED",
+        "HANDED_OFF_TO",
+        "REQUIRES",
+        "DEPENDS_ON",
+        "INSTALLED",
+        "EMITTED",
+        "APPEARS_IN",
+        "CONTAINS_CLAIM",
+        "PUBLISHED_TO",
+        "INFLUENCED",
+        "REVISED_BY_FEEDBACK",
+        "PRODUCED_FROM_INPUT",
+    ]
+}
+
 fn require_non_empty(value: &str, label: &str) -> Result<String> {
     let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if normalized.is_empty() {
         bail!("{label} is required");
     }
     Ok(normalized)
+}
+
+fn json_schema_object(required_fields: &[&str]) -> Value {
+    let mut properties = serde_json::Map::new();
+    for field in required_fields {
+        properties.insert(
+            (*field).to_string(),
+            json!({ "type": "string", "minLength": 1 }),
+        );
+    }
+    json!({
+        "type": "object",
+        "required": required_fields,
+        "additionalProperties": false,
+        "properties": properties
+    })
+}
+
+fn artifact_contract(key: &str, artifact_kind: &str) -> ProductPackArtifactContractBinding {
+    ProductPackArtifactContractBinding {
+        key: key.to_string(),
+        artifact_kind: artifact_kind.to_string(),
+        contract: json_schema_object(&["artifactId", "evidenceRef"]),
+        visibility: json!({
+            "studio": true,
+            "member": false,
+            "public": false,
+            "publicDerivativeRequiresApproval": true
+        }),
+        limits: json!({
+            "defaultValidationRequiresLiveProviders": false,
+            "storesPrivateTextInSummary": false
+        }),
+    }
+}
+
+fn graph_node_contract(key: &str, node_kind: &str) -> ProductPackGraphNodeKindBinding {
+    ProductPackGraphNodeKindBinding {
+        key: key.to_string(),
+        node_kind: node_kind.to_string(),
+        contract: json_schema_object(&["resourceKind", "resourceId", "evidenceRef"]),
+        visibility: json!({ "maxCeiling": "staff", "publicRequiresApproval": true }),
+        limits: json!({ "candidateFirst": true, "confirmedRequiresApproval": true }),
+    }
+}
+
+fn graph_edge_contract(key: &str, edge_kind: &str) -> ProductPackGraphEdgeKindBinding {
+    ProductPackGraphEdgeKindBinding {
+        key: key.to_string(),
+        edge_kind: edge_kind.to_string(),
+        contract: json_schema_object(&["sourceRef", "targetRef", "evidenceRef"]),
+        visibility: json!({ "maxCeiling": "staff", "publicRequiresApproval": true }),
+        limits: json!({ "candidateFirst": true, "confirmedRequiresApproval": true }),
+    }
+}
+
+fn projection_surface(key: &str, surface: &str) -> ProductPackProjectionSurfaceBinding {
+    ProductPackProjectionSurfaceBinding {
+        key: key.to_string(),
+        surface: surface.to_string(),
+        contract: json_schema_object(&["surfaceId", "evidenceRef"]),
+        visibility: json!({
+            "roleSafe": true,
+            "memberSummary": surface.starts_with("public.") || surface.starts_with("growth.")
+        }),
+        limits: json!({
+            "redactsRoutingDetails": true,
+            "redactsProviderDetails": true,
+            "redactsPromptDetails": true,
+            "omitsGraphCertainty": true
+        }),
+    }
+}
+
+fn llm_method_binding(key: &str, method_name: &str) -> ProductPackLlmMethodBinding {
+    ProductPackLlmMethodBinding {
+        key: key.to_string(),
+        method_name: method_name.to_string(),
+        contract: json_schema_object(&["evidenceRef"]),
+        visibility: json!({ "maxCeiling": "staff", "memberSafeOutputRequired": true }),
+        limits: json!({
+            "readOnly": true,
+            "defaultValidationRequiresLiveProviders": false,
+            "requiresEvidenceRefs": true,
+            "requiresLimitations": true
+        }),
+    }
 }
 
 fn require_product_pack(connection: &Connection, pack_id: &str) -> Result<ProductPackRecord> {
@@ -801,6 +1401,7 @@ mod tests {
                 visibility: json!({ "surface": "systems" }),
                 limits: json!({ "maxQueued": 1 }),
             }],
+            workflow_template_bindings: vec![],
             request_templates: vec![ProductPackRequestTemplateBinding {
                 key: "strategy_request".to_string(),
                 title: "Strategy session request".to_string(),
@@ -826,6 +1427,10 @@ mod tests {
                 visibility: json!({ "studio": true, "member": false }),
                 limits: json!({ "maxVersions": 3 }),
             }],
+            graph_node_kinds: vec![],
+            graph_edge_kinds: vec![],
+            projection_surfaces: vec![],
+            llm_method_bindings: vec![],
             visibility: json!({ "owner": true, "memberSummary": true }),
             access: json!({ "requiredAccessKind": "hosted_trial" }),
             growth: json!({ "evidenceKinds": ["offer_acceptance", "feedback_review"] }),
@@ -1014,5 +1619,138 @@ mod tests {
         assert!(!json.contains("secret"));
         assert!(!json.contains("rawPolicy"));
         assert!(!json.contains("staffRouting"));
+    }
+
+    #[test]
+    fn story_pack_manifest_installs_declared_workflow_without_hidden_authority() {
+        let (_temp_dir, db_path) = setup_db();
+
+        let installed =
+            install_story_pack_manifest(&db_path, "test", Some(LOCAL_OWNER_ACTOR_ID)).unwrap();
+
+        assert_eq!(installed.pack.id, "studio.story");
+        assert_eq!(installed.pack.status, PRODUCT_PACK_STATUS_ENABLED);
+        assert_eq!(
+            installed.pack.validation["workflowTemplateBindingCount"],
+            json!(1)
+        );
+        assert_eq!(installed.pack.validation["graphNodeKindCount"], json!(5));
+        assert_eq!(installed.pack.validation["graphEdgeKindCount"], json!(4));
+        assert_eq!(
+            installed.pack.validation["projectionSurfaceCount"],
+            json!(4)
+        );
+        assert_eq!(installed.pack.validation["llmMethodBindingCount"], json!(6));
+        assert_eq!(
+            installed.pack.manifest["metadata"]["workflowDeclaresOnly"],
+            json!(true)
+        );
+        assert_eq!(
+            installed.pack.manifest["limits"]["defaultValidationRequiresLiveProviders"],
+            json!(false)
+        );
+        assert!(installed.pack.bindings.iter().any(|binding| {
+            binding.binding_kind == "workflow_template"
+                && binding.artifact_kind.as_deref() == Some("studio.story.scrollytelling_homepage")
+        }));
+        assert!(installed.pack.bindings.iter().any(|binding| {
+            binding.binding_kind == "artifact_contract"
+                && binding.artifact_kind.as_deref() == Some("story.image_brief")
+        }));
+        assert!(installed.pack.bindings.iter().any(|binding| {
+            binding.binding_kind == "llm_method"
+                && binding.artifact_kind.as_deref() == Some("homepage.prepare_image_briefs")
+        }));
+        assert!(installed.pack.bindings.iter().any(|binding| {
+            binding.binding_kind == "projection_surface"
+                && binding.artifact_kind.as_deref() == Some("public.homepage_story")
+        }));
+
+        let manifest_json = installed.pack.manifest.to_string();
+        assert!(!manifest_json.contains("providerSecret"));
+        assert!(!manifest_json.contains("promptInternal"));
+        assert!(!manifest_json.contains("rawPolicy"));
+        assert!(!manifest_json.contains("staffRouting"));
+        assert!(!manifest_json.contains("accessGrant"));
+        assert!(!manifest_json.contains("rewardLedger"));
+    }
+
+    #[test]
+    fn story_pack_rejects_undeclared_method_and_preserves_member_safe_summary() {
+        let (_temp_dir, db_path) = setup_db();
+        let mut manifest = story_pack_manifest();
+        manifest.llm_method_bindings[0].method_name = "run_tool".to_string();
+
+        let error = install_product_pack(
+            &db_path,
+            ProductPackInstallRequest { manifest },
+            "test",
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("LLM method name"));
+
+        let mut unsafe_manifest = story_pack_manifest();
+        unsafe_manifest.metadata = json!({
+            "publicPublishing": true,
+            "providerEgress": "unreviewed",
+            "wipeReset": true,
+            "arbitraryExecution": true
+        });
+        let error = install_product_pack(
+            &db_path,
+            ProductPackInstallRequest {
+                manifest: unsafe_manifest,
+            },
+            "test",
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("unsupported hidden-authority field"));
+
+        let mut unknown_graph_node = story_pack_manifest();
+        unknown_graph_node.graph_node_kinds[0].node_kind = "provider_internal".to_string();
+        let error = install_product_pack(
+            &db_path,
+            ProductPackInstallRequest {
+                manifest: unknown_graph_node,
+            },
+            "test",
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Unknown graph node kind"));
+
+        let mut unknown_graph_edge = story_pack_manifest();
+        unknown_graph_edge.graph_edge_kinds[0].edge_kind = "LEAKS_TO".to_string();
+        let error = install_product_pack(
+            &db_path,
+            ProductPackInstallRequest {
+                manifest: unknown_graph_edge,
+            },
+            "test",
+            Some(LOCAL_OWNER_ACTOR_ID),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Unknown graph edge kind"));
+
+        install_story_pack_manifest(&db_path, "test", Some(LOCAL_OWNER_ACTOR_ID)).unwrap();
+        let summary = read_product_pack_member_summary(&db_path, "studio.story").unwrap();
+        let summary_json = serde_json::to_string(&summary).unwrap();
+        assert_eq!(summary.id, "studio.story");
+        assert!(summary
+            .available_binding_kinds
+            .contains(&"workflow_template".to_string()));
+        assert!(summary
+            .available_binding_kinds
+            .contains(&"llm_method".to_string()));
+        assert!(!summary_json.contains("validation"));
+        assert!(!summary_json.contains("manifest"));
+        assert!(!summary_json.contains("provider"));
+        assert!(!summary_json.contains("prompt"));
+        assert!(!summary_json.contains("graph certainty"));
+        assert!(!summary_json.contains("private artifact"));
     }
 }

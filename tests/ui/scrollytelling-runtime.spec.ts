@@ -66,11 +66,11 @@ test.describe("scrollytelling runtime mapping", () => {
               {
                 label: "Open provider internals",
                 href: "/admin/providers",
-                evidenceRefs: ["system:provider"],
+                evidenceRefs: ["provider internals:secret"],
               },
             ],
-            evidenceRefs: ["business_fact:unsafe"],
-            limitations: [],
+            evidenceRefs: ["owner-only:business_fact:unsafe"],
+            limitations: ["private artifact text should not render"],
             motionProfile: "cinematic",
             reducedMotionFallback: "Raw policy internals withheld.",
             imageBriefMethod: null,
@@ -112,6 +112,8 @@ test.describe("scrollytelling runtime mapping", () => {
     expect(slides[2].cta).toBeNull();
     expect(JSON.stringify(slides)).not.toContain("provider");
     expect(JSON.stringify(slides)).not.toContain("prompt");
+    expect(JSON.stringify(slides)).not.toContain("owner-only");
+    expect(JSON.stringify(slides)).not.toContain("private artifact");
   });
 
   test("fallback deck is explicit about missing daemon readiness", () => {

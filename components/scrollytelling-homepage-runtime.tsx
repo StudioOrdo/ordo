@@ -24,6 +24,7 @@ export function ScrollytellingHomepageRuntime({ role, entryPointSlug, visitorSes
   const slideRefs = useRef<Array<HTMLElement | null>>([]);
   const slides = useMemo(() => homepageStoryDeckToSlides(deckResponse), [deckResponse]);
   const context = useMemo(() => ({ entryPointSlug, visitorSessionId }), [entryPointSlug, visitorSessionId]);
+  const chatHref = useMemo(() => withEntryContext("/chat", context), [context]);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +137,17 @@ export function ScrollytellingHomepageRuntime({ role, entryPointSlug, visitorSes
           />
         ))}
       </main>
+      <Link
+        href={roleHref(chatHref, role)}
+        className="public-chat-fab"
+        aria-label="Open full-screen Ordo"
+        data-chat-fab-launcher="true"
+      >
+        <span className="public-chat-fab-glow" aria-hidden="true" />
+        <span className="public-chat-fab-icon" aria-hidden="true">
+          <ChatIcon />
+        </span>
+      </Link>
     </div>
   );
 }
@@ -237,4 +249,12 @@ function withEntryContext(href: string, context: { entryPointSlug?: string; visi
     url.searchParams.set("visitorSessionId", context.visitorSessionId);
   }
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
 }

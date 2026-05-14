@@ -91,6 +91,10 @@ test.describe("scrollytelling homepage runtime", () => {
       "href",
       "/chat?entryPointSlug=nyc-pilot&visitorSessionId=session_1",
     );
+    await expect(page.locator("[data-chat-fab-launcher='true']")).toHaveAttribute(
+      "href",
+      "/chat?entryPointSlug=nyc-pilot&visitorSessionId=session_1",
+    );
     await expect(page.getByText("provider internals")).toHaveCount(0);
     await expect(page.getByText("prompt internals")).toHaveCount(0);
     await expect(page.getByText("graph certainty")).toHaveCount(0);

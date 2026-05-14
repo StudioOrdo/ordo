@@ -57,15 +57,6 @@ export function PublicSurfaceDeck({
             ))}
           </main>
         ) : null}
-
-        {surfaceMode === "story" && configuredHomeMode === "story" ? (
-          <Link href={publicHref("/chat", role, configuredHomeMode)} className="public-chat-fab" aria-label="Open full-screen Ordo" data-chat-fab-launcher="true">
-            <span className="public-chat-fab-glow" aria-hidden="true" />
-            <span className="public-chat-fab-icon" aria-hidden="true">
-              <ChatIcon />
-            </span>
-          </Link>
-        ) : null}
       </div>
     </OrdoFrame>
   );
@@ -185,14 +176,6 @@ const surfaceDefinitions = {
   about: { id: "about", label: "About story", shortLabel: "About" },
   feed: { id: "feed", label: "Public feed", shortLabel: "Feed" },
 } as const;
-
-function ChatIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
 
 function AboutIcon() {
   return (

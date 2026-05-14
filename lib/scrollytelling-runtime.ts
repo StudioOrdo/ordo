@@ -82,8 +82,8 @@ export function homepageStoryDeckToSlides(deckResponse: HomepageStoryDeckRespons
   const total = sorted.length;
   return sorted.map((slide, index) => {
     const safeCta = firstSafeCta(slide.ctaRefs);
-    const slideEvidenceRefs = stableUnique([...slide.evidenceRefs, ...(safeCta?.evidenceRefs ?? [])]);
-    const limitations = stableUnique([...slide.limitations, ...deckResponse.deck.limitations, ...deckResponse.profile.limitations]);
+    const slideEvidenceRefs = safePublicRefs([...slide.evidenceRefs, ...(safeCta?.evidenceRefs ?? [])]);
+    const limitations = safePublicRefs([...slide.limitations, ...deckResponse.deck.limitations, ...deckResponse.profile.limitations]);
     const title = publicText(slide.title || deckResponse.profile.positioning || "Studio Ordo");
     const body = publicText(slide.body || slide.reducedMotionFallback || deckResponse.profile.positioning);
     const reducedMotionFallback = publicText(slide.reducedMotionFallback || slide.body || slide.title);
@@ -218,7 +218,7 @@ function safePublicCta(cta: HomepageStoryCta | null): HomepageStoryCta | null {
   return {
     label,
     href: cta.href,
-    evidenceRefs: stableUnique(cta.evidenceRefs),
+    evidenceRefs: safePublicRefs(cta.evidenceRefs),
   };
 }
 
@@ -272,4 +272,8 @@ function unsafePublicText(text: string): boolean {
 
 function stableUnique(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim()))).sort();
+}
+
+function safePublicRefs(values: string[]): string[] {
+  return stableUnique(stableUnique(values).map((value) => publicText(value)));
 }

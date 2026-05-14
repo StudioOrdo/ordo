@@ -22,6 +22,7 @@ export function ScrollytellingHomepageRuntime({ role, entryPointSlug, visitorSes
   const [sourceState, setSourceState] = useState<"loading" | "daemon" | "fallback">("loading");
   const [activeIndex, setActiveIndex] = useState(0);
   const slideRefs = useRef<Array<HTMLElement | null>>([]);
+  const sentAnalyticsKeys = useRef<Set<string>>(new Set());
   const slides = useMemo(() => homepageStoryDeckToSlides(deckResponse), [deckResponse]);
   const context = useMemo(() => ({ entryPointSlug, visitorSessionId }), [entryPointSlug, visitorSessionId]);
   const chatHref = useMemo(() => withEntryContext("/chat", context), [context]);
@@ -112,6 +113,20 @@ export function ScrollytellingHomepageRuntime({ role, entryPointSlug, visitorSes
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeIndex, slides.length]);
 
+  useEffect(() => {
+    if (sourceState !== "daemon" || !slides[activeIndex]) {
+      return;
+    }
+    recordStoryAnalytics({
+      eventKind: "viewed",
+      deckId: deckResponse.deck.deckId,
+      deckVersion: deckResponse.deck.version,
+      sectionId: slides[activeIndex].sectionId,
+      context,
+      sentKeys: sentAnalyticsKeys.current,
+    });
+  }, [activeIndex, context, deckResponse.deck.deckId, deckResponse.deck.version, slides, sourceState]);
+
   return (
     <div
       className="scrolly-runtime"
@@ -134,6 +149,10 @@ export function ScrollytellingHomepageRuntime({ role, entryPointSlug, visitorSes
             context={context}
             readinessMissing={deckResponse.readiness.missing}
             sourceState={sourceState}
+            deckId={deckResponse.deck.deckId}
+            deckVersion={deckResponse.deck.version}
+            analyticsEnabled={sourceState === "daemon"}
+            sentAnalyticsKeys={sentAnalyticsKeys.current}
           />
         ))}
       </main>
@@ -175,6 +194,10 @@ function NarrativeSlide({
   context,
   readinessMissing,
   sourceState,
+  deckId,
+  deckVersion,
+  analyticsEnabled,
+  sentAnalyticsKeys,
   refSetter,
 }: {
   slide: NarrativeSlideView;
@@ -184,6 +207,10 @@ function NarrativeSlide({
   context: { entryPointSlug?: string; visitorSessionId?: string };
   readinessMissing: string[];
   sourceState: "loading" | "daemon" | "fallback";
+  deckId: string;
+  deckVersion: number;
+  analyticsEnabled: boolean;
+  sentAnalyticsKeys: Set<string>;
   refSetter: (element: HTMLElement | null) => void;
 }) {
   const ctaHref = slide.cta ? roleHref(withEntryContext(slide.cta.href, context), role) : undefined;
@@ -215,7 +242,24 @@ function NarrativeSlide({
         </div>
         {slide.cta && ctaHref ? (
           <div className="hero-actions">
-            <Link href={ctaHref} className={index === 0 ? "primary-action" : "secondary-action"}>
+            <Link
+              href={ctaHref}
+              className={index === 0 ? "primary-action" : "secondary-action"}
+              onClick={() => {
+                if (!analyticsEnabled || !slide.cta) {
+                  return;
+                }
+                recordStoryAnalytics({
+                  eventKind: "clicked",
+                  deckId,
+                  deckVersion,
+                  sectionId: slide.sectionId,
+                  ctaId: ctaIdFor(slide.cta),
+                  context,
+                  sentKeys: sentAnalyticsKeys,
+                });
+              }}
+            >
               {slide.cta.label}
             </Link>
           </div>
@@ -249,6 +293,63 @@ function withEntryContext(href: string, context: { entryPointSlug?: string; visi
     url.searchParams.set("visitorSessionId", context.visitorSessionId);
   }
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function recordStoryAnalytics({
+  eventKind,
+  deckId,
+  deckVersion,
+  sectionId,
+  ctaId,
+  context,
+  sentKeys,
+}: {
+  eventKind: "viewed" | "clicked";
+  deckId: string;
+  deckVersion: number;
+  sectionId: string;
+  ctaId?: string;
+  context: { entryPointSlug?: string; visitorSessionId?: string };
+  sentKeys: Set<string>;
+}) {
+  const contextKey = context.visitorSessionId ?? context.entryPointSlug ?? "anonymous";
+  const targetKey = eventKind === "clicked" ? (ctaId ?? sectionId) : sectionId;
+  const idempotencyKey = safeAnalyticsKey([deckId, String(deckVersion), eventKind, targetKey, contextKey].join(":"));
+  if (!idempotencyKey || sentKeys.has(idempotencyKey)) {
+    return;
+  }
+  sentKeys.add(idempotencyKey);
+  void fetch("/api/public/story-analytics", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      eventKind,
+      deckId,
+      deckVersion,
+      sectionId,
+      ctaId,
+      entryPointSlug: context.entryPointSlug,
+      visitorSessionId: context.visitorSessionId,
+      idempotencyKey,
+      occurredAt: new Date().toISOString(),
+    }),
+    cache: "no-store",
+    keepalive: true,
+  }).catch(() => {
+    // Public analytics is best-effort local evidence. Rendering and navigation must not depend on it.
+  });
+}
+
+function ctaIdFor(cta: { label: string; href: string }): string {
+  return safeAnalyticsKey(`${cta.label}:${cta.href}`) || "cta";
+}
+
+function safeAnalyticsKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:/-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 160);
 }
 
 function ChatIcon() {

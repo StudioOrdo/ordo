@@ -145,6 +145,11 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "/public/homepage-story",
         "/public/homepage-story",
     ),
+    public(
+        HttpMethod::Post,
+        "/public/story-analytics",
+        "/public/story-analytics",
+    ),
     protected(
         HttpMethod::Get,
         "/entry-points",

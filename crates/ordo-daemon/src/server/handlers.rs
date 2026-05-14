@@ -48,6 +48,10 @@ use crate::connections::{
     ConnectionGrantCreateRequest, ConnectionGrantListResponse, ConnectionGrantRevokeRequest,
     ConnectionGrantView, ConnectionListResponse, ConnectionView, ConnectionWriteRequest,
 };
+use crate::content_analytics::{
+    record_public_story_content_analytics, PublicStoryContentAnalyticsRequest,
+    PublicStoryContentAnalyticsResponse,
+};
 use crate::conversation_gateway::handle_conversation_socket;
 use crate::corpus::{
     create_corpus_item, create_corpus_source, list_corpus_items, list_corpus_sources,
@@ -438,6 +442,18 @@ pub(crate) async fn public_homepage_story_handler(
     homepage_story_deck(&state.db_path)
         .map(Json)
         .map_err(internal_error)
+}
+
+pub(crate) async fn public_story_analytics_handler(
+    State(state): State<AppState>,
+    Json(request): Json<PublicStoryContentAnalyticsRequest>,
+) -> Result<Json<PublicStoryContentAnalyticsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (response, event) = record_public_story_content_analytics(&state.db_path, request)
+        .map_err(invalid_request_error)?;
+    if let Some(event) = event {
+        let _ = state.event_sender.send(event);
+    }
+    Ok(Json(response))
 }
 
 pub(crate) async fn entry_points_handler(

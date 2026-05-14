@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::path::Path;
 
 use crate::events::{append_realtime_event, system_event, RealtimeEvent};
 use crate::schema::db::ConnectionExt;
@@ -167,6 +168,28 @@ pub struct ContentAnalyticsLimitation {
     pub source_status: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicStoryContentAnalyticsRequest {
+    pub event_kind: String,
+    pub deck_id: String,
+    pub deck_version: Option<i64>,
+    pub section_id: Option<String>,
+    pub cta_id: Option<String>,
+    pub entry_point_slug: Option<String>,
+    pub visitor_session_id: Option<String>,
+    pub idempotency_key: String,
+    pub occurred_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicStoryContentAnalyticsResponse {
+    pub event: ContentAnalyticsEventView,
+    pub context_state: String,
+    pub limitations: Vec<String>,
+}
+
 pub fn record_content_analytics_event(
     connection: &Connection,
     input: ContentAnalyticsEventInput,
@@ -287,6 +310,117 @@ pub fn record_content_analytics_event(
         ),
     )?;
     Ok((event, Some(realtime_event)))
+}
+
+pub fn record_public_story_content_analytics(
+    db_path: &Path,
+    request: PublicStoryContentAnalyticsRequest,
+) -> Result<(PublicStoryContentAnalyticsResponse, Option<RealtimeEvent>)> {
+    let connection = Connection::open(db_path)?;
+    record_public_story_content_analytics_on_connection(&connection, request)
+}
+
+fn record_public_story_content_analytics_on_connection(
+    connection: &Connection,
+    request: PublicStoryContentAnalyticsRequest,
+) -> Result<(PublicStoryContentAnalyticsResponse, Option<RealtimeEvent>)> {
+    let event_kind = public_story_event_kind(&request.event_kind)?;
+    let deck_id = require_public_identifier(&request.deck_id, "public story deck id")?;
+    let deck_version = request.deck_version.unwrap_or(1).max(1);
+    let section_id = normalize_optional_identifier(request.section_id, "public story section id")?;
+    let cta_id = normalize_optional_identifier(request.cta_id, "public story CTA id")?;
+    let entry_point_slug =
+        normalize_optional_identifier(request.entry_point_slug, "tracked entry slug")?;
+    let visitor_session_id =
+        normalize_optional_identifier(request.visitor_session_id, "visitor session id")?;
+    let idempotency_key =
+        require_public_identifier(&request.idempotency_key, "public story idempotency key")?;
+
+    ensure!(
+        section_id.is_some() || event_kind != ContentAnalyticsEventKind::Viewed,
+        "public story view events require section context"
+    );
+    ensure!(
+        cta_id.is_some() || event_kind != ContentAnalyticsEventKind::Clicked,
+        "public story click events require CTA context"
+    );
+
+    let has_context = entry_point_slug.is_some() || visitor_session_id.is_some();
+    let source_status = if has_context {
+        ContentAnalyticsSourceStatus::Measured
+    } else {
+        ContentAnalyticsSourceStatus::Missing
+    };
+    let source_id = visitor_session_id
+        .as_deref()
+        .or(entry_point_slug.as_deref())
+        .unwrap_or("anonymous_public_story")
+        .to_string();
+    let mut evidence_refs = vec![format!("homepage_story_deck:{deck_id}")];
+    if let Some(section_id) = &section_id {
+        evidence_refs.push(format!("homepage_section:{section_id}"));
+    }
+    if let Some(cta_id) = &cta_id {
+        evidence_refs.push(format!("homepage_cta:{cta_id}"));
+    }
+    if let Some(entry_point_slug) = &entry_point_slug {
+        evidence_refs.push(format!("tracked_entry_point_slug:{entry_point_slug}"));
+    }
+    if let Some(visitor_session_id) = &visitor_session_id {
+        evidence_refs.push(format!("visitor_session:{visitor_session_id}"));
+    }
+    let limitations = if has_context {
+        Vec::new()
+    } else {
+        vec!["missing_visitor_or_tracked_entry_context".to_string()]
+    };
+    let context_state = if has_context { "measured" } else { "missing" }.to_string();
+
+    let (event, realtime_event) = record_content_analytics_event(
+        connection,
+        ContentAnalyticsEventInput {
+            event_kind,
+            content_ref_kind: "homepage_story_deck".to_string(),
+            content_ref_id: deck_id.clone(),
+            content_version_id: Some(format!("{deck_id}:v{deck_version}")),
+            artifact_id: None,
+            artifact_version_id: None,
+            surface: "public_story".to_string(),
+            section_id,
+            cta_id,
+            workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+            workflow_compilation_id: None,
+            job_id: None,
+            tracked_entry_point_id: None,
+            visitor_session_id,
+            referral_id: None,
+            outcome_id: None,
+            source_kind: "public_story_runtime".to_string(),
+            source_id,
+            idempotency_key,
+            source_status,
+            visibility: "staff".to_string(),
+            evidence_refs,
+            limitation_labels: limitations.clone(),
+            payload: json!({
+                "localEvent": true,
+                "contextState": context_state,
+                "entryPointSlug": entry_point_slug,
+                "externalAnalytics": "not_called",
+                "cookieTracking": "not_used",
+            }),
+            occurred_at: request.occurred_at,
+        },
+    )?;
+
+    Ok((
+        PublicStoryContentAnalyticsResponse {
+            event,
+            context_state,
+            limitations,
+        },
+        realtime_event,
+    ))
 }
 
 pub fn summarize_content_analytics_for_content(
@@ -489,6 +623,34 @@ fn validate_event_input(input: &ContentAnalyticsEventInput) -> Result<()> {
     }
     ensure_safe_text(&input.payload.to_string())?;
     Ok(())
+}
+
+fn public_story_event_kind(value: &str) -> Result<ContentAnalyticsEventKind> {
+    match value.trim() {
+        "viewed" => Ok(ContentAnalyticsEventKind::Viewed),
+        "clicked" => Ok(ContentAnalyticsEventKind::Clicked),
+        _ => anyhow::bail!("unsupported public story analytics event kind"),
+    }
+}
+
+fn require_public_identifier(value: &str, label: &str) -> Result<String> {
+    ensure_safe_text(value)?;
+    let value = safe_identifier(value);
+    ensure!(!value.is_empty(), "{label} is required");
+    ensure_safe_text(&value)?;
+    Ok(value)
+}
+
+fn normalize_optional_identifier(value: Option<String>, label: &str) -> Result<Option<String>> {
+    value
+        .map(|value| {
+            ensure_safe_text(&value)?;
+            let value = safe_identifier(&value);
+            ensure!(!value.is_empty(), "{label} cannot be empty");
+            ensure_safe_text(&value)?;
+            Ok(value)
+        })
+        .transpose()
 }
 
 fn content_analytics_event_from_row(
@@ -943,5 +1105,155 @@ mod tests {
             error.to_string().contains("require an outcome id"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn public_story_ingestion_records_bounded_view_and_click_events() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let viewed = record_public_story_content_analytics_on_connection(
+            &connection,
+            PublicStoryContentAnalyticsRequest {
+                event_kind: "viewed".to_string(),
+                deck_id: "homepage.story.v1".to_string(),
+                deck_version: Some(2),
+                section_id: Some("identity".to_string()),
+                cta_id: None,
+                entry_point_slug: Some("nyc-pilot".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                idempotency_key: "homepage.story.v1:2:viewed:identity:visitor_session_1"
+                    .to_string(),
+                occurred_at: Some("2026-05-14T23:40:00Z".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(viewed.0.event.event_kind, "viewed");
+        assert_eq!(viewed.0.event.source_status, "measured");
+        assert_eq!(viewed.0.context_state, "measured");
+        assert!(viewed.0.limitations.is_empty());
+        assert!(viewed
+            .0
+            .event
+            .evidence_refs
+            .contains(&"visitor_session:visitor_session_1".to_string()));
+
+        let repeated = record_public_story_content_analytics_on_connection(
+            &connection,
+            PublicStoryContentAnalyticsRequest {
+                event_kind: "viewed".to_string(),
+                deck_id: "homepage.story.v1".to_string(),
+                deck_version: Some(2),
+                section_id: Some("identity".to_string()),
+                cta_id: None,
+                entry_point_slug: Some("nyc-pilot".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                idempotency_key: "homepage.story.v1:2:viewed:identity:visitor_session_1"
+                    .to_string(),
+                occurred_at: Some("2026-05-14T23:40:00Z".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(viewed.0.event.id, repeated.0.event.id);
+        assert!(viewed.1.is_some());
+        assert!(repeated.1.is_none());
+
+        let clicked = record_public_story_content_analytics_on_connection(
+            &connection,
+            PublicStoryContentAnalyticsRequest {
+                event_kind: "clicked".to_string(),
+                deck_id: "homepage.story.v1".to_string(),
+                deck_version: Some(2),
+                section_id: Some("identity".to_string()),
+                cta_id: Some("talk-with-ordo".to_string()),
+                entry_point_slug: Some("nyc-pilot".to_string()),
+                visitor_session_id: Some("visitor_session_1".to_string()),
+                idempotency_key: "homepage.story.v1:2:clicked:talk-with-ordo:visitor_session_1"
+                    .to_string(),
+                occurred_at: Some("2026-05-14T23:41:00Z".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(clicked.0.event.event_kind, "clicked");
+        assert_eq!(clicked.0.event.cta_id.as_deref(), Some("talk-with-ordo"));
+
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM content_analytics_events", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn public_story_ingestion_handles_missing_context_and_rejects_unsafe_payloads() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let missing_context = record_public_story_content_analytics_on_connection(
+            &connection,
+            PublicStoryContentAnalyticsRequest {
+                event_kind: "viewed".to_string(),
+                deck_id: "homepage.story.v1".to_string(),
+                deck_version: Some(1),
+                section_id: Some("identity".to_string()),
+                cta_id: None,
+                entry_point_slug: None,
+                visitor_session_id: None,
+                idempotency_key: "homepage.story.v1:1:viewed:identity:anonymous".to_string(),
+                occurred_at: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(missing_context.0.event.source_status, "missing");
+        assert_eq!(missing_context.0.context_state, "missing");
+        assert!(missing_context
+            .0
+            .event
+            .limitation_labels
+            .contains(&"missing_visitor_or_tracked_entry_context".to_string()));
+
+        let unsupported = record_public_story_content_analytics_on_connection(
+            &connection,
+            PublicStoryContentAnalyticsRequest {
+                event_kind: "requested".to_string(),
+                deck_id: "homepage.story.v1".to_string(),
+                deck_version: Some(1),
+                section_id: Some("identity".to_string()),
+                cta_id: None,
+                entry_point_slug: None,
+                visitor_session_id: None,
+                idempotency_key: "unsupported".to_string(),
+                occurred_at: None,
+            },
+        )
+        .unwrap_err();
+        assert!(unsupported.to_string().contains("unsupported public story"));
+
+        let unsafe_ref = record_public_story_content_analytics_on_connection(
+            &connection,
+            PublicStoryContentAnalyticsRequest {
+                event_kind: "clicked".to_string(),
+                deck_id: "homepage.story.v1".to_string(),
+                deck_version: Some(1),
+                section_id: Some("identity".to_string()),
+                cta_id: Some("provider internal prompt internals".to_string()),
+                entry_point_slug: None,
+                visitor_session_id: None,
+                idempotency_key: "unsafe-click".to_string(),
+                occurred_at: None,
+            },
+        )
+        .unwrap_err();
+        assert!(unsafe_ref
+            .to_string()
+            .contains("private/internal or unsupported claim"));
+
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM content_analytics_events", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }

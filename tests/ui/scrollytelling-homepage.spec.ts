@@ -78,8 +78,24 @@ const daemonDeck = {
 
 test.describe("scrollytelling homepage runtime", () => {
   test("renders daemon-backed slides with progress, keyboard navigation, and public-safe evidence", async ({ page }) => {
+    const analyticsPayloads: Array<Record<string, unknown>> = [];
     await page.route("**/api/public/homepage-story", async (route) => {
       await route.fulfill({ json: daemonDeck });
+    });
+    await page.route("**/api/public/story-analytics", async (route) => {
+      const payload = route.request().postDataJSON() as Record<string, unknown>;
+      analyticsPayloads.push(payload);
+      await route.fulfill({
+        json: {
+          event: {
+            id: `content_analytics_event_${analyticsPayloads.length}`,
+            eventKind: payload.eventKind,
+            sourceStatus: payload.visitorSessionId || payload.entryPointSlug ? "measured" : "missing",
+          },
+          contextState: payload.visitorSessionId || payload.entryPointSlug ? "measured" : "missing",
+          limitations: [],
+        },
+      });
     });
 
     await page.goto("/?entryPointSlug=nyc-pilot&visitorSessionId=session_1");
@@ -99,14 +115,42 @@ test.describe("scrollytelling homepage runtime", () => {
     await expect(page.getByText("prompt internals")).toHaveCount(0);
     await expect(page.getByText("graph certainty")).toHaveCount(0);
 
+    await expect
+      .poll(() => analyticsPayloads.filter((payload) => payload.eventKind === "viewed").length)
+      .toBeGreaterThanOrEqual(1);
+    expect(analyticsPayloads[0]).toMatchObject({
+      eventKind: "viewed",
+      deckId: "homepage.story.v1",
+      deckVersion: 1,
+      sectionId: "identity",
+      entryPointSlug: "nyc-pilot",
+      visitorSessionId: "session_1",
+    });
+
     await page.keyboard.press("ArrowDown");
     await expect(page.getByRole("heading", { name: "Trust stays local." })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Story progress" })).toContainText("02 / 02");
+    await expect
+      .poll(() => analyticsPayloads.some((payload) => payload.sectionId === "proof" && payload.eventKind === "viewed"))
+      .toBe(true);
+
+    await page.getByRole("link", { name: "Open QR path" }).click();
+    await expect
+      .poll(() => analyticsPayloads.some((payload) => payload.eventKind === "clicked" && payload.ctaId))
+      .toBe(true);
+    expect(JSON.stringify(analyticsPayloads)).not.toContain("provider internal");
+    expect(JSON.stringify(analyticsPayloads)).not.toContain("prompt internal");
+    expect(JSON.stringify(analyticsPayloads)).not.toContain("private artifact text");
   });
 
   test("falls back with explicit readiness when daemon data is unavailable", async ({ page }) => {
+    const analyticsPayloads: Array<Record<string, unknown>> = [];
     await page.route("**/api/public/homepage-story", async (route) => {
       await route.fulfill({ status: 503, json: { error: "daemon unavailable" } });
+    });
+    await page.route("**/api/public/story-analytics", async (route) => {
+      analyticsPayloads.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({ json: { event: { id: "unexpected" } } });
     });
 
     await page.goto("/");
@@ -115,6 +159,7 @@ test.describe("scrollytelling homepage runtime", () => {
     await expect(page.getByText("daemon-backed public homepage story deck").first()).toBeVisible();
     await expect(page.getByText("No live image generation").first()).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Story progress" })).toContainText("01 / 02");
+    expect(analyticsPayloads).toEqual([]);
   });
 
   test("mobile reduced-motion view remains readable and uses deterministic slide ids", async ({ page }, testInfo) => {

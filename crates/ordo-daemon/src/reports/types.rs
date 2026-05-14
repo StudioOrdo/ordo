@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use chrono::{DateTime, Utc};
 
 pub const ISSUE_REPORT_TEMPLATE_ID: &str = "issue.report.prepare";
 
@@ -248,4 +247,3 @@ pub(crate) struct NormalizedIssueReportRequest {
     pub(crate) include_browser_context: bool,
     pub(crate) browser_context: Option<Value>,
 }
-

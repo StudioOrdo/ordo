@@ -24,8 +24,7 @@ mod tests {
     use crate::policy::ActorContext;
     use crate::schema::init_schema;
     use anyhow::Result;
-    use chrono::{DateTime, Utc};
-    use rusqlite::{Connection, OptionalExtension, Row};
+    use rusqlite::Connection;
     use serde_json::{json, Value};
     use std::cell::{Cell, RefCell};
     use std::path::{Path, PathBuf};
@@ -344,15 +343,19 @@ mod tests {
                 "usage": { "prompt_tokens": 11, "completion_tokens": 2 }
             }),
         });
+        assert!(matches!(
+            success.first(),
+            Some(LlmProviderStreamEvent::TextDelta(delta)) if delta == "Provider answer"
+        ));
         assert_eq!(
-            success,
-            LlmProviderStreamEvent::Completed {
+            success.last(),
+            Some(&LlmProviderStreamEvent::Completed {
                 text: "Provider answer".to_string(),
                 usage: LlmUsageMetadata {
                     input_tokens: 11,
                     output_tokens: 2,
                 },
-            }
+            })
         );
 
         let failed = normalize_openai_response(OpenAiTransportResponse {
@@ -365,8 +368,8 @@ mod tests {
             }),
         });
         assert!(matches!(
-            failed,
-            LlmProviderStreamEvent::Failed { ref code, ref message }
+            failed.first(),
+            Some(LlmProviderStreamEvent::Failed { code, message })
                 if code == "invalid_api_key"
                     && message.contains("Provider error redacted")
                     && !message.contains("sk-test-secret-value")
@@ -377,8 +380,8 @@ mod tests {
             body: json!({ "choices": [] }),
         });
         assert!(matches!(
-            bad_shape,
-            LlmProviderStreamEvent::Failed { ref code, .. }
+            bad_shape.first(),
+            Some(LlmProviderStreamEvent::Failed { code, .. })
                 if code == "unsupported_provider_response"
         ));
     }

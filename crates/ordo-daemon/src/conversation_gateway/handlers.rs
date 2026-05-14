@@ -1,14 +1,11 @@
 use anyhow::{ensure, Result};
-use axum::extract::ws::{Message, WebSocket};
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{Duration as ChronoDuration, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fs;
 use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::broadcast;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::conversation_protocol::{
@@ -22,16 +19,22 @@ use crate::conversations::{
     ConversationMutationActor, ConversationPresenceUpdateRequest, ConversationService,
     HandoffStatus, ReactionAction,
 };
-use crate::llm_gateway::{DeterministicLlmProvider, LlmGateway, LlmGatewayRequest, PromptSlot};
+use crate::install::list_provider_configs_connection_with_env;
+use crate::llm_gateway::{
+    AnthropicMessagesConfig, AnthropicMessagesProvider, DeterministicLlmProvider, LlmGateway,
+    LlmGatewayRequest, LlmProviderAdapter, LlmToolRequestReceipt, OllamaChatConfig,
+    OllamaChatProvider, OpenAiCompatibleConfig, OpenAiCompatibleProvider,
+    OpenAiCompatibleTransport, PromptSlot, ReqwestOpenAiTransport,
+};
 use crate::policy::{ActorContext, ActorKind};
+use crate::secrets::{normalize_secret, OrdoSecretString};
+use crate::vault::decrypt_secret;
 
 const DEFAULT_REPLAY_LIMIT: usize = 100;
 const MAX_REPLAY_LIMIT: usize = 500;
-const MAX_TEXT_FRAME_BYTES: usize = 64 * 1024;
 const COMMAND_RATE_LIMIT: usize = 30;
 const COMMAND_RATE_WINDOW_SECONDS: i64 = 60;
 
-use super::api::*;
 use super::types::*;
 
 pub(crate) fn identify(
@@ -146,6 +149,10 @@ pub(crate) fn command(
             message_submit(db_path, session, envelope)
         }
         "llm.run.request" => llm_run_request(db_path, session, envelope),
+        "llm.run.cancel" => llm_run_cancel(db_path, session, envelope),
+        "tool.approve" => llm_tool_approve(db_path, session, envelope),
+        "tool.reject" => llm_tool_reject(db_path, session, envelope),
+        "tool.execute" => llm_tool_execute(db_path, session, envelope),
         "message.edit" => {
             if let Some(output) = enforce_message_command_rate_limit(session, &envelope)? {
                 return Ok(output);
@@ -293,6 +300,18 @@ pub(crate) fn llm_run_request(
     session: &ConversationGatewaySession,
     envelope: ConversationGatewayEnvelope,
 ) -> Result<ConversationGatewayOutput> {
+    let env = std::env::vars().collect();
+    llm_run_request_with_openai_transport(db_path, session, envelope, &env, ReqwestOpenAiTransport)
+}
+
+fn llm_run_request_with_openai_transport<T: OpenAiCompatibleTransport>(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+    env: &std::collections::HashMap<String, String>,
+    openai_transport: T,
+) -> Result<ConversationGatewayOutput> {
+    let request_received_instant = Instant::now();
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct LlmRunPayload {
@@ -310,13 +329,20 @@ pub(crate) fn llm_run_request(
     let provider_id = payload
         .provider_id
         .unwrap_or_else(|| "local_fake".to_string());
-    let model_id = payload.model_id.unwrap_or_else(|| "fake-chat".to_string());
-    if provider_id != "local_fake" || model_id != "fake-chat" {
+    let mut model_id = payload.model_id.unwrap_or_else(|| "fake-chat".to_string());
+    if provider_id == "local" && model_id == "fake-chat" {
+        model_id = default_ollama_model(env);
+    }
+    let app_live_enabled = env_flag_enabled(env, "ORDO_APP_LIVE_LLM");
+    if !app_live_enabled
+        && provider_id != "local"
+        && (provider_id != "local_fake" || model_id != "fake-chat")
+    {
         return Ok(error_output(command_rejected_error(
             Some(&client_id),
             Some(&conversation_id),
             "live_provider_disabled",
-            "Live provider mode is disabled for member chat. Use deterministic local provider mode until provider readiness guards are enabled.",
+            "Live provider mode is disabled for member chat. Set explicit owner/developer app live guards before using a live provider.",
             false,
             &Utc::now().to_rfc3339(),
         )));
@@ -337,33 +363,63 @@ pub(crate) fn llm_run_request(
     };
 
     let connection = Connection::open(db_path)?;
-    let gateway = LlmGateway::new(DeterministicLlmProvider::new(&provider_id, &model_id));
     let actor = ActorContext::new(
         ActorKind::BrowserOperator,
         "conversation_gateway",
         session.actor_id.clone(),
     );
-    let result = gateway.run_completion(
-        db_path,
-        &connection,
-        &actor,
-        LlmGatewayRequest {
-            run_id: run_id.clone(),
-            conversation_id: conversation_id.clone(),
-            segment_id: envelope.segment_id.clone(),
-            assistant_participant_id: payload.assistant_participant_id,
-            client_id: Some(client_id.clone()),
-            provider_id,
-            model_id,
-            user_message: payload.user_message,
-            prompt_slots,
-        },
-    )?;
+    let request = LlmGatewayRequest {
+        run_id: run_id.clone(),
+        conversation_id: conversation_id.clone(),
+        segment_id: envelope.segment_id.clone(),
+        assistant_participant_id: payload.assistant_participant_id,
+        client_id: Some(client_id.clone()),
+        provider_id: provider_id.clone(),
+        model_id: model_id.clone(),
+        user_message: payload.user_message,
+        prompt_slots,
+    };
+    let result = if provider_id == "local" {
+        run_local_ollama_provider(db_path, &connection, &actor, request, env)?
+    } else if app_live_enabled {
+        run_live_provider_or_reject(
+            db_path,
+            &connection,
+            &actor,
+            request,
+            env,
+            openai_transport,
+            &client_id,
+            &conversation_id,
+        )?
+    } else {
+        run_llm_with_provider(
+            db_path,
+            &connection,
+            &actor,
+            LlmGateway::new(DeterministicLlmProvider::new(&provider_id, &model_id)),
+            request,
+        )?
+    };
+    if result
+        .run
+        .frames
+        .iter()
+        .any(|frame| frame.op == ConversationGatewayOp::Error)
+    {
+        return Ok(ConversationGatewayOutput {
+            frames: result.run.frames,
+            broadcast: vec![],
+        });
+    }
+    let ack_provider_id = result.provider_id.clone();
+    let ack_model_id = result.model_id.clone();
     let final_message_id = result
+        .run
         .final_message
         .as_ref()
         .map(|message| message.id.clone());
-    let mut broadcast = result.frames;
+    let mut broadcast = result.run.frames;
     if let Some(message_id) = final_message_id.as_deref() {
         broadcast.push(latest_message_event(
             db_path,
@@ -381,13 +437,511 @@ pub(crate) fn llm_run_request(
             json!({
                 "runId": run_id,
                 "finalMessageId": final_message_id,
-                "providerId": "local_fake",
-                "modelId": "fake-chat",
+                "providerId": ack_provider_id,
+                "modelId": ack_model_id,
+                "timeToAckMs": request_received_instant.elapsed().as_millis() as u64,
             }),
             &Utc::now().to_rfc3339(),
         )],
         broadcast,
     })
+}
+
+fn run_local_ollama_provider(
+    db_path: &Path,
+    connection: &Connection,
+    actor: &ActorContext,
+    request: LlmGatewayRequest,
+    env: &std::collections::HashMap<String, String>,
+) -> Result<ConversationLlmRunResult> {
+    let base_url = first_normalized_env(env, &["ORDO_OLLAMA_BASE_URL", "OLLAMA_BASE_URL"])
+        .unwrap_or_else(|| "http://127.0.0.1:11434/api".to_string());
+    let timeout_ms = first_normalized_env(env, &["ORDO_OLLAMA_TIMEOUT_MS"])
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or_else(|| optional_live_timeout_ms(env));
+    let config = OllamaChatConfig::new(
+        request.provider_id.clone(),
+        request.model_id.clone(),
+        base_url,
+    )?
+    .with_timeout_ms(timeout_ms)?;
+    run_llm_with_provider(
+        db_path,
+        connection,
+        actor,
+        LlmGateway::new(OllamaChatProvider::new(config)),
+        request,
+    )
+}
+
+fn default_ollama_model(env: &std::collections::HashMap<String, String>) -> String {
+    first_normalized_env(env, &["ORDO_OLLAMA_MODEL", "OLLAMA_MODEL"])
+        .unwrap_or_else(|| "qwen2.5-coder:7b".to_string())
+}
+
+struct ConversationLlmRunResult {
+    provider_id: String,
+    model_id: String,
+    run: crate::llm_gateway::LlmGatewayRunResult,
+}
+
+fn run_llm_with_provider<P: LlmProviderAdapter>(
+    db_path: &Path,
+    connection: &Connection,
+    actor: &ActorContext,
+    gateway: LlmGateway<P>,
+    request: LlmGatewayRequest,
+) -> Result<ConversationLlmRunResult> {
+    let provider_id = request.provider_id.clone();
+    let model_id = request.model_id.clone();
+    let run = gateway.run_completion(db_path, connection, actor, request)?;
+    Ok(ConversationLlmRunResult {
+        provider_id,
+        model_id,
+        run,
+    })
+}
+
+fn run_live_provider_or_reject<T: OpenAiCompatibleTransport>(
+    db_path: &Path,
+    connection: &Connection,
+    actor: &ActorContext,
+    mut request: LlmGatewayRequest,
+    env: &std::collections::HashMap<String, String>,
+    openai_transport: T,
+    client_id: &str,
+    conversation_id: &str,
+) -> Result<ConversationLlmRunResult> {
+    if request.provider_id == "local_fake" {
+        if let Some(provider_id) = first_normalized_env(env, &["ORDO_LIVE_LLM_PROVIDER"]) {
+            request.provider_id = provider_id;
+            if let Some(model_id) = first_normalized_env(env, &["ORDO_LIVE_LLM_MODEL"]) {
+                request.model_id = model_id;
+            }
+        } else {
+            return run_llm_with_provider(
+                db_path,
+                connection,
+                actor,
+                LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat")),
+                request,
+            );
+        }
+    }
+    if !env_flag_enabled(env, "ORDO_LIVE_LLM_ALLOW_NETWORK") {
+        return Ok(rejected_llm_run(
+            client_id,
+            conversation_id,
+            "live_provider_disabled",
+            "Live provider network access is disabled for app chat.",
+        ));
+    }
+    if !env.contains_key("ORDO_LIVE_LLM_BUDGET_USD") {
+        return Ok(rejected_llm_run(
+            client_id,
+            conversation_id,
+            "live_provider_not_ready",
+            "Live provider budget guard is missing for app chat.",
+        ));
+    }
+
+    let provider_response = list_provider_configs_connection_with_env(connection, env)?;
+    let Some(provider) = provider_response
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == request.provider_id)
+    else {
+        return Ok(rejected_llm_run(
+            client_id,
+            conversation_id,
+            "live_provider_not_ready",
+            "Requested live provider is not in the daemon catalog.",
+        ));
+    };
+    let env_targets_provider = first_normalized_env(env, &["ORDO_LIVE_LLM_PROVIDER"]).as_deref()
+        == Some(request.provider_id.as_str());
+    let provider_is_configured_for_chat =
+        provider.enabled || env_targets_provider || provider.api_key.configured;
+    if !provider_is_configured_for_chat || !provider.api_key.configured {
+        return Ok(rejected_llm_run(
+            client_id,
+            conversation_id,
+            "live_provider_not_ready",
+            "Requested live provider is not configured with a usable key.",
+        ));
+    }
+    if !provider
+        .available_models
+        .iter()
+        .any(|model| model.id == request.model_id)
+    {
+        return Ok(rejected_llm_run(
+            client_id,
+            conversation_id,
+            "live_provider_not_ready",
+            "Requested live provider model is not in the daemon catalog.",
+        ));
+    }
+
+    let Some(api_key) = resolve_provider_secret(
+        db_path,
+        connection,
+        env,
+        &request.provider_id,
+        &provider.api_key.source,
+    )?
+    else {
+        return Ok(rejected_llm_run(
+            client_id,
+            conversation_id,
+            "live_provider_not_ready",
+            "Requested live provider is missing a usable secret source.",
+        ));
+    };
+    let base_url = provider
+        .base_url
+        .clone()
+        .unwrap_or_else(|| default_provider_base_url(&request.provider_id));
+    let timeout_ms = optional_live_timeout_ms(env);
+
+    match request.provider_id.as_str() {
+        "openai" | "deepseek" => {
+            let config = OpenAiCompatibleConfig::new(
+                request.provider_id.clone(),
+                request.model_id.clone(),
+                base_url,
+                api_key,
+            )?
+            .with_timeout_ms(timeout_ms)?;
+            run_llm_with_provider(
+                db_path,
+                connection,
+                actor,
+                LlmGateway::new(OpenAiCompatibleProvider::with_transport(
+                    config,
+                    openai_transport,
+                )),
+                request,
+            )
+        }
+        "anthropic" => {
+            let config = AnthropicMessagesConfig::new(
+                request.provider_id.clone(),
+                request.model_id.clone(),
+                base_url,
+                api_key,
+            )?
+            .with_timeout_ms(timeout_ms)?;
+            run_llm_with_provider(
+                db_path,
+                connection,
+                actor,
+                LlmGateway::new(AnthropicMessagesProvider::new(config)),
+                request,
+            )
+        }
+        _ => Ok(rejected_llm_run(
+            client_id,
+            conversation_id,
+            "live_provider_not_ready",
+            "Requested live provider is not supported for app chat.",
+        )),
+    }
+}
+
+fn rejected_llm_run(
+    client_id: &str,
+    conversation_id: &str,
+    code: &str,
+    message: &str,
+) -> ConversationLlmRunResult {
+    ConversationLlmRunResult {
+        provider_id: "local_fake".to_string(),
+        model_id: "fake-chat".to_string(),
+        run: crate::llm_gateway::LlmGatewayRunResult {
+            run_id: "llm_run_rejected".to_string(),
+            policy_decision_id: "policy_decision_rejected".to_string(),
+            prompt: None,
+            final_message: None,
+            frames: vec![command_rejected_error(
+                Some(client_id),
+                Some(conversation_id),
+                code,
+                message,
+                false,
+                &Utc::now().to_rfc3339(),
+            )],
+        },
+    }
+}
+
+fn resolve_provider_secret(
+    db_path: &Path,
+    connection: &Connection,
+    env: &std::collections::HashMap<String, String>,
+    provider_id: &str,
+    source: &str,
+) -> Result<Option<OrdoSecretString>> {
+    let keys = provider_secret_env_keys(provider_id);
+    match source {
+        "env" => Ok(first_normalized_env(env, keys).and_then(normalize_secret)),
+        "file" => Ok(first_normalized_secret_file(env, keys).and_then(normalize_secret)),
+        "vault" => {
+            let secret_ref: Option<String> = connection
+                .query_row(
+                    "SELECT secret_ref FROM provider_configs WHERE provider_id = ?1",
+                    [provider_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            secret_ref
+                .map(|secret_ref| {
+                    decrypt_secret(db_path, connection, &secret_ref).map(normalize_secret)
+                })
+                .transpose()
+                .map(Option::flatten)
+        }
+        _ => Ok(None),
+    }
+}
+
+fn provider_secret_env_keys(provider_id: &str) -> &'static [&'static str] {
+    match provider_id {
+        "anthropic" => &["ANTHROPIC_API_KEY", "API__ANTHROPIC_API_KEY"],
+        "deepseek" => &["DEEPSEEK_API_KEY", "API__DEEPSEEK_API_KEY", "deepseek"],
+        "openai" => &["OPENAI_API_KEY", "API__OPENAI_API_KEY"],
+        _ => &[],
+    }
+}
+
+fn default_provider_base_url(provider_id: &str) -> String {
+    match provider_id {
+        "anthropic" => "https://api.anthropic.com/v1".to_string(),
+        "deepseek" => "https://api.deepseek.com/v1".to_string(),
+        _ => "https://api.openai.com/v1".to_string(),
+    }
+}
+
+fn optional_live_timeout_ms(env: &std::collections::HashMap<String, String>) -> u64 {
+    env.get("ORDO_LIVE_LLM_TIMEOUT_MS")
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(30_000)
+}
+
+fn first_normalized_env(
+    env: &std::collections::HashMap<String, String>,
+    keys: &[&str],
+) -> Option<String> {
+    keys.iter()
+        .find_map(|key| normalize_env_value(env.get(*key)))
+}
+
+fn first_normalized_secret_file(
+    env: &std::collections::HashMap<String, String>,
+    keys: &[&str],
+) -> Option<String> {
+    keys.iter().find_map(|key| {
+        let file_key = format!("{key}_FILE");
+        normalize_env_value(env.get(&file_key)).and_then(|path| {
+            fs::read_to_string(path)
+                .ok()
+                .and_then(|value| normalize_string_value(&value))
+        })
+    })
+}
+
+fn normalize_env_value(value: Option<&String>) -> Option<String> {
+    value.and_then(|value| normalize_string_value(value))
+}
+
+fn normalize_string_value(value: &str) -> Option<String> {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!normalized.is_empty()).then_some(normalized)
+}
+
+fn env_flag_enabled(env: &std::collections::HashMap<String, String>, key: &str) -> bool {
+    normalize_env_value(env.get(key)).as_deref() == Some("1")
+}
+
+pub(crate) fn llm_run_cancel(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CancelPayload {
+        run_id: String,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let client_id = required_client_id(&envelope)?.to_string();
+    let payload: CancelPayload = serde_json::from_value(envelope.payload.clone())?;
+    let connection = Connection::open(db_path)?;
+    let gateway = local_llm_gateway();
+    let actor = llm_gateway_actor(session);
+    let result = gateway.cancel_run(
+        &connection,
+        &actor,
+        &conversation_id,
+        &payload.run_id,
+        Some(&client_id),
+    )?;
+    if result
+        .frames
+        .iter()
+        .any(|frame| frame.op == ConversationGatewayOp::Error)
+    {
+        return Ok(ConversationGatewayOutput {
+            frames: result.frames,
+            broadcast: vec![],
+        });
+    }
+
+    Ok(ConversationGatewayOutput {
+        frames: vec![ack_envelope(
+            &client_id,
+            Some(&conversation_id),
+            "llm.run.cancel.ack",
+            json!({
+                "runId": result.run_id,
+                "policyDecisionId": result.policy_decision_id,
+            }),
+            &Utc::now().to_rfc3339(),
+        )],
+        broadcast: result.frames,
+    })
+}
+
+pub(crate) fn llm_tool_approve(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ToolDecisionPayload {
+        tool_request_id: String,
+        reason: Option<String>,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: ToolDecisionPayload = serde_json::from_value(envelope.payload.clone())?;
+    let connection = Connection::open(db_path)?;
+    let gateway = local_llm_gateway();
+    let receipt = gateway.approve_tool_request(
+        &connection,
+        &llm_gateway_actor(session),
+        &conversation_id,
+        &payload.tool_request_id,
+        payload
+            .reason
+            .as_deref()
+            .unwrap_or("Approved from the conversation gateway."),
+    )?;
+    llm_tool_ack_and_broadcast(&envelope, "tool.approve.ack", receipt)
+}
+
+pub(crate) fn llm_tool_reject(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ToolDecisionPayload {
+        tool_request_id: String,
+        reason: String,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: ToolDecisionPayload = serde_json::from_value(envelope.payload.clone())?;
+    let connection = Connection::open(db_path)?;
+    let gateway = local_llm_gateway();
+    let receipt = gateway.reject_tool_request(
+        &connection,
+        &llm_gateway_actor(session),
+        &conversation_id,
+        &payload.tool_request_id,
+        &payload.reason,
+    )?;
+    llm_tool_ack_and_broadcast(&envelope, "tool.reject.ack", receipt)
+}
+
+pub(crate) fn llm_tool_execute(
+    db_path: &Path,
+    session: &ConversationGatewaySession,
+    envelope: ConversationGatewayEnvelope,
+) -> Result<ConversationGatewayOutput> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ToolExecutePayload {
+        tool_request_id: String,
+        output_summary: String,
+    }
+
+    let conversation_id = required_conversation_id(&envelope)?.to_string();
+    let payload: ToolExecutePayload = serde_json::from_value(envelope.payload.clone())?;
+    let connection = Connection::open(db_path)?;
+    let gateway = local_llm_gateway();
+    let receipt = gateway.execute_approved_tool_request(
+        &connection,
+        &llm_gateway_actor(session),
+        &conversation_id,
+        &payload.tool_request_id,
+        &payload.output_summary,
+    )?;
+    llm_tool_ack_and_broadcast(&envelope, "tool.execute.ack", receipt)
+}
+
+fn llm_tool_ack_and_broadcast(
+    envelope: &ConversationGatewayEnvelope,
+    ack_type: &str,
+    receipt: LlmToolRequestReceipt,
+) -> Result<ConversationGatewayOutput> {
+    if receipt
+        .frames
+        .iter()
+        .any(|frame| frame.op == ConversationGatewayOp::Error)
+    {
+        return Ok(ConversationGatewayOutput {
+            frames: receipt.frames,
+            broadcast: vec![],
+        });
+    }
+    let conversation_id = required_conversation_id(envelope)?.to_string();
+    let tool_request = receipt
+        .tool_request
+        .ok_or_else(|| anyhow::anyhow!("LLM tool receipt did not include request state"))?;
+    Ok(ConversationGatewayOutput {
+        frames: vec![ack_envelope(
+            required_client_id(envelope)?,
+            Some(&conversation_id),
+            ack_type,
+            json!({
+                "toolRequestId": tool_request.tool_request_id,
+                "runId": tool_request.run_id,
+                "status": tool_request.status.as_str(),
+                "policyDecisionId": receipt.policy_decision_id,
+            }),
+            &Utc::now().to_rfc3339(),
+        )],
+        broadcast: receipt.frames,
+    })
+}
+
+fn local_llm_gateway() -> LlmGateway<DeterministicLlmProvider> {
+    LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"))
+}
+
+fn llm_gateway_actor(session: &ConversationGatewaySession) -> ActorContext {
+    ActorContext::new(
+        ActorKind::BrowserOperator,
+        "conversation_gateway",
+        session.actor_id.clone(),
+    )
 }
 
 pub(crate) fn message_edit(
@@ -1263,11 +1817,48 @@ pub(crate) fn lagged_client_frame(skipped: u64, occurred_at: &str) -> Conversati
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation_gateway::{
+        handle_gateway_envelope, handle_gateway_text_frame, hello_frame, MAX_TEXT_FRAME_BYTES,
+    };
     use crate::conversations::{
         create_conversation_participant, find_or_create_canonical_conversation,
         CanonicalConversationRequest, ConversationParticipantCreateRequest,
     };
+    use crate::llm_gateway::{LlmToolRequestCreateRequest, OpenAiTransportResponse};
     use crate::schema::init_database;
+    use std::collections::HashMap;
+
+    #[derive(Clone)]
+    struct MockOpenAiTransport {
+        text: String,
+    }
+
+    impl MockOpenAiTransport {
+        fn success(text: &str) -> Self {
+            Self {
+                text: text.to_string(),
+            }
+        }
+    }
+
+    impl OpenAiCompatibleTransport for MockOpenAiTransport {
+        fn post_chat_completions(
+            &self,
+            _endpoint: &str,
+            api_key: &str,
+            _timeout_ms: u64,
+            _body: &Value,
+        ) -> Result<OpenAiTransportResponse> {
+            assert!(!api_key.is_empty());
+            Ok(OpenAiTransportResponse {
+                status: 200,
+                body: json!({
+                    "choices": [{ "message": { "content": self.text } }],
+                    "usage": { "prompt_tokens": 8, "completion_tokens": 3 }
+                }),
+            })
+        }
+    }
 
     fn seeded_db() -> (tempfile::TempDir, std::path::PathBuf, String, String) {
         let temp_dir = tempfile::TempDir::new().unwrap();
@@ -1714,6 +2305,8 @@ mod tests {
         assert_eq!(output.frames[0].op, ConversationGatewayOp::Ack);
         assert_eq!(output.frames[0].frame_type, "llm.run.request.ack");
         assert_eq!(output.frames[0].payload["runId"], "llm_run_gateway_1");
+        assert_eq!(output.frames[0].payload["providerId"], "local_fake");
+        assert_eq!(output.frames[0].payload["modelId"], "fake-chat");
         assert!(output.frames[0].payload["finalMessageId"]
             .as_str()
             .is_some());
@@ -1730,8 +2323,18 @@ mod tests {
         assert!(broadcast_types.contains(&"llm.text.delta"));
         assert!(broadcast_types.contains(&"llm.text.completed"));
         assert!(broadcast_types.contains(&"llm.usage.recorded"));
+        assert!(broadcast_types.contains(&"llm.performance.measured"));
         assert!(broadcast_types.contains(&"llm.run.completed"));
         assert!(broadcast_types.contains(&"message.created"));
+        let performance = output
+            .broadcast
+            .iter()
+            .find(|frame| frame.frame_type == "llm.performance.measured")
+            .unwrap();
+        assert_eq!(performance.payload["providerId"], "local_fake");
+        assert_eq!(performance.payload["modelId"], "fake-chat");
+        assert!(performance.payload["deltaCount"].as_u64().unwrap() > 0);
+        assert!(performance.payload["totalLatencyMs"].as_u64().is_some());
 
         let serialized = output
             .frames
@@ -1757,22 +2360,79 @@ mod tests {
     }
 
     #[test]
+    fn llm_run_request_keeps_deterministic_default_when_live_env_is_present_without_app_guard() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let session = session(participant_id);
+        let assistant_id = assistant_participant_id(&db_path, &conversation_id);
+        let env = HashMap::from([
+            ("ORDO_LIVE_LLM_PROVIDER".to_string(), "openai".to_string()),
+            ("ORDO_LIVE_LLM_MODEL".to_string(), "gpt-5".to_string()),
+            ("ORDO_LIVE_LLM_EVALS".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_ALLOW_NETWORK".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_BUDGET_USD".to_string(), "0.01".to_string()),
+            ("OPENAI_API_KEY".to_string(), "sk-openai-secret".to_string()),
+        ]);
+
+        let output = llm_run_request_with_openai_transport(
+            &db_path,
+            &session,
+            command(
+                "llm.run.request",
+                "client_llm_default_guarded",
+                &conversation_id,
+                json!({
+                    "runId": "llm_run_default_guarded",
+                    "assistantParticipantId": assistant_id,
+                    "providerId": "local_fake",
+                    "modelId": "fake-chat",
+                    "userMessage": "Please answer locally without leaking sk-openai-secret."
+                }),
+            ),
+            &env,
+            MockOpenAiTransport::success("This mocked live answer must not be used"),
+        )
+        .unwrap();
+
+        assert_eq!(output.frames[0].op, ConversationGatewayOp::Ack);
+        assert_eq!(output.frames[0].payload["providerId"], "local_fake");
+        assert_eq!(output.frames[0].payload["modelId"], "fake-chat");
+        let serialized = output
+            .frames
+            .iter()
+            .chain(output.broadcast.iter())
+            .map(|frame| serde_json::to_string(&frame.payload).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(serialized.contains("local_fake"));
+        assert!(!serialized.contains("sk-openai-secret"));
+        assert!(!serialized.contains("This mocked live answer must not be used"));
+    }
+
+    #[test]
     fn llm_run_request_rejects_live_provider_mode_in_gateway_slice() {
         let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
-        let mut session = session(participant_id);
+        let session = session(participant_id);
         let assistant_id = assistant_participant_id(&db_path, &conversation_id);
+        let env = HashMap::from([
+            ("ORDO_LIVE_LLM_PROVIDER".to_string(), "openai".to_string()),
+            ("ORDO_LIVE_LLM_MODEL".to_string(), "gpt-5".to_string()),
+            ("ORDO_LIVE_LLM_EVALS".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_ALLOW_NETWORK".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_BUDGET_USD".to_string(), "0.01".to_string()),
+            ("OPENAI_API_KEY".to_string(), "sk-openai-secret".to_string()),
+        ]);
 
-        let rejected = handle_gateway_text_frame(
+        let rejected = llm_run_request_with_openai_transport(
             &db_path,
-            &mut session,
-            &serde_json::to_string(&command(
+            &session,
+            command(
                 "llm.run.request",
                 "client_llm_live",
                 &conversation_id,
                 json!({
                     "assistantParticipantId": assistant_id,
                     "providerId": "openai",
-                    "modelId": "gpt-test",
+                    "modelId": "gpt-5",
                     "userMessage": "Please call a live provider using ava@example.com and sk-test-secret.",
                     "promptSlots": [{
                         "id": "live_prompt",
@@ -1784,9 +2444,11 @@ mod tests {
                         "contentHash": "sha256:test"
                     }]
                 }),
-            ))
-            .unwrap(),
-        );
+            ),
+            &env,
+            MockOpenAiTransport::success("Mocked live answer"),
+        )
+        .unwrap();
         assert_eq!(rejected.frames[0].op, ConversationGatewayOp::Error);
         assert_eq!(rejected.frames[0].frame_type, "command.rejected");
         assert_eq!(
@@ -1808,8 +2470,261 @@ mod tests {
         let serialized = serde_json::to_string(&rejected.frames[0]).unwrap();
         assert!(!serialized.contains("ava@example.com"));
         assert!(!serialized.contains("sk-test-secret"));
+        assert!(!serialized.contains("sk-openai-secret"));
         assert!(!serialized.contains("Raw prompt content"));
         assert!(!serialized.contains("OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn llm_run_request_uses_mocked_openai_only_when_all_app_live_guards_are_satisfied() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let session = session(participant_id);
+        let assistant_id = assistant_participant_id(&db_path, &conversation_id);
+        let env = HashMap::from([
+            ("ORDO_APP_LIVE_LLM".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_PROVIDER".to_string(), "openai".to_string()),
+            ("ORDO_LIVE_LLM_MODEL".to_string(), "gpt-5".to_string()),
+            ("ORDO_LIVE_LLM_EVALS".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_ALLOW_NETWORK".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_BUDGET_USD".to_string(), "0.01".to_string()),
+            ("ORDO_LIVE_LLM_TIMEOUT_MS".to_string(), "30000".to_string()),
+            ("ORDO_LIVE_LLM_MAX_CASES".to_string(), "1".to_string()),
+            ("OPENAI_API_KEY".to_string(), "sk-openai-secret".to_string()),
+        ]);
+
+        let output = llm_run_request_with_openai_transport(
+            &db_path,
+            &session,
+            command(
+                "llm.run.request",
+                "client_llm_openai_guarded",
+                &conversation_id,
+                json!({
+                    "runId": "llm_run_openai_guarded",
+                    "assistantParticipantId": assistant_id,
+                    "providerId": "local_fake",
+                    "modelId": "fake-chat",
+                    "userMessage": "Please answer without exposing ava@example.com or sk-openai-secret.",
+                    "promptSlots": [{
+                        "id": "live_prompt",
+                        "label": "Live Prompt",
+                        "content": "Raw prompt content must not leak through frames.",
+                        "sourceRefs": ["conversation_event_1"],
+                        "inclusionReason": "Guarded app live provider proof.",
+                        "visibilityCeiling": "participants",
+                        "contentHash": "sha256:test"
+                    }]
+                }),
+            ),
+            &env,
+            MockOpenAiTransport::success("Mocked live OpenAI answer"),
+        )
+        .unwrap();
+
+        assert_eq!(output.frames[0].op, ConversationGatewayOp::Ack);
+        assert_eq!(output.frames[0].payload["providerId"], "openai");
+        assert_eq!(output.frames[0].payload["modelId"], "gpt-5");
+        let broadcast_types = output
+            .broadcast
+            .iter()
+            .map(|frame| frame.frame_type.as_str())
+            .collect::<Vec<_>>();
+        assert!(broadcast_types.contains(&"llm.provider.started"));
+        assert!(broadcast_types.contains(&"llm.run.completed"));
+
+        let connection = Connection::open(&db_path).unwrap();
+        let assistant_messages: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages
+                 WHERE conversation_id = ?1 AND message_kind = 'assistant' AND body_markdown = 'Mocked live OpenAI answer'",
+                [&conversation_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(assistant_messages, 1);
+
+        let serialized = output
+            .frames
+            .iter()
+            .chain(output.broadcast.iter())
+            .map(|frame| serde_json::to_string(&frame.payload).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!serialized.contains("sk-openai-secret"));
+        assert!(!serialized.contains("ava@example.com"));
+        assert!(!serialized.contains("Raw prompt content"));
+        assert!(!serialized.contains("OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn llm_run_request_allows_env_configured_provider_without_db_enablement() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let session = session(participant_id);
+        let assistant_id = assistant_participant_id(&db_path, &conversation_id);
+        let env = HashMap::from([
+            ("ORDO_APP_LIVE_LLM".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_ALLOW_NETWORK".to_string(), "1".to_string()),
+            ("ORDO_LIVE_LLM_BUDGET_USD".to_string(), "0.01".to_string()),
+            ("OPENAI_API_KEY".to_string(), "sk-openai-secret".to_string()),
+        ]);
+
+        let output = llm_run_request_with_openai_transport(
+            &db_path,
+            &session,
+            command(
+                "llm.run.request",
+                "client_llm_openai_env_configured",
+                &conversation_id,
+                json!({
+                    "runId": "llm_run_openai_env_configured",
+                    "assistantParticipantId": assistant_id,
+                    "providerId": "openai",
+                    "modelId": "gpt-5",
+                    "userMessage": "Use the configured provider without leaking sk-openai-secret."
+                }),
+            ),
+            &env,
+            MockOpenAiTransport::success("Configured OpenAI answer"),
+        )
+        .unwrap();
+
+        assert_eq!(output.frames[0].op, ConversationGatewayOp::Ack);
+        assert_eq!(output.frames[0].payload["providerId"], "openai");
+        assert_eq!(output.frames[0].payload["modelId"], "gpt-5");
+        assert!(output
+            .broadcast
+            .iter()
+            .any(|frame| frame.frame_type == "llm.run.completed"));
+        assert!(!serde_json::to_string(&output.frames)
+            .unwrap()
+            .contains("sk-openai-secret"));
+    }
+
+    #[test]
+    fn llm_run_cancel_acknowledges_and_broadcasts_canonical_cancel_event() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+
+        let output = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "llm.run.cancel",
+                "client_llm_cancel_1",
+                &conversation_id,
+                json!({ "runId": "llm_run_cancel_gateway_1" }),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(output.frames[0].op, ConversationGatewayOp::Ack);
+        assert_eq!(output.frames[0].frame_type, "llm.run.cancel.ack");
+        assert_eq!(
+            output.frames[0].payload["runId"],
+            "llm_run_cancel_gateway_1"
+        );
+        assert_eq!(output.broadcast[0].frame_type, "llm.run.cancelled");
+    }
+
+    #[test]
+    fn llm_tool_commands_acknowledge_and_broadcast_governed_tool_events() {
+        let (_temp_dir, db_path, conversation_id, participant_id) = seeded_db();
+        let mut session = session(participant_id);
+        let connection = Connection::open(&db_path).unwrap();
+        let gateway = LlmGateway::new(DeterministicLlmProvider::new("local_fake", "fake-chat"));
+        let requested = gateway
+            .request_tool(
+                &connection,
+                &ActorContext::local_owner("test"),
+                LlmToolRequestCreateRequest {
+                    run_id: "llm_run_tool_gateway_1".to_string(),
+                    conversation_id: conversation_id.clone(),
+                    requested_capability_id: "system.status.read".to_string(),
+                    requested_by: "assistant".to_string(),
+                    reason: "Need current daemon status.".to_string(),
+                    evidence_refs: vec!["conversation_event_1".to_string()],
+                    input_summary: "Read system status.".to_string(),
+                    visibility_ceiling: "participants".to_string(),
+                    client_id: Some("client_tool_request_seed".to_string()),
+                },
+            )
+            .unwrap()
+            .tool_request
+            .unwrap();
+
+        let approved = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "tool.approve",
+                "client_tool_approve_1",
+                &conversation_id,
+                json!({
+                    "toolRequestId": requested.tool_request_id,
+                    "reason": "Owner approved read-only status."
+                }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(approved.frames[0].frame_type, "tool.approve.ack");
+        assert_eq!(approved.frames[0].payload["status"], "approved");
+        assert_eq!(approved.broadcast[0].frame_type, "llm.tool.approved");
+
+        let executed = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "tool.execute",
+                "client_tool_execute_1",
+                &conversation_id,
+                json!({
+                    "toolRequestId": requested.tool_request_id,
+                    "outputSummary": "Daemon is ready."
+                }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(executed.frames[0].frame_type, "tool.execute.ack");
+        assert_eq!(executed.frames[0].payload["status"], "completed");
+        assert_eq!(executed.broadcast[0].frame_type, "llm.tool.executing");
+        assert_eq!(executed.broadcast[1].frame_type, "llm.tool.completed");
+
+        let second_requested = gateway
+            .request_tool(
+                &connection,
+                &ActorContext::local_owner("test"),
+                LlmToolRequestCreateRequest {
+                    run_id: "llm_run_tool_gateway_2".to_string(),
+                    conversation_id: conversation_id.clone(),
+                    requested_capability_id: "system.status.read".to_string(),
+                    requested_by: "assistant".to_string(),
+                    reason: "Need current daemon status.".to_string(),
+                    evidence_refs: vec!["conversation_event_2".to_string()],
+                    input_summary: "Read system status.".to_string(),
+                    visibility_ceiling: "participants".to_string(),
+                    client_id: Some("client_tool_request_seed_2".to_string()),
+                },
+            )
+            .unwrap()
+            .tool_request
+            .unwrap();
+        let rejected = handle_gateway_envelope(
+            &db_path,
+            &mut session,
+            command(
+                "tool.reject",
+                "client_tool_reject_1",
+                &conversation_id,
+                json!({
+                    "toolRequestId": second_requested.tool_request_id,
+                    "reason": "Not needed for this reply."
+                }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(rejected.frames[0].frame_type, "tool.reject.ack");
+        assert_eq!(rejected.frames[0].payload["status"], "rejected");
+        assert_eq!(rejected.broadcast[0].frame_type, "llm.tool.rejected");
     }
 
     #[test]

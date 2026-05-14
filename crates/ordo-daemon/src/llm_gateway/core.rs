@@ -6,20 +6,13 @@ use crate::events::*;
 use crate::llm_accounting::*;
 use crate::policy::*;
 use crate::privacy_egress::*;
-use crate::schema::*;
-use crate::vault::*;
-use anyhow::bail;
-use anyhow::{anyhow, ensure, Context, Result};
-use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
-use serde::{Deserialize, Serialize};
+use anyhow::{ensure, Result};
+use chrono::Utc;
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
-use std::fmt;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::time::Instant;
 use uuid::Uuid;
 
 pub struct LlmGateway<P> {
@@ -73,6 +66,8 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
         actor: &ActorContext,
         request: LlmGatewayRequest,
     ) -> Result<LlmGatewayRunResult> {
+        let request_received_instant = Instant::now();
+        let request_received_at = Utc::now().to_rfc3339();
         validate_request(&request)?;
         ensure!(
             request.provider_id == self.provider.provider_id(),
@@ -111,6 +106,8 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
         let prompt = compile_prompt(&request.prompt_slots)?;
         record_invocation_started(connection, &request, &prompt, &policy_decision_id)?;
         let mut frames = Vec::new();
+        let provider_request_started_at = Utc::now().to_rfc3339();
+        let provider_request_started_instant = Instant::now();
         frames.push(persist_dispatch(
             connection,
             &request.conversation_id,
@@ -249,9 +246,23 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
         let stream = self.provider.stream(&provider_request)?;
         let mut completed_text = None;
         let mut usage = None;
+        let mut first_delta_at = None;
+        let mut first_delta_ms = None;
+        let mut final_delta_at = None;
+        let mut delta_count: u64 = 0;
+        let mut approximate_output_chars: u64 = 0;
         for event in stream {
             match event {
                 LlmProviderStreamEvent::TextDelta(delta) => {
+                    let delta_at = Utc::now().to_rfc3339();
+                    if first_delta_at.is_none() {
+                        first_delta_at = Some(delta_at.clone());
+                        first_delta_ms =
+                            Some(provider_request_started_instant.elapsed().as_millis() as u64);
+                    }
+                    final_delta_at = Some(delta_at);
+                    delta_count += 1;
+                    approximate_output_chars += delta.chars().count() as u64;
                     frames.push(ephemeral_run_dispatch(
                         "llm.text.delta",
                         &request,
@@ -270,6 +281,10 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
                 }
                 LlmProviderStreamEvent::Failed { code, message } => {
                     record_invocation_failed(connection, &request.run_id, &code, &message)?;
+                    let completed_at = Utc::now().to_rfc3339();
+                    let total_latency_ms = request_received_instant.elapsed().as_millis() as u64;
+                    let provider_latency_ms =
+                        provider_request_started_instant.elapsed().as_millis() as u64;
                     frames.push(persist_dispatch(
                         connection,
                         &request.conversation_id,
@@ -279,6 +294,32 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
                             "runId": request.run_id,
                             "code": code,
                             "message": message,
+                        }),
+                        Some(&policy_decision_id),
+                    )?);
+                    frames.push(persist_dispatch(
+                        connection,
+                        &request.conversation_id,
+                        request.segment_id.as_deref(),
+                        "llm.performance.measured",
+                        json!({
+                            "runId": request.run_id,
+                            "providerId": request.provider_id,
+                            "modelId": request.model_id,
+                            "requestReceivedAt": request_received_at,
+                            "providerRequestStartedAt": provider_request_started_at,
+                            "firstDeltaAt": first_delta_at,
+                            "finalDeltaAt": final_delta_at,
+                            "completedAt": completed_at,
+                            "timeToFirstTokenMs": first_delta_ms,
+                            "providerLatencyMs": provider_latency_ms,
+                            "totalLatencyMs": total_latency_ms,
+                            "deltaCount": delta_count,
+                            "approximateOutputChars": approximate_output_chars,
+                            "charsPerSecond": null,
+                            "status": "failed",
+                            "failureCode": code,
+                            "failureMessage": message,
                         }),
                         Some(&policy_decision_id),
                     )?);
@@ -355,6 +396,38 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
                     .map(|event| dispatch_from_event(&request.conversation_id, &event)),
             );
         }
+        let completed_at = Utc::now().to_rfc3339();
+        let total_latency_ms = request_received_instant.elapsed().as_millis() as u64;
+        let provider_latency_ms = provider_request_started_instant.elapsed().as_millis() as u64;
+        let chars_per_second = if total_latency_ms > 0 {
+            Some((approximate_output_chars as f64 / total_latency_ms as f64) * 1000.0)
+        } else {
+            None
+        };
+        frames.push(persist_dispatch(
+            connection,
+            &request.conversation_id,
+            request.segment_id.as_deref(),
+            "llm.performance.measured",
+            json!({
+                "runId": request.run_id,
+                "providerId": request.provider_id,
+                "modelId": request.model_id,
+                "requestReceivedAt": request_received_at,
+                "providerRequestStartedAt": provider_request_started_at,
+                "firstDeltaAt": first_delta_at,
+                "finalDeltaAt": final_delta_at,
+                "completedAt": completed_at,
+                "timeToFirstTokenMs": first_delta_ms,
+                "providerLatencyMs": provider_latency_ms,
+                "totalLatencyMs": total_latency_ms,
+                "deltaCount": delta_count,
+                "approximateOutputChars": approximate_output_chars,
+                "charsPerSecond": chars_per_second,
+                "status": "succeeded",
+            }),
+            Some(&policy_decision_id),
+        )?);
         frames.push(persist_dispatch(
             connection,
             &request.conversation_id,
@@ -363,6 +436,10 @@ impl<P: LlmProviderAdapter> LlmGateway<P> {
             json!({
                 "runId": request.run_id,
                 "messageId": final_message.id,
+                "providerId": request.provider_id,
+                "modelId": request.model_id,
+                "totalLatencyMs": total_latency_ms,
+                "timeToFirstTokenMs": first_delta_ms,
             }),
             Some(&policy_decision_id),
         )?);

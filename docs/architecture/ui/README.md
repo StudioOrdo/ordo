@@ -85,8 +85,8 @@ Useful donor areas:
 
 ## Product Frame
 
-Ordo is not a generic SaaS dashboard and not a chatbot widget. It is an
-agentic orchestration operating system for a solopreneur or small operator.
+Ordo is not a generic SaaS dashboard and not a chatbot widget. It is a
+governed workforce substrate for a solopreneur or small operator.
 
 The frontend coordinates:
 
@@ -96,7 +96,7 @@ The frontend coordinates:
 - offers, trials, feedback, reviews, referrals, and outcomes;
 - evidence, events, replay, reports, and artifact review;
 - provider, privacy, policy, and accounting boundaries;
-- browser-local candidate work;
+- conversational Studio runs and browser-local candidate work;
 - theme, accessibility, motion, performance, and internationalization.
 
 Every surface should answer:
@@ -110,10 +110,12 @@ Every surface should answer:
 - What changed because of my action?
 
 The product shell and business-process IA are defined in
-[Ordo Product IA Contract](./ordo-product-ia.md). Use that document when
-deciding what belongs in Public/Site, Member/Ordo, Support, Growth, or System,
-and how rooms, work items, selected details, timelines, and proof should map to
-shared business objects.
+[Ordo Product IA Contract](./ordo-product-ia.md), grounded by the
+[Current Product Canon](../../business/current-product-canon.md) and
+[Workforce Substrate](../../business/workforce-substrate.md). Use those
+documents when deciding what belongs in Member View, Studio, Support,
+Knowledge, Growth, or Systems, and how rooms, work items, selected details,
+timelines, and proof should map to shared business objects.
 
 ## Architecture Shape
 

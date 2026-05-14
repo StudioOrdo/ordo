@@ -2,11 +2,14 @@
 
 Status: Draft product contract for the 0.1.3 conversation realtime spine
 
-This document translates the UX/product letter in
-`docs/_letters/ux_product.md` into implementation doctrine for the conversation
-architecture packet. It is intentionally product-level: future code should use
-this as a contract before choosing data shapes, routes, read models, or UI
-defaults.
+Current canon: [Current Product Canon](../../business/current-product-canon.md)
+
+This document preserves the useful parts of earlier UX/product letters as
+implementation doctrine for the conversation architecture packet. Those local
+draft letters have been retired from active guidance. Current implementation
+should use [Current Product Canon](../../business/current-product-canon.md),
+[Workforce Substrate](../../business/workforce-substrate.md), and this packet
+before choosing data shapes, routes, read models, or UI defaults.
 
 ## Core Principle
 
@@ -26,12 +29,18 @@ are components. The primary value proposition is that Ordo reads what is
 happening in the business, connects it to evidence, and tells the owner what
 matters and what to do next.
 
+The current product stance is stronger than "business intelligence": Ordo is a
+workforce substrate. The owner conversationally directs work, reviews results,
+gives feedback, and approves outcomes while Ordo compiles governed plans,
+tasks, requests, artifacts, and briefs behind the scenes.
+
 The conversation product should preserve this model:
 
 ```text
-Clients participate in one relationship conversation.
-Staff operate handoffs and business work.
-Admins operate the appliance.
+Members participate in one relationship conversation.
+Studio, Support, Knowledge, Growth, and Systems operators work from their
+respective surfaces.
+Roles govern access and projection safety.
 LLM jobs create episodes, tags, graph candidates, and briefs from evidence.
 Offers and asks are measurable business instruments.
 Artifacts are durable knowledge and business objects.
@@ -93,7 +102,7 @@ Menu -> Area evidence list -> Selected record brief
 On desktop, this expands to:
 
 ```text
-Top rail + staff/admin rail + evidence list + narrative brief/detail
+Surface rail + room tabs + evidence list + narrative brief/detail
 ```
 
 The second column is an evidence or record list, not another menu. The detail
@@ -106,40 +115,27 @@ surface should default to a narrative brief that answers:
 - evidence;
 - limitations and provenance.
 
-### Top Rail
+### Canonical Surfaces
 
-The top rail is for public, member, client, affiliate, and staff participation.
-
-Canonical top rail:
+The current product stance is surface-first:
 
 ```text
-Studio Ordo | Chat | Home | Offers | Asks | Latest | Account
+Member View
+Studio
+Support
+Knowledge
+Growth
+Systems
 ```
 
-Anonymous users, authenticated clients, members, affiliates, staff, and owners
-may all see the top rail. Non-staff users must not see the staff/admin rail or
-appliance internals.
+Roles control permissions, grants, and projection safety. Roles are not the
+primary navigation model.
 
-### Staff And Admin Rails
-
-Business staff rail:
-
-```text
-Today | Conversations | Connections | Offers | Asks | Customer Feedback | Affiliates | Artifacts | Jobs | Reports
-```
-
-Owner/admin system additions:
-
-```text
-System | Knowledge | Events | Logs | Backup | Settings
-```
-
-Business staff work business movement. Admins and owners operate the appliance.
-Health, logs, backup, readiness, events, low-level policy decisions, and other
-system internals should not appear as ordinary staff navigation.
-
-Conversations sit above Connections because active interaction comes before
-durable relationship memory.
+Public Home/About, public Offers, public Asks, Latest, and public Chat are
+public projections of the same underlying product surfaces. Non-staff users must
+not see Support, Growth operator evidence, Studio production controls,
+Knowledge internals, or Systems appliance internals unless a specific grant
+allows a safe projection.
 
 ## Role-Aware Chat Presentation
 
@@ -157,9 +153,9 @@ assignment, and allowed scope.
   such as referral links, QR card, referred leads, outcome/commission status,
   approved materials, and settings. They must not see unrelated customer
   conversations or owner-only business details.
-- Business staff work from `Conversations -> My Handoffs` and business rails.
-  Their detail view starts with the handoff or surface brief before raw
-  transcript.
+- Support operators work from `Support -> Handoffs` or `Support ->
+  Conversations`. Their detail view starts with the handoff or surface brief
+  before raw transcript.
 - Managers can see `Team Queue`; owner/admin users can inspect `All
   Conversations`, mode, grants, events, candidates, and provenance when
   authorized.
@@ -185,12 +181,12 @@ Ordo Assistant is available.
 Do not expose internal routing, confidence scores, handoff logic, policy state,
 or LLM orchestration to the client.
 
-## Staff Conversation Model
+## Support Conversation Model
 
-Staff operate many conversations, but the default surface is a work queue, not a
-surveillance feed.
+Support operators may handle many conversations, but the default surface is a
+work queue, not a surveillance feed.
 
-Primary staff views:
+Primary Support views:
 
 - `My Handoffs`
 - `Team Queue`
@@ -200,7 +196,7 @@ Default routing:
 
 - business staff default to `My Handoffs`;
 - manager/admin roles default to `Team Queue`;
-- owner roles may default to `Today Brief` or `Team Queue`;
+- owner roles may default to a Systems brief or `Team Queue`;
 - technical admins may access all views, but `All Conversations` is not the
   ordinary staff default.
 

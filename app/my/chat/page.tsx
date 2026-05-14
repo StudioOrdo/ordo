@@ -7,10 +7,12 @@ import { LOCAL_SESSION_COOKIE_NAME, parseLocalSessionCookie } from "@/lib/local-
 import { type SearchParams } from "@/lib/page-role";
 
 export default async function MyChatPage({ searchParams }: { searchParams?: SearchParams }) {
+  const params = searchParams ? await searchParams : {};
+  const role = Array.isArray(params.role) ? params.role[0] : params.role;
   const cookieStore = await cookies();
   const session = parseLocalSessionCookie(cookieStore.get(LOCAL_SESSION_COOKIE_NAME)?.value);
 
-  if (!session) {
+  if (!session && !role) {
     return (
       <>
         <PublicTopRail role="anonymous" />

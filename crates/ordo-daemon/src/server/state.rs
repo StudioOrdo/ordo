@@ -2,16 +2,12 @@ use chrono::Utc;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration as StdDuration;
 use tokio::sync::broadcast;
 
 use crate::conversation_protocol::ConversationGatewayEnvelope;
 use crate::events::RealtimeEvent;
 use crate::secrets::{normalize_secret, OrdoSecretString};
 
-pub(crate) const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
-pub(crate) const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
-pub(crate) const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
 const PROTECTED_ROUTE_RATE_LIMIT_MAX_ATTEMPTS: u32 = 30;
 const PROTECTED_ROUTE_RATE_LIMIT_WINDOW_SECONDS: i64 = 60;
 
@@ -87,7 +83,11 @@ impl ProtectedRouteRateLimiter {
         self.check_at(key, Utc::now().timestamp())
     }
 
-    pub(crate) fn check_at(&self, key: &str, now_seconds: i64) -> ProtectedRouteRateLimitDecision {
+    pub(crate) fn check_at(
+        &self,
+        key: &str,
+        now_seconds: i64,
+    ) -> ProtectedRouteRateLimitDecision {
         let mut state = self
             .state
             .lock()

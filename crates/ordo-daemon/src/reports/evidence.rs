@@ -1,13 +1,11 @@
+use super::jobs::*;
+use super::types::*;
+use crate::diagnostics::{query_diagnostic_logs, DiagnosticLogQuery};
+use crate::health::{build_health_report, build_readiness_report};
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::path::Path;
-use chrono::Utc;
-use super::types::*;
-use super::jobs::*;
-use crate::schema::db::ConnectionExt;
-use crate::health::{build_health_report, build_readiness_report};
-use crate::diagnostics::{query_diagnostic_logs, DiagnosticLogQuery};
 
 pub(crate) fn health_evidence(_db_path: &Path) -> EvidenceEnvelope {
     let health = build_health_report();
@@ -133,4 +131,3 @@ pub(crate) fn browser_context_evidence(browser_context: Option<Value>) -> Eviden
         }
     }
 }
-

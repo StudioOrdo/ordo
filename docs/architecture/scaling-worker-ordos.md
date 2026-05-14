@@ -140,6 +140,9 @@ The same pattern can support:
 Worker Ordos are related to future Agent2Agent work, but this repo does not
 currently implement A2A networking or Worker Ordo orchestration.
 
+Use [Agent-To-Agent Roadmap](agent-to-agent-roadmap.md) for the broader network
+stance.
+
 The first likely A2A wedge is support issue reports:
 
 ```text

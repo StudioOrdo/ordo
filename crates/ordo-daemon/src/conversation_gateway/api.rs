@@ -1,10 +1,7 @@
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
-use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use chrono::Utc;
+use serde_json::json;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,26 +9,14 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::conversation_protocol::{
-    ack_envelope, command_rejected_error, dispatch_envelope, ConversationGatewayDurability,
-    ConversationGatewayEnvelope, ConversationGatewayOp, ConversationGatewayScope,
-    CONVERSATION_GATEWAY_SCHEMA_VERSION,
+    command_rejected_error, ConversationGatewayDurability, ConversationGatewayEnvelope,
+    ConversationGatewayOp, ConversationGatewayScope, CONVERSATION_GATEWAY_SCHEMA_VERSION,
 };
-use crate::conversations::{
-    create_conversation_handoff, transition_conversation_handoff, upsert_conversation_mode,
-    ConversationHandoffCreateRequest, ConversationMessageCreateRequest, ConversationMode,
-    ConversationMutationActor, ConversationPresenceUpdateRequest, ConversationService,
-    HandoffStatus, ReactionAction,
-};
-use crate::policy::{ActorContext, ActorKind};
 
-const DEFAULT_REPLAY_LIMIT: usize = 100;
-const MAX_REPLAY_LIMIT: usize = 500;
-const MAX_TEXT_FRAME_BYTES: usize = 64 * 1024;
-const COMMAND_RATE_LIMIT: usize = 30;
-const COMMAND_RATE_WINDOW_SECONDS: i64 = 60;
+pub(crate) const MAX_TEXT_FRAME_BYTES: usize = 64 * 1024;
 
-use super::types::*;
 use super::handlers::*;
+use super::types::*;
 
 /// Generates the initial HELLO frame containing schema version,
 /// heartbeat interval, and connectivity routing info.
@@ -84,7 +69,31 @@ pub async fn handle_conversation_socket(
                 };
                 match message {
                     Message::Text(text) => {
-                        let output = handle_gateway_text_frame(db_path.as_ref(), &mut session, &text);
+                        let db_path_for_task = Arc::clone(&db_path);
+                        let mut session_for_task = session.clone();
+                        let output = match tokio::task::spawn_blocking(move || {
+                            let output = handle_gateway_text_frame(
+                                db_path_for_task.as_ref(),
+                                &mut session_for_task,
+                                &text,
+                            );
+                            (output, session_for_task)
+                        })
+                        .await
+                        {
+                            Ok((output, updated_session)) => {
+                                session = updated_session;
+                                output
+                            }
+                            Err(error) => error_output(command_rejected_error(
+                                None,
+                                None,
+                                "command_failed",
+                                &error.to_string(),
+                                false,
+                                &Utc::now().to_rfc3339(),
+                            )),
+                        };
                         for frame in output.frames {
                             if send_gateway_frame(&mut socket, &frame).await.is_err() {
                                 return;

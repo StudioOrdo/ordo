@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
 
+import { loadLocalEnv } from "./local-env.mjs";
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nextPort = Number(process.env.ORDO_REAL_DAEMON_NEXT_PORT ?? "3110");
 const daemonPort = Number(process.env.ORDO_REAL_DAEMON_PORT ?? "19180");
@@ -12,7 +14,7 @@ const smokeDbPath = resolve(smokeDataDir, "local.db");
 const daemonUrl = `http://127.0.0.1:${daemonPort}`;
 const nextUrl = `http://127.0.0.1:${nextPort}`;
 const daemonEnv = {
-  ...process.env,
+  ...(await loadLocalEnv(repoRoot)),
   ORDO_DAEMON_URL: daemonUrl,
   NEXT_PUBLIC_ORDO_DAEMON_WS_URL: `ws://127.0.0.1:${daemonPort}/ws`,
   NEXT_PUBLIC_ORDO_DAEMON_CHAT_WS_URL: `ws://127.0.0.1:${daemonPort}/chat/ws`,

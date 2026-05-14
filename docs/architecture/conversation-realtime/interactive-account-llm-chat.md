@@ -147,23 +147,22 @@ The default path must persist and broadcast evidence for:
 
 ### #219 Phase 5: Guarded OpenAI-Compatible Chat Mode
 
-Allow interactive local chat to opt into the OpenAI-compatible adapter only when
-explicit live-provider guards are satisfied. The deterministic provider remains
-the default and the only expected CI path.
+Allow interactive local chat to use the daemon-owned local provider path by
+default while cloud providers remain behind explicit live-provider guards. The
+deterministic provider remains available as an explicit fixture path for CI and
+evals.
 
 Live chat mode must fail closed when network, model, provider, budget, timeout,
 or API-key requirements are missing. Provider keys remain write-only and must
 not appear in UI, HTTP responses, WebSocket frames, durable events, diagnostic
 logs, reports, or test artifacts.
 
-Current implementation status: member chat is deterministic-only. The browser
-adapter sends `local_fake` / `fake-chat` and exposes no provider selector. The
-conversation gateway rejects any non-deterministic `llm.run.request` with a
-safe `live_provider_disabled` `command.rejected` frame before prompt
-compilation, privacy egress, provider dispatch, token accounting, or assistant
-message creation can run. This is intentionally daemon-level proof; browser
-coverage remains focused on deterministic behavior until a separate internal or
-admin provider-readiness surface exists.
+Current implementation status: member chat submits through `/chat/ws` with a
+provider/model selector. The browser sends `providerId: "local"` for Local
+Ollama and never calls providers directly. The conversation gateway allows the
+local Ollama adapter without cloud live-provider guards, while non-local
+providers still require the safe `ORDO_APP_LIVE_LLM`, network, budget, catalog,
+model, and credential checks before provider dispatch.
 
 Live-provider mode remains disabled until a later guarded validation slice adds
 all of the following as explicit preconditions:
@@ -209,11 +208,11 @@ Repeatable local evidence for the real daemon path lives in:
 npm run smoke:chat:real
 ```
 
-That command starts the Rust daemon with disposable SQLite state, starts Next
+that command starts the Rust daemon with disposable SQLite state, starts Next
 pointed at the daemon, registers a local member session through the browser
 API, opens the member chat, sends one message through `/chat/ws`, and verifies
-the deterministic `local_fake` / `fake-chat` assistant reply without exposing
-raw credentials, prompt content, provider keys, or internal policy details.
+the daemon-backed assistant path without exposing raw credentials, prompt
+content, provider keys, or internal policy details.
 
 ### #228-#231 Phase 8: Provider-Agnostic Readiness
 
@@ -262,9 +261,10 @@ Phase 8 provider issues:
 - #230 DeepSeek provider readiness resolver: normalize OpenAI-compatible versus
   Anthropic-compatible base URLs, reject deprecated models, and prove endpoint
   shape with mocked transport only.
-- #231 Local Ollama provider readiness resolver: decide whether `local` maps to
-  Ollama or whether `ollama` becomes its own catalog provider, then add safe
-  localhost readiness probes and mocked adapter normalization.
+- #231 Local Ollama provider readiness resolver: `local` now maps to the
+  daemon-owned Ollama adapter at the local `/api/chat` endpoint, with
+  `local_fake/fake-chat` reserved for explicit deterministic fixtures. Next
+  depth is safe localhost readiness probing and mocked adapter normalization.
 
 Readiness decisions should be structured and safe, for example `disabled`,
 `missing_key`, `missing_model`, `missing_budget`, `missing_timeout`,

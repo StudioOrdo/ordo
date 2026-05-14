@@ -10,6 +10,14 @@ The core should remain timeless across business types. Customization should come
 from MCP tools, process templates, adapters, prompts, and domain packs that plug
 into the same governed runtime instead of forking the product.
 
+In product terms, Ordo Core is the rock-solid ground for packaged workforces.
+Community and commercial packs should add domain labor, not bypass the kernel.
+
+Core should borrow serious operating patterns from enterprise SaaS and express
+them through a local-first appliance: CQRS-lite, event trails, RBAC/scoped
+grants, workflow execution, retries, leases, approval gates, artifact
+provenance, observability, analytics ledgers, and adapter contracts.
+
 ## Core Thesis
 
 Ordo Core is a trusted business boundary with an AI interface.
@@ -17,7 +25,7 @@ Ordo Core is a trusted business boundary with an AI interface.
 The owner should be able to say:
 
 ```text
-My Ordo can meet the world without giving the world direct access to me.
+Ordo can meet the world without giving the world direct access to me.
 ```
 
 The system should preserve this loop:
@@ -53,8 +61,40 @@ The core product vocabulary is:
   context intact.
 - Attribution Ledger: the evidence chain from entry point through conversation,
   offer acceptance, trial, conversion, and credit.
+- Reward Program: a reusable incentive program that turns qualified actions
+  into ledgered benefits.
+- Benefit Grant: hosted days, credits, pack access, render minutes,
+  leaderboard points, or other earned benefits enforced through Access.
 - Job, Task, Event, Artifact, Brief, And Receipt: the existing appliance spine
   for governed work and evidence.
+
+The smaller kernel boundary is:
+
+```text
+Actor
+Connection
+Tracked Entry Point
+Offer
+Access
+Request
+Reward
+Capability
+Plan / Compiled Plan
+Job / Task
+Artifact
+Event
+Outcome
+Read Model
+```
+
+The kernel rule is:
+
+```text
+Canonical tables own truth.
+Events own audit and replay.
+Read models own surface experience.
+Adapters own external systems.
+```
 
 ## Visibility Model
 
@@ -176,6 +216,27 @@ The default commercial proof can be:
 No credit should be granted without evidence. No affiliate dashboard should
 expose private visitor or owner data beyond its scoped attribution view.
 
+## Rewards And Incentives
+
+Rewards are a reusable Growth capability.
+
+The default reward rule is:
+
+```text
+No reward without evidence.
+Growth records qualification.
+Access grants the benefit.
+```
+
+Reward programs can support referral credits, feedback credits, community QA,
+leaderboards, prizes, hosted-time extensions, render minutes, or pack unlocks.
+The first OrdoStudio pilot can grant seven hosted days for a qualified referral
+and policy-defined hosted days for accepted feedback.
+
+Rewards should be ledgered, capped, reviewable, and reversible. Leaderboards
+should be opt-in and pseudonymous by default. Prize programs should require
+explicit terms and owner approval before fulfillment.
+
 ## Customization Through Tools And Packs
 
 Customization should change the work Ordo can perform, not the trust model.
@@ -184,6 +245,11 @@ Domain-specific MCP tools and packs should register into the same capability,
 policy, artifact, brief, visibility, and audit spines. A custom tool should
 declare its identity, capability, input schema, output schema, side effects,
 policy tier, visibility classification, required grants, and expected artifacts.
+
+A product pack is a packaged workforce. It can include tools, content scopes,
+prompt templates, variables, job plans, request templates, artifact contracts,
+limits, approval gates, and growth metrics, but it should still execute through
+the same governed runtime.
 
 Examples:
 
@@ -208,6 +274,7 @@ Every future slice should preserve these rules:
 - no unscoped connection;
 - no unsupported claim;
 - no untracked conversion;
+- no reward or leaderboard credit without durable qualification evidence;
 - no external packet without approval and receipt handling;
 - no custom tool outside the capability and audit model;
 - no product surface that pretends unbuilt behavior exists.

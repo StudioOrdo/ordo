@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("real daemon deterministic member chat", () => {
+  test.skip(process.env.ORDO_REAL_DAEMON_SMOKE !== "1", "real daemon smoke requires ORDO_REAL_DAEMON_SMOKE=1 and a daemon-backed session");
+
   test("member chat reaches deterministic assistant reply through real daemon websocket", async ({ page }) => {
     await page.goto("/register");
     const localSessionPayload = await page.evaluate(async () => {

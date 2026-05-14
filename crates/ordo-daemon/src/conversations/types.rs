@@ -1,6 +1,6 @@
 use super::*;
-use anyhow::Result;
 use anyhow::bail;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -481,4 +481,3 @@ pub struct ConversationMutationReceipt<T> {
     pub value: T,
     pub policy_decision_id: String,
 }
-

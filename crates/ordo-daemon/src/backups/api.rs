@@ -1,12 +1,11 @@
-use anyhow::{bail, Result};
-use rusqlite::Connection;
-use std::path::Path;
-use uuid::Uuid;
-use crate::templates::require_builtin_template;
-use crate::kernel::create_job_from_template;
-use serde_json::json;
-use super::types::*;
 use super::core::*;
+use super::types::*;
+use crate::kernel::create_job_from_template;
+use crate::templates::require_builtin_template;
+use anyhow::Result;
+use rusqlite::Connection;
+use serde_json::json;
+use std::path::Path;
 
 pub fn create_backup(
     db_path: &Path,
@@ -73,4 +72,3 @@ pub fn list_backup_restore_jobs(db_path: &Path) -> Result<BackupRestoreResponse>
 
     Ok(BackupRestoreResponse { jobs })
 }
-

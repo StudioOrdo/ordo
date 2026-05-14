@@ -3,7 +3,6 @@ use anyhow::{anyhow, ensure, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -635,5 +634,3 @@ pub(crate) fn slug_fragment(value: &str) -> String {
 pub(crate) fn required_state(value: Option<String>, label: &str) -> Result<String> {
     value.ok_or_else(|| anyhow!("QR-to-trial journey missing {label}"))
 }
-
-

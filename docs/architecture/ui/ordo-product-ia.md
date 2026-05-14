@@ -1,9 +1,9 @@
 # Ordo Product IA Contract
 
 This document defines the product information architecture that current UI work
-should implement against. It distills the MVP brief, mock data seed, and design
-discussion into an implementation-facing contract for shells, rooms, work
-items, and proof.
+should implement against. It distills the MVP brief, mock data seed, design
+discussion, and current product canon into an implementation-facing contract for
+surfaces, rooms, work items, and proof.
 
 Use this as the source of truth when deciding what belongs in the member
 experience, what belongs in operator surfaces, and what evidence a UI claim must
@@ -12,22 +12,40 @@ cite.
 ## Product Thesis
 
 Ordo is a business operating surface for solopreneurs. It turns QR scans,
-relationship conversations, offers, accepted capabilities, requests, feedback,
-referrals, jobs, and system events into visible business process.
+relationship conversations, offers, access, requests, feedback, referrals,
+jobs, artifacts, growth events, knowledge, and system events into visible
+business process.
 
 The member does not manage a SaaS dashboard. The member talks with Ordo and
-responds to business events. Internal users use Support, Growth, and System
-surfaces to operate the business behind that member-safe experience.
+responds to business events. Internal users use Studio, Support, Knowledge,
+Growth, and Systems surfaces to operate the business behind that member-safe
+experience.
+
+The operator experience is also conversation-led. Studio should feel like
+directing a workforce: ask, review, give feedback, approve, publish, or rerun
+with new variables. Forms and structured editors can support inspection and
+repair, but they are not the primary way ordinary users create work.
+
+The canonical surface set is:
+
+```text
+Member View
+Studio
+Support
+Knowledge
+Growth
+Systems
+```
 
 ## IA Rules
 
 1. Role is not navigation.
-   Roles control access, permissions, and projection safety. Shells control
+   Roles control access, permissions, and projection safety. Surfaces control
    where work happens.
 
-2. One object can appear in many shells.
+2. One object can appear in many surfaces.
    A QR scan can appear as a member-safe path, a Support handoff, a Growth
-   attribution event, and a System entry-point event. Each shell sees a
+   attribution event, and a Systems entry-point event. Each surface sees a
    projection of the same object, not an unrelated duplicate.
 
 3. Member help starts in Ordo.
@@ -59,15 +77,27 @@ surfaces to operate the business behind that member-safe experience.
    Activity, Offers, Access, Requests, and Referrals use
    `[rail][room drawer][worklist][selected detail stage]`.
 
-## Core Shells
+10. Studio is conversational production, not a form builder.
+    Studio can show plans, DAGs, task events, variables, artifacts, and review
+    state, but the default creation path is talking to Ordo and reviewing the
+    compiled work.
 
-| Shell | Audience | Job | Room navigation | Work item examples | Proof shown | Not for |
+11. Every state needs a text explanation.
+    UI controls, charts, timelines, media previews, and QR paths must have
+    enough text for a screen reader, voice interface, phone/SMS interface, or
+    agent handoff to explain what is happening and what decision is needed.
+
+## Core Surfaces
+
+| Surface | Audience | Job | Room navigation | Work item examples | Proof shown | Not for |
 | --- | --- | --- | --- | --- | --- | --- |
 | Public/Site | Guest, returning visitor, signed-in member viewing public story | Explain the business, start chat, route QR visitors, offer login/register | Home, About or story, public chat entry as configured | Public story slide, QR entry CTA, offer teaser | Public copy, public content artifacts, safe QR campaign refs | Member operations, internal evidence, account controls |
-| Member/Ordo | Customer, student, affiliate, trial user | Let the member talk to Ordo, accept offers, use access, fulfill requests, track referrals | Ordo, Activity, Offers, Access, Requests, Referrals | Offer path, proof approval, feedback request, affiliate terms, trial access, handoff status | Member-safe evidence refs, accepted offer refs, request refs, candidate artifact refs, safe timeline | Staff routing, provider details, policy internals, system operations |
+| Member View | Customer, student, affiliate, trial user | Let the member talk to Ordo, accept offers, use access, fulfill requests, track referrals | Ordo, Activity, Offers, Access, Requests, Referrals | Offer path, proof approval, feedback request, affiliate terms, trial access, handoff status | Member-safe evidence refs, accepted offer refs, request refs, candidate artifact refs, safe timeline | Staff routing, provider details, policy internals, system operations |
+| Studio | Creator, operator, owner, production staff | Conversationally direct repeatable jobs, DAGs, media projects, content, artifacts, review loops, and publication prep | Jobs, Templates, Artifacts, Media, Publications, Campaign Assets | 30-second explainer job, media render, artifact review, content package, reusable variable-driven run | Job runs, task events, artifact refs, media refs, review refs | Customer support queues, raw system logs, unsupported growth claims, form-first workflow authoring as the default UX |
 | Support | Staff, owner acting as staff | Handle relationship work, handoffs, conversations, customer requests, reviews, QA | Handoffs, Conversations, Requests, Reviews, Members | Ava requested Keith handoff, Jordan submitted QA, feedback needs follow-up, consultation scheduling | Conversation events, consent, request state, review evidence, member-safe artifact refs, staff notes where allowed | Growth dashboards, infrastructure control, provider secrets |
-| Growth | Owner, growth operator | Show business value, source attribution, offer performance, referrals, content outcomes | Overview, QR/Word of mouth, Offers, Affiliates, Content, Rewards, Reports | Founder Meetup QR converted, Sam referral needs outcome, offer fit high, content produced trials | Attribution events, QR refs, value events, offer events, reward status, content performance refs | Customer support queue, system health, raw private member content |
-| System | Owner, admin, system operator | Operate infrastructure, hosted instances, providers, backups, job runs, audit | Health, Events, Hosted instances, Jobs, Backups, Providers, Access, Settings | Hosted trial provisioned, weekly reset due, backup downloaded, restore requested, provider disabled | System events, job runs, backup refs, provider status, audit events, policy decisions | Member-facing persuasion, growth storytelling, unsupported public claims |
+| Knowledge | Owner, operator, educator, content curator | Manage grounded memory, corpus sources, content packs, provenance, and retrieval readiness | Sources, Corpus, Packs, Provenance, Retrieval, Knowledge Artifacts | Science corpus source, transcript ingest, content pack, retrieval limitation | Source refs, checksums, licenses, visibility, retrieval evidence, artifact refs | Public claims without publication, customer-private leakage, arbitrary data lakes |
+| Growth | Owner, growth operator | Show business value, source attribution, offer performance, referrals, rewards, and content outcomes | Overview, QR/Word of mouth, Offers, Affiliates, Content, Rewards, Reports | Founder Meetup QR converted, Sam referral needs outcome, offer fit high, feedback earned hosted days, content produced trials | Attribution events, QR refs, value events, offer events, reward ledger refs, benefit grants, content performance refs | Customer support queue, system health, raw private member content |
+| Systems | Owner, admin, system operator | Operate infrastructure, hosted instances, providers, backups, low-level jobs, audit | Health, Events, Hosted instances, Jobs, Backups, Providers, Access, Settings | Hosted trial provisioned, weekly reset due, backup downloaded, restore requested, provider disabled | System events, job runs, backup refs, provider status, audit events, policy decisions | Member-facing persuasion, growth storytelling, unsupported public claims |
 
 ## Member Rooms
 
@@ -87,7 +117,7 @@ Every worklist item should use one shape, regardless of room.
 ```ts
 interface OrdoWorkItem {
   id: string;
-  shell: "member" | "support" | "growth" | "system";
+  surface: "member" | "studio" | "support" | "knowledge" | "growth" | "systems";
   room: string;
   objectType:
     | "conversation"
@@ -195,12 +225,12 @@ interface OrdoProofRef {
 
 ## Scenario Maps
 
-These tables define how the same business flow appears across shells. They are
+These tables define how the same business flow appears across surfaces. They are
 not separate workflows; they are role-safe projections of shared objects.
 
 ### Scenario 1: Meetup QR Visitor Starts A Conversation
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Ordo | Primary relationship conversation starts from Founder Meetup Intro QR | Ask Ordo which path fits | entry_point, visitor_session, conversation_event |
 | Member | Activity | "Ava asked which path fits" | Reply or compare paths | conversation_event, offer_event |
@@ -208,92 +238,92 @@ not separate workflows; they are role-safe projections of shared objects.
 | Support | Conversations | Ava conversation is active | Reply or start handoff if requested | conversation_event, handoff if created |
 | Support | Handoffs | Only appears if Ava asks to talk to Keith | Accept handoff, assign, return to Ordo | handoff, conversation_event |
 | Growth | QR/Word of mouth | Founder Meetup Intro QR produced a conversation | Inspect source and conversion path | attribution_event, value_event |
-| System | Events | Entry session and conversation events created | Inspect event replay | entry_point, visitor_session, audit_event |
+| Systems | Events | Entry session and conversation events created | Inspect event replay | entry_point, visitor_session, audit_event |
 
 ### Scenario 2: Hosted 30-Day Ordo Trial
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Offers | "Try Ordo for 30 days" | Accept trial or ask a question | offer_event, conversation_event |
 | Member | Access | "Hosted 30-day trial" | Open trial access, review reset policy | offer_acceptance, access_grant, hosted_instance_event |
 | Member | Requests | "Approve QR card proof" or "Confirm backup policy" | Approve, request changes, confirm | request, artifact, consent |
 | Support | Requests | Trial setup or proof approval needs follow-up | Prepare answer, nudge, resolve | request, conversation_event |
 | Growth | Offers | Hosted trial conversion attributed to QR | Measure offer fit and source quality | attribution_event, offer_acceptance, value_event |
-| System | Hosted instances | Trial instance provisioned or waiting | Reserve, reset, restore, audit | hosted_instance_event, job_run, backup |
+| Systems | Hosted instances | Trial instance provisioned or waiting | Reserve, reset, restore, audit | hosted_instance_event, job_run, backup |
 
 ### Scenario 3: Feedback And QA During Trial
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Requests | "Complete private feedback request" | Respond to feedback request | request, feedback, consent |
 | Member | Ordo | Member asks for help or reports a problem in chat | Describe issue, attach safe evidence | conversation_event, feedback |
 | Support | Requests | Feedback needs review | Read, respond, ask follow-up, mark resolved | feedback, conversation_event |
 | Support | Reviews | Only public review candidates after consent and approval | Approve or decline public use | review, consent, policy_decision |
 | Growth | Reports | Feedback indicates product learning or conversion risk | Track learning value and retention signal | value_event, feedback |
-| System | Jobs/Events | QA issue links to runtime, browser, backup, or job evidence | Inspect logs or job state | job_run, hosted_instance_event, audit_event |
+| Systems | Jobs/Events | QA issue links to runtime, browser, backup, or job evidence | Inspect logs or job state | job_run, hosted_instance_event, audit_event |
 
 Feedback and QA stay in Member Requests. Do not create a separate member QA
 room.
 
 ### Scenario 4: Member Requests A Keith Handoff
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Ordo | Safe status: "Keith handoff requested" | Continue conversation | conversation_event, handoff status |
 | Member | Activity | Handoff status may appear if it needs member attention | Wait or add context | handoff status, conversation_event |
 | Support | Handoffs | "Ava requested Keith while online" | Accept, assign, take over, return to Ordo | handoff, staff_action, conversation_event |
 | Support | Conversations | Same member conversation, staff-safe projection | Reply as staff without exposing internals | conversation_event, staff_note where allowed |
 | Growth | Overview | Handoff may count as high-intent conversion signal | Inspect only aggregate/source-safe signal | value_event, attribution_event |
-| System | Events | Mode and handoff events are durable | Replay, audit, debug | audit_event, policy_decision |
+| Systems | Events | Mode and handoff events are durable | Replay, audit, debug | audit_event, policy_decision |
 
 The member must not see staff routing, provider internals, confidence, or private
 moderation mechanics.
 
 ### Scenario 5: Strategic Consultation Offer And Scheduling
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Offers | "Strategic consultation" | Accept, ask fit question, compare with trial | offer_event, conversation_event |
 | Member | Requests | "Pick a consultation time" | Select time, confirm prep questions | request, consent |
 | Member | Access | "Consultation prep" after acceptance | Review prep brief or meeting details | offer_acceptance, access_grant, artifact |
 | Support | Requests | Consultation scheduling needs action | Schedule, ask follow-up, send prep | request, conversation_event |
 | Growth | Offers | Consultation recommended from QR or content | Track offer recommendation and conversion | offer_event, attribution_event, value_event |
-| System | Events | Schedule request and artifact generation | Audit or replay | audit_event, job_run |
+| Systems | Events | Schedule request and artifact generation | Audit or replay | audit_event, job_run |
 
 ### Scenario 6: Training Or Student Access
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Offers | "Training access" | Accept training path | offer_event |
 | Member | Access | "Student tools and resources" | Open lesson, tutoring, assignment feedback | access_grant, artifact |
 | Member | Requests | "Submit assignment for feedback" or "Confirm session goal" | Upload, answer, approve | request, artifact, feedback |
 | Support | Conversations | Student asks for guidance through Ordo | Reply or route to instructor | conversation_event, handoff |
 | Growth | Revenue/Offers | Training conversion and retention | Track value, source, outcomes | offer_acceptance, value_event |
-| System | Jobs | Content/job artifacts and submissions | Process, store, validate | job_run, artifact, audit_event |
+| Systems | Jobs | Content/job artifacts and submissions | Process, store, validate | job_run, artifact, audit_event |
 
 ### Scenario 7: Affiliate Or Referral Path
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Referrals | "Affiliate terms are needed" | Review terms | terms, policy_decision |
 | Member | Referrals | "Referral link is ready" | Copy link or QR after approval | access_grant, attribution_event |
 | Member | Activity | Reward or outcome needs attention | View evidence or respond | value_event, attribution_event |
 | Support | Requests | Affiliate question needs answer | Reply or escalate | conversation_event, request |
 | Growth | Affiliates | Sam or Ava produced trial/conversation outcome | Attribute, review reward readiness | attribution_event, value_event, reward |
-| System | Access | Affiliate grant and revocation state | Validate, revoke, audit | access_grant, audit_event |
+| Systems | Access | Affiliate grant and revocation state | Validate, revoke, audit | access_grant, audit_event |
 
 ### Scenario 8: Content Or Artifact Production
 
 Studio and Knowledge are not the current member focus, but the business process
 must leave room for them.
 
-| Shell | Room | Work item | Member or operator action | Proof |
+| Surface | Room | Work item | Member or operator action | Proof |
 | --- | --- | --- | --- | --- |
 | Member | Access | "Training short" or "lesson artifact" is available | View or download | access_grant, artifact |
 | Member | Requests | "Review generated short" if member approval is needed | Approve or request changes | request, artifact |
 | Support | Requests | Customer content approval needs follow-up | Nudge or resolve | request, conversation_event |
 | Growth | Content | Short drove QR scans or trials | Measure performance and value | attribution_event, value_event |
-| System | Jobs | Render job completed or failed | Inspect job, retry, audit | job_run, artifact, audit_event |
+| Systems | Jobs | Render job completed or failed | Inspect job, retry, audit | job_run, artifact, audit_event |
 
 ## Offer, Request, Access, And Activity Semantics
 
@@ -397,16 +427,39 @@ over in Support, but the member does not manage multiple staff channels.
 The room drawer answers "where am I?" The worklist answers "what needs
 attention?" The selected stage answers "what am I deciding or reviewing?"
 
-### Operator Shells
+### Operator Surfaces
 
-Support, Growth, and System should use the same pattern:
+Studio, Support, Knowledge, Growth, and Systems should use the same pattern:
 
 ```text
-[ rail ][ shell drawer ][ worklist ][ selected detail stage ]
+[ rail ][ surface drawer ][ worklist ][ selected detail stage ]
 ```
 
-Different shells change room navigation and projections, not the primitive
+Different surfaces change room navigation and projections, not the primitive
 grammar.
+
+### Studio Conversation Stage
+
+Studio should preserve a visible conversation or briefed command thread for the
+active production run:
+
+```text
+[ rail ][ Studio drawer ][ run/worklist ][ conversation + selected artifact stage ]
+```
+
+The selected stage should show:
+
+- the user's current production intent;
+- variables and access that Ordo used;
+- compiled plan or DAG summary;
+- running, blocked, failed, and completed tasks;
+- requests waiting on human feedback, consent, QA, or approval;
+- candidate and accepted artifacts;
+- measurement or publication state when available.
+
+The user should be able to say "make the pacing faster," "replace this
+variable," "QA this markdown with this prompt," or "make twelve zodiac shorts"
+without leaving the conversational production context.
 
 ## Copy Rules
 
@@ -428,7 +481,7 @@ Avoid:
 - "current room context"
 - "generic dashboard"
 - "CRM object"
-- "QA room" in the member shell
+- "QA room" in the member surface
 
 ## Acceptance Gates
 
@@ -442,9 +495,10 @@ Future member and operator UI should not be accepted unless these gates hold.
 - Every selected detail has actions, timeline, and proof.
 - Support handoff details are staff-safe and never leak into member views.
 - Growth metrics cite attribution or value-event evidence.
-- System operational claims cite system events, job runs, backups, provider
+- Systems operational claims cite system events, job runs, backups, provider
   state, or audit events.
 - Candidate artifacts remain candidate until daemon validation gives durable
   identity.
 - Role-safe projections decide visibility before rendering.
-
+- Studio production work remains explainable in text and can be driven through
+  conversation before structured controls are required.

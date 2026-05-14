@@ -201,6 +201,19 @@ export function MemberStage({ room, item, role }: { room: MemberRoom; item: Memb
 function MemberConversationStage({ item, role }: { item: MemberWorkItemRecord; role: ProductRole }) {
   return (
     <article className="member-main-content member-conversation-stage" aria-label="Studio Ordo conversation">
+      <header className="member-conversation-stage-header">
+        <span className="eyebrow">Ordo</span>
+        <h1>Talk with Studio Ordo</h1>
+        <section aria-label="Ordo relationship brief">
+          <p>One relationship conversation with Studio Ordo. {item.summary}</p>
+        </section>
+        <dl className="member-conversation-status-list" aria-label="Safe handoff status">
+          <div>
+            <dt>Handoff status</dt>
+            <dd>Keith handoff remains available as safe status only; internal routing and provider details stay hidden.</dd>
+          </div>
+        </dl>
+      </header>
       <MemberConversationPreview item={item} role={role} />
       <MemberStageComposer />
     </article>

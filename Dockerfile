@@ -26,7 +26,11 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     ORDO_DB_PATH=/app/.data/local.db \
     ORDO_DAEMON_URL=http://127.0.0.1:17760 \
+    ORDO_DAEMON_TRUST_DOCKER_HOST=1 \
     NEXT_PUBLIC_ORDO_DAEMON_WS_URL=ws://127.0.0.1:17760/ws \
+    NEXT_PUBLIC_ORDO_DAEMON_CHAT_WS_URL=ws://127.0.0.1:17760/chat/ws \
+    ORDO_OLLAMA_BASE_URL=http://host.docker.internal:11434/api \
+    ORDO_OLLAMA_MODEL=qwen2.5-coder:7b \
     HOSTNAME=0.0.0.0 \
     PORT=3000
 

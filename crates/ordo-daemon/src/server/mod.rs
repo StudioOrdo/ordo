@@ -5,16 +5,11 @@ use serde_json::json;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration as StdDuration;
 use tokio::sync::broadcast;
 
 use crate::briefs::run_due_system_brief_schedules;
 use crate::diagnostics::diagnostic_log;
 use crate::schema::init_database;
-
-const NEXT_SUPERVISOR_MAX_RESTARTS: u32 = 3;
-const NEXT_SUPERVISOR_RESTART_DELAY: StdDuration = StdDuration::from_secs(1);
-const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
 
 pub mod handlers;
 pub mod state;

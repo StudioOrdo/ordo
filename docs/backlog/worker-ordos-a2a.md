@@ -2,6 +2,8 @@
 
 Status: future direction
 
+Architecture direction: [Agent-To-Agent Roadmap](../architecture/agent-to-agent-roadmap.md)
+
 ## Why It Matters
 
 Ordo should scale by letting worker appliances do bounded work and return

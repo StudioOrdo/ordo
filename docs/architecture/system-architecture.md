@@ -5,6 +5,13 @@ Status: Draft contract for Ordo 0.1.0
 Ordo is a local-first AI appliance for one-person businesses. The 0.1.0
 release proves the core system before product depth.
 
+Current product architecture direction is broader than the 0.1.0 system shell.
+See [Appliance Operating Discipline](appliance-operating-discipline.md) for the
+standing rule: borrow enterprise-grade operating patterns, implement them in a
+local appliance, and expose them through conversational, evidence-backed
+surfaces. See [Target Architecture Plan](target-architecture-plan.md) for the
+target Clean/CQRS-lite implementation shape.
+
 ## Core Spine
 
 ```text
@@ -29,6 +36,11 @@ Rust owns long-running appliance behavior. Next owns product meaning and user
 experience. SQLite is the source of truth. WebSocket is a live projection, not
 the record.
 
+As Ordo moves past the System shell, Next should not assemble product meaning
+from raw operational tables. The daemon should own canonical writes, event
+append, and surface read-model projection for Member View, Studio, Support,
+Knowledge, Growth, and Systems.
+
 SQLite schema changes are applied through ordered daemon migrations tracked by
 `PRAGMA user_version`. Fresh databases and existing 0.1.0 databases use the
 same initialization path before catalog/template seeding runs.
@@ -43,7 +55,9 @@ templates running on the reusable kernel, not bespoke flows.
 
 ## Non-Goals
 
-- Full business surfaces such as Studio, People, Offers, and Today.
+- Full canonical product surfaces beyond the current Systems shell: Member
+  View, Studio, Support, Knowledge, Growth, and Systems depth.
 - Arbitrary user-defined code execution.
 - External hosted services as required infrastructure.
 - Time-based progress promises or unsupported ETAs.
+- Enterprise SaaS deployment assumptions as the default architecture.

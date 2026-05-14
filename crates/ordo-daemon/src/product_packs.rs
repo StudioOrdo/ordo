@@ -475,6 +475,10 @@ pub fn story_pack_manifest() -> ProductPackManifest {
                 "generated_image_candidate",
                 "story.generated_image_candidate",
             ),
+            artifact_contract(
+                "homepage_publish_approval_package",
+                "story.homepage_publish_approval_package",
+            ),
             artifact_contract("homepage_version", "story.homepage_version"),
             artifact_contract("refresh_proposal", "story.refresh_proposal"),
             artifact_contract("video_storyboard", "story.video_storyboard"),
@@ -1660,6 +1664,11 @@ mod tests {
         assert!(installed.pack.bindings.iter().any(|binding| {
             binding.binding_kind == "artifact_contract"
                 && binding.artifact_kind.as_deref() == Some("story.image_brief")
+        }));
+        assert!(installed.pack.bindings.iter().any(|binding| {
+            binding.binding_kind == "artifact_contract"
+                && binding.artifact_kind.as_deref()
+                    == Some("story.homepage_publish_approval_package")
         }));
         assert!(installed.pack.bindings.iter().any(|binding| {
             binding.binding_kind == "llm_method"

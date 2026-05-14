@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::business::{list_business_facts_connection, BusinessFactViewer};
+use crate::security::redaction;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +94,78 @@ pub struct ProductSurfaceContract {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct HomepageStoryDeckResponse {
+    pub profile: HomepageStoryProfile,
+    pub deck: HomepageNarrativeDeck,
+    pub readiness: PublicSurfaceReadiness,
+    pub refresh: HomepageStoryRefreshContract,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageStoryProfile {
+    pub positioning: String,
+    pub audience: Option<String>,
+    pub primary_cta: Option<HomepageStoryCta>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageNarrativeDeck {
+    pub deck_id: String,
+    pub version: i64,
+    pub surface: String,
+    pub slides: Vec<HomepageNarrativeSlide>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageNarrativeSlide {
+    pub slide_id: String,
+    pub section_id: String,
+    pub order: i64,
+    pub title: String,
+    pub body: String,
+    pub copy_slots: Vec<HomepageStoryCopySlot>,
+    pub cta_refs: Vec<HomepageStoryCta>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub motion_profile: String,
+    pub reduced_motion_fallback: String,
+    pub image_brief_method: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageStoryCopySlot {
+    pub slot: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageStoryCta {
+    pub label: String,
+    pub href: String,
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageStoryRefreshContract {
+    pub manual_refresh_supported: bool,
+    pub scheduled_refresh_supported: bool,
+    pub image_brief_method: String,
+    pub live_provider_required: bool,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HomeAboutNarrativeReadModel {
     pub billboards: Vec<HomeAboutBillboard>,
     pub readiness: PublicSurfaceReadiness,
@@ -153,6 +226,101 @@ pub fn public_product_surface_contract_connection(
 pub fn public_product_surface_contract(db_path: &Path) -> Result<ProductSurfaceContract> {
     let connection = Connection::open(db_path)?;
     public_product_surface_contract_connection(&connection)
+}
+
+pub fn homepage_story_deck(db_path: &Path) -> Result<HomepageStoryDeckResponse> {
+    let connection = Connection::open(db_path)?;
+    homepage_story_deck_connection(&connection)
+}
+
+pub fn homepage_story_deck_connection(
+    connection: &Connection,
+) -> Result<HomepageStoryDeckResponse> {
+    let public_facts =
+        list_business_facts_connection(connection, BusinessFactViewer::Public)?.facts;
+    let profile_fields = fields_for_prefix(&public_facts, "homepage.profile.");
+    let slide_items = grouped_items_for_prefixes(&public_facts, &["homepage.slides."]);
+    let evidence_refs = homepage_evidence_refs(connection, &public_facts)?;
+    let profile = homepage_story_profile_from_fields(&profile_fields);
+    let mut slides = slide_items
+        .iter()
+        .filter_map(homepage_slide_from_item)
+        .collect::<Vec<_>>();
+    slides.sort_by(|left, right| {
+        left.order
+            .cmp(&right.order)
+            .then_with(|| left.slide_id.cmp(&right.slide_id))
+    });
+
+    let mut deck_evidence_refs = stable_unique(
+        slides
+            .iter()
+            .flat_map(|slide| slide.evidence_refs.clone())
+            .chain(profile.evidence_refs.clone())
+            .chain(evidence_refs)
+            .collect(),
+    );
+    deck_evidence_refs.sort();
+
+    let mut missing = Vec::new();
+    if profile.positioning.trim().is_empty() {
+        missing.push("published public homepage profile positioning".to_string());
+    }
+    if slides.is_empty() {
+        missing.push("published public homepage slide facts".to_string());
+    }
+    let ready = missing.is_empty();
+    let mut limitations = vec![
+        "Deck structure is deterministic and owned by Ordo; AI may only add governed color later."
+            .to_string(),
+        "Live image generation, live publishing, and analytics claims are not part of this projection."
+            .to_string(),
+    ];
+    if slides.is_empty() {
+        limitations.push(
+            "No published public homepage slides were found, so Ordo returns readiness gaps instead of invented copy."
+                .to_string(),
+        );
+    }
+    if deck_evidence_refs.is_empty() {
+        limitations.push(
+            "No public-safe artifacts, offers, tracked entry points, or completed briefs were available as supplemental evidence."
+                .to_string(),
+        );
+    }
+
+    Ok(HomepageStoryDeckResponse {
+        profile,
+        deck: HomepageNarrativeDeck {
+            deck_id: "homepage.story.v1".to_string(),
+            version: 1,
+            surface: "homepage".to_string(),
+            slides,
+            evidence_refs: deck_evidence_refs,
+            limitations: limitations.clone(),
+        },
+        readiness: PublicSurfaceReadiness {
+            surface: "homepage.story".to_string(),
+            ready,
+            fact_count: public_facts
+                .iter()
+                .filter(|fact| fact.fact_key.starts_with("homepage."))
+                .count(),
+            missing,
+        },
+        refresh: HomepageStoryRefreshContract {
+            manual_refresh_supported: true,
+            scheduled_refresh_supported: true,
+            image_brief_method: "homepage.prepare_image_briefs".to_string(),
+            live_provider_required: false,
+            limitations: vec![
+                "Refresh support is a contract extension point; this function performs no scheduling or publication."
+                    .to_string(),
+                "Image brief preparation is metadata-only here and does not call a live provider."
+                    .to_string(),
+            ],
+        },
+    })
 }
 
 pub fn public_surfaces_from_public_facts(
@@ -326,6 +494,246 @@ fn business_intent_from_item(
     })
 }
 
+fn homepage_story_profile_from_fields(fields: &[PublicSurfaceField]) -> HomepageStoryProfile {
+    let positioning = fields
+        .iter()
+        .find(|field| field.key == "positioning")
+        .and_then(|field| safe_public_string(&field.value))
+        .unwrap_or_default();
+    let audience = fields
+        .iter()
+        .find(|field| field.key == "audience")
+        .and_then(|field| safe_public_string(&field.value));
+    let primary_cta = homepage_cta_from_fields(fields, "primaryCta");
+    let evidence_refs = evidence_refs_for_fields(fields);
+    let mut limitations = Vec::new();
+    if positioning.is_empty() {
+        limitations.push("Missing published public positioning fact.".to_string());
+    }
+    if primary_cta.is_none() {
+        limitations.push("Missing public primary CTA fact.".to_string());
+    }
+
+    HomepageStoryProfile {
+        positioning,
+        audience,
+        primary_cta,
+        evidence_refs,
+        limitations,
+    }
+}
+
+fn homepage_slide_from_item(item: &PublicSurfaceItem) -> Option<HomepageNarrativeSlide> {
+    if item.fields.iter().any(unsupported_persuasion_claim) {
+        return None;
+    }
+
+    let title = safe_string_field(item, "title").unwrap_or_default();
+    let body = safe_string_field(item, "body").unwrap_or_default();
+    if title.trim().is_empty() && body.trim().is_empty() {
+        return None;
+    }
+    let section_id = safe_string_field(item, "sectionId")
+        .or_else(|| safe_string_field(item, "section_id"))
+        .unwrap_or_else(|| item.item_id.clone());
+    let order = item
+        .fields
+        .iter()
+        .find(|field| field.key == "order")
+        .and_then(|field| field.value.as_i64())
+        .unwrap_or(1000);
+    let motion_profile = safe_string_field(item, "motionProfile")
+        .or_else(|| safe_string_field(item, "motion_profile"))
+        .filter(|motion| {
+            matches!(
+                motion.as_str(),
+                "reduced" | "restrained" | "expressive" | "cinematic"
+            )
+        })
+        .unwrap_or_else(|| "restrained".to_string());
+    let reduced_motion_fallback = safe_string_field(item, "reducedMotionFallback")
+        .or_else(|| safe_string_field(item, "reduced_motion_fallback"))
+        .unwrap_or_else(|| {
+            if body.is_empty() {
+                title.clone()
+            } else {
+                body.clone()
+            }
+        });
+    let mut limitations = Vec::new();
+    if reduced_motion_fallback.trim().is_empty() {
+        limitations.push("Reduced-motion fallback was missing.".to_string());
+    }
+    if title.trim().is_empty() || body.trim().is_empty() {
+        limitations.push("Slide has incomplete public copy slots.".to_string());
+    }
+
+    Some(HomepageNarrativeSlide {
+        slide_id: item.item_id.clone(),
+        section_id,
+        order,
+        title,
+        body,
+        copy_slots: homepage_copy_slots(item),
+        cta_refs: homepage_cta_from_fields(&item.fields, "")
+            .into_iter()
+            .collect(),
+        evidence_refs: evidence_refs_for_fields(&item.fields),
+        limitations,
+        motion_profile,
+        reduced_motion_fallback,
+        image_brief_method: Some("homepage.prepare_image_briefs".to_string()),
+    })
+}
+
+fn homepage_copy_slots(item: &PublicSurfaceItem) -> Vec<HomepageStoryCopySlot> {
+    item.fields
+        .iter()
+        .filter(|field| {
+            !matches!(
+                field.key.as_str(),
+                "body"
+                    | "ctaHref"
+                    | "ctaLabel"
+                    | "imageBriefPrompt"
+                    | "motionProfile"
+                    | "order"
+                    | "reducedMotionFallback"
+                    | "sectionId"
+                    | "title"
+            ) && !unsafe_public_story_field(&field.key)
+                && !unsupported_persuasion_claim(field)
+        })
+        .map(|field| HomepageStoryCopySlot {
+            slot: field.key.clone(),
+            value: redaction::sanitize_json_strings(field.value.clone()),
+        })
+        .collect()
+}
+
+fn homepage_cta_from_fields(
+    fields: &[PublicSurfaceField],
+    prefix: &str,
+) -> Option<HomepageStoryCta> {
+    let label_key = if prefix.is_empty() {
+        "ctaLabel".to_string()
+    } else {
+        format!("{prefix}.label")
+    };
+    let href_key = if prefix.is_empty() {
+        "ctaHref".to_string()
+    } else {
+        format!("{prefix}.href")
+    };
+    let label = fields
+        .iter()
+        .find(|field| field.key == label_key)
+        .and_then(|field| safe_public_string(&field.value))?;
+    let href = fields
+        .iter()
+        .find(|field| field.key == href_key)
+        .and_then(|field| safe_public_href(&field.value))?;
+    Some(HomepageStoryCta {
+        label,
+        href,
+        evidence_refs: evidence_refs_for_fields(
+            &fields
+                .iter()
+                .filter(|field| field.key == label_key || field.key == href_key)
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
+    })
+}
+
+fn homepage_evidence_refs(
+    connection: &Connection,
+    public_facts: &[crate::business::BusinessFactView],
+) -> Result<Vec<String>> {
+    let mut refs = public_facts
+        .iter()
+        .filter(|fact| fact.fact_key.starts_with("homepage."))
+        .map(|fact| format!("business_fact:{}", fact.id))
+        .collect::<Vec<_>>();
+    refs.extend(public_offer_refs(public_facts));
+    refs.extend(public_artifact_refs(connection)?);
+    refs.extend(public_completed_surface_brief_refs(connection)?);
+    refs.extend(public_tracked_entry_refs(connection)?);
+    Ok(stable_unique(refs))
+}
+
+fn public_offer_refs(public_facts: &[crate::business::BusinessFactView]) -> Vec<String> {
+    grouped_items_for_prefixes(public_facts, &["offers.", "offer."])
+        .into_iter()
+        .filter(|item| {
+            string_field(item, "title").is_some() && string_field(item, "summary").is_some()
+        })
+        .map(|item| format!("offer:{}", item.item_id))
+        .collect()
+}
+
+fn public_artifact_refs(connection: &Connection) -> Result<Vec<String>> {
+    let mut statement = connection.prepare(
+        "SELECT id, summary
+         FROM artifacts
+         WHERE visibility_ceiling = 'public'
+           AND status IN ('published', 'ready', 'available')
+           AND (health_status IS NULL OR health_status != 'missing')
+         ORDER BY updated_at DESC, id ASC
+         LIMIT 12",
+    )?;
+    let refs = statement
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            let summary: String = row.get(1)?;
+            Ok((id, summary))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|(_, summary)| !redaction::contains_sensitive_text(summary, &[]))
+        .map(|(id, _)| format!("artifact:{id}"))
+        .collect();
+    Ok(refs)
+}
+
+fn public_completed_surface_brief_refs(connection: &Connection) -> Result<Vec<String>> {
+    let mut statement = connection.prepare(
+        "SELECT sb.id
+         FROM surface_briefs sb
+         JOIN artifacts a ON a.id = sb.artifact_id
+         WHERE sb.status = 'completed'
+           AND a.visibility_ceiling = 'public'
+           AND a.status IN ('published', 'ready', 'available')
+         ORDER BY sb.generated_at DESC, sb.id ASC
+         LIMIT 6",
+    )?;
+    let refs = statement
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            Ok(format!("surface_brief:{id}"))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(refs)
+}
+
+fn public_tracked_entry_refs(connection: &Connection) -> Result<Vec<String>> {
+    let mut statement = connection.prepare(
+        "SELECT id
+         FROM tracked_entry_points
+         WHERE status = 'active'
+           AND destination_surface IN ('about', 'offers', 'asks', 'feed')
+         ORDER BY updated_at DESC, id ASC
+         LIMIT 12",
+    )?;
+    let refs = statement
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            Ok(format!("tracked_entry_point:{id}"))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(refs)
+}
+
 fn unsupported_persuasion_claim(field: &PublicSurfaceField) -> bool {
     let key = field.key.to_ascii_lowercase();
     let guarded = [
@@ -354,6 +762,74 @@ fn string_field(item: &PublicSurfaceItem, key: &str) -> Option<String> {
         .iter()
         .find(|field| field.key == key)
         .and_then(|field| field.value.as_str().map(ToString::to_string))
+}
+
+fn safe_string_field(item: &PublicSurfaceItem, key: &str) -> Option<String> {
+    item.fields
+        .iter()
+        .find(|field| field.key == key)
+        .and_then(|field| safe_public_string(&field.value))
+}
+
+fn safe_public_string(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(redaction::redact_public_text)
+        .filter(|text| !text.trim().is_empty())
+}
+
+fn safe_public_href(value: &Value) -> Option<String> {
+    let href = safe_public_string(value)?;
+    if href.starts_with('/')
+        || href.starts_with('#')
+        || href.starts_with("https://")
+        || href.starts_with("mailto:")
+    {
+        Some(href)
+    } else {
+        None
+    }
+}
+
+fn evidence_refs_for_fields(fields: &[PublicSurfaceField]) -> Vec<String> {
+    stable_unique(
+        fields
+            .iter()
+            .map(|field| format!("business_fact:{}", field.evidence.fact_id))
+            .collect(),
+    )
+}
+
+fn stable_unique(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn unsafe_public_story_field(key: &str) -> bool {
+    let normalized = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    [
+        "compiledplanprivate",
+        "owneronly",
+        "policyinternal",
+        "privateartifact",
+        "privatepayload",
+        "promptinternal",
+        "providerinternal",
+        "providersecret",
+        "rawpolicy",
+        "secret",
+        "staffrouting",
+        "taskprivate",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
 }
 
 fn links_field(item: &PublicSurfaceItem) -> Vec<String> {
@@ -644,6 +1120,212 @@ mod tests {
             .contains("unsupported public persuasion proof"));
     }
 
+    #[test]
+    fn homepage_story_deck_projects_public_story_inputs_in_stable_order() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+
+        insert_public_fact(
+            &db_path,
+            "homepage.profile.positioning",
+            json!("A practical answer to enshittification."),
+        );
+        insert_public_fact(
+            &db_path,
+            "homepage.profile.primaryCta.label",
+            json!("Start with Ordo"),
+        );
+        insert_public_fact(&db_path, "homepage.profile.primaryCta.href", json!("/chat"));
+        insert_public_fact(&db_path, "homepage.slides.proof.order", json!(20));
+        insert_public_fact(&db_path, "homepage.slides.proof.sectionId", json!("proof"));
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.proof.title",
+            json!("Evidence beats platform fog"),
+        );
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.proof.body",
+            json!("Ordo keeps the operating record local and reviewable."),
+        );
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.proof.reducedMotionFallback",
+            json!("A static evidence-led story."),
+        );
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.proof.ctaLabel",
+            json!("See the pilot"),
+        );
+        insert_public_fact(&db_path, "homepage.slides.proof.ctaHref", json!("/e/nyc"));
+        insert_public_fact(&db_path, "homepage.slides.hero.order", json!(10));
+        insert_public_fact(&db_path, "homepage.slides.hero.title", json!("Studio Ordo"));
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.hero.body",
+            json!("A local-first AI operating appliance for solopreneurs."),
+        );
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.hero.motionProfile",
+            json!("cinematic"),
+        );
+        insert_public_fact(&db_path, "offers.trial.title", json!("30-day hosted trial"));
+        insert_public_fact(
+            &db_path,
+            "offers.trial.summary",
+            json!("Try Ordo with clear experimental limits."),
+        );
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        insert_public_artifact(
+            &connection,
+            "artifact_storyboard",
+            "Public storyboard proof",
+        );
+        insert_home_entry_point(&connection, "entry_nyc", "nyc", "NYC meetup QR");
+
+        let deck = homepage_story_deck_connection(&connection).unwrap();
+
+        assert!(deck.readiness.ready);
+        assert_eq!(deck.deck.deck_id, "homepage.story.v1");
+        assert_eq!(
+            deck.profile.positioning,
+            "A practical answer to enshittification."
+        );
+        assert_eq!(deck.deck.slides.len(), 2);
+        assert_eq!(deck.deck.slides[0].slide_id, "hero");
+        assert_eq!(deck.deck.slides[1].slide_id, "proof");
+        assert_eq!(deck.deck.slides[1].cta_refs[0].href, "/e/nyc");
+        assert!(deck
+            .deck
+            .slides
+            .iter()
+            .all(|slide| slide.image_brief_method.as_deref()
+                == Some("homepage.prepare_image_briefs")));
+        assert!(deck
+            .deck
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == "artifact:artifact_storyboard"));
+        assert!(deck
+            .deck
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == "tracked_entry_point:entry_nyc"));
+        assert!(deck
+            .deck
+            .evidence_refs
+            .iter()
+            .any(|reference| reference.starts_with("offer:trial")));
+
+        let rebuilt = homepage_story_deck_connection(&connection).unwrap();
+        assert_eq!(
+            serde_json::to_value(&deck).unwrap(),
+            serde_json::to_value(&rebuilt).unwrap()
+        );
+    }
+
+    #[test]
+    fn homepage_story_deck_excludes_private_internal_and_unsupported_inputs() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+
+        insert_public_fact(
+            &db_path,
+            "homepage.profile.positioning",
+            json!("Local-first public story."),
+        );
+        insert_public_fact(&db_path, "homepage.slides.hero.order", json!(1));
+        insert_public_fact(&db_path, "homepage.slides.hero.title", json!("Safe title"));
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.hero.body",
+            json!("Call us at 555-555-5555 with sk-live-secret."),
+        );
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.hero.promptInternal",
+            json!("never show this prompt note"),
+        );
+        insert_public_fact(
+            &db_path,
+            "homepage.slides.hero.providerSecret",
+            json!("provider secret should not appear"),
+        );
+        insert_fact(
+            &db_path,
+            "homepage.slides.private.title",
+            BusinessFactVisibility::Owner,
+            PublicationState::Published,
+            json!("owner-only slide"),
+        );
+        insert_fact(
+            &db_path,
+            "homepage.slides.draft.title",
+            BusinessFactVisibility::Public,
+            PublicationState::Draft,
+            json!("draft slide"),
+        );
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        insert_private_artifact(
+            &connection,
+            "artifact_private",
+            "Project Orchid private artifact",
+        );
+
+        let deck = homepage_story_deck_connection(&connection).unwrap();
+        let serialized = serde_json::to_string(&deck).unwrap();
+
+        assert!(deck.readiness.ready);
+        assert_eq!(deck.deck.slides.len(), 1);
+        assert!(!serialized.contains("owner-only slide"));
+        assert!(!serialized.contains("draft slide"));
+        assert!(!serialized.contains("promptInternal"));
+        assert!(!serialized.contains("providerSecret"));
+        assert!(!serialized.contains("never show this prompt note"));
+        assert!(!serialized.contains("provider secret should not appear"));
+        assert!(!serialized.contains("Project Orchid"));
+        assert!(!serialized.contains("555-555-5555"));
+        assert!(!serialized.contains("sk-live-secret"));
+        assert!(serialized.contains("[REDACTED_PHONE]"));
+        assert!(serialized.contains("[REDACTED_SECRET]"));
+    }
+
+    #[test]
+    fn homepage_story_deck_reports_readiness_gaps_without_inventing_copy() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        insert_public_fact(
+            &db_path,
+            "homepage.profile.positioning",
+            json!("Public story exists but has no slides yet."),
+        );
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let deck = homepage_story_deck_connection(&connection).unwrap();
+
+        assert!(!deck.readiness.ready);
+        assert!(deck.deck.slides.is_empty());
+        assert!(deck
+            .readiness
+            .missing
+            .contains(&"published public homepage slide facts".to_string()));
+        assert!(deck
+            .deck
+            .limitations
+            .iter()
+            .any(|limitation| { limitation.contains("No published public homepage slides") }));
+        assert_eq!(
+            deck.profile.positioning,
+            "Public story exists but has no slides yet."
+        );
+    }
+
     fn insert_public_fact(db_path: &Path, fact_key: &str, value: serde_json::Value) {
         insert_fact(
             db_path,
@@ -678,5 +1360,54 @@ mod tests {
             Some(LOCAL_OWNER_ACTOR_ID),
         )
         .unwrap();
+    }
+
+    fn insert_public_artifact(connection: &rusqlite::Connection, id: &str, summary: &str) {
+        connection
+            .execute(
+                "INSERT INTO artifacts (
+                    id, artifact_kind, title, status, visibility_ceiling, summary,
+                    source_kind, source_id, evidence_refs_json, provenance_json, content_hash,
+                    storage_uri, health_status, created_at, updated_at
+                 ) VALUES (?1, 'homepage.storyboard', 'Public storyboard', 'published',
+                    'public', ?2, 'homepage', 'story', '[\"business_fact:homepage\"]',
+                    '{\"test\":true}', 'sha256:public-story', NULL, 'available', 'now', 'now')",
+                rusqlite::params![id, summary],
+            )
+            .unwrap();
+    }
+
+    fn insert_private_artifact(connection: &rusqlite::Connection, id: &str, summary: &str) {
+        connection
+            .execute(
+                "INSERT INTO artifacts (
+                    id, artifact_kind, title, status, visibility_ceiling, summary,
+                    source_kind, source_id, evidence_refs_json, provenance_json, content_hash,
+                    storage_uri, health_status, created_at, updated_at
+                 ) VALUES (?1, 'homepage.storyboard', 'Private storyboard', 'published',
+                    'owner', ?2, 'homepage', 'story', '[\"business_fact:homepage\"]',
+                    '{\"test\":true}', 'sha256:private-story', NULL, 'available', 'now', 'now')",
+                rusqlite::params![id, summary],
+            )
+            .unwrap();
+    }
+
+    fn insert_home_entry_point(
+        connection: &rusqlite::Connection,
+        id: &str,
+        slug: &str,
+        label: &str,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO tracked_entry_points (
+                    id, slug, label, status, source_kind, source_label, destination_surface,
+                    destination_id, public_path, qr_payload_json, attribution_json, metadata_json,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, 'active', 'event', 'NYC meetup', 'about',
+                    NULL, ?4, '{\"kind\":\"ordo.tracked_entry_point\"}', '{}', '{}', 'now', 'now')",
+                rusqlite::params![id, slug, label, format!("/e/{slug}")],
+            )
+            .unwrap();
     }
 }

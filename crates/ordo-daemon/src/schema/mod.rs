@@ -123,7 +123,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "local_account_sessions",
 ];
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 39;
+pub const CURRENT_SCHEMA_VERSION: i64 = 40;
 
 pub fn init_database(db_path: &Path) -> Result<()> {
     if let Some(parent) = db_path.parent() {
@@ -222,10 +222,10 @@ mod tests {
             versions,
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
             ]
         );
-        assert_eq!(CURRENT_SCHEMA_VERSION, 39);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 40);
     }
 
     #[test]
@@ -367,6 +367,23 @@ mod tests {
         assert!(column_exists(&connection, "job_tasks", "lease_expires_at"));
         assert!(column_exists(&connection, "job_tasks", "claimed_at"));
         assert!(column_exists(&connection, "job_tasks", "retry_policy_json"));
+        assert!(column_exists(
+            &connection,
+            "process_templates",
+            "variable_schema_json"
+        ));
+        assert!(column_exists(&connection, "jobs", "compiled_plan_json"));
+
+        let compiled_plan_json: String = connection
+            .query_row(
+                "SELECT compiled_plan_json FROM jobs WHERE id = 'job_legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let compiled_plan: serde_json::Value = serde_json::from_str(&compiled_plan_json).unwrap();
+        assert_eq!(compiled_plan["template"]["id"], "system.health.check");
+        assert_eq!(compiled_plan["variableSchema"], serde_json::json!({}));
     }
 
     #[test]

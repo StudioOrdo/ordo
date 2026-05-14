@@ -17,6 +17,8 @@ pub struct TaskDefinition {
     pub required: bool,
     pub depends_on: Vec<String>,
     pub input: Value,
+    #[serde(default = "empty_json_object")]
+    pub retry_policy: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +31,8 @@ pub struct ProcessTemplate {
     pub name: String,
     pub version: i64,
     pub description: String,
+    #[serde(default = "empty_json_object")]
+    pub variable_schema: Value,
     pub tasks: Vec<TaskDefinition>,
 }
 
@@ -88,13 +92,15 @@ pub fn seed_builtin_templates(connection: &Connection) -> Result<()> {
         validate_template_capabilities(connection, &template)?;
         connection.execute(
             "INSERT INTO process_templates (
-                id, capability_id, kind, name, version, description, tasks_json, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+                id, capability_id, kind, name, version, description, variable_schema_json,
+                tasks_json, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
              ON CONFLICT(id, version) DO UPDATE SET
                 capability_id = excluded.capability_id,
                 kind = excluded.kind,
                 name = excluded.name,
                 description = excluded.description,
+                variable_schema_json = excluded.variable_schema_json,
                 tasks_json = excluded.tasks_json,
                 updated_at = excluded.updated_at",
             params![
@@ -104,6 +110,7 @@ pub fn seed_builtin_templates(connection: &Connection) -> Result<()> {
                 template.name,
                 template.version,
                 template.description,
+                template.variable_schema.to_string(),
                 serde_json::to_string(&template.tasks)?,
                 now,
             ],
@@ -141,6 +148,10 @@ pub fn require_builtin_template_version(
     })
 }
 
+fn empty_json_object() -> Value {
+    json!({})
+}
+
 fn task(key: &str, kind: &str, label: &str, depends_on: &[&str]) -> TaskDefinition {
     TaskDefinition {
         key: key.to_string(),
@@ -153,6 +164,7 @@ fn task(key: &str, kind: &str, label: &str, depends_on: &[&str]) -> TaskDefiniti
             .map(|dependency| dependency.to_string())
             .collect(),
         input: json!({}),
+        retry_policy: json!({}),
     }
 }
 
@@ -164,6 +176,7 @@ fn system_health_check_template() -> ProcessTemplate {
         name: "System Health Check".to_string(),
         version: 1,
         description: "Capture basic appliance health evidence.".to_string(),
+        variable_schema: json!({}),
         tasks: vec![
             task(
                 "health.probe",
@@ -189,6 +202,7 @@ fn system_brief_template() -> ProcessTemplate {
         name: "Generate System Brief".to_string(),
         version: 1,
         description: "Write the durable System Brief from appliance evidence.".to_string(),
+        variable_schema: json!({}),
         tasks: vec![
             task(
                 "scope.validate",
@@ -240,6 +254,7 @@ fn surface_brief_template() -> ProcessTemplate {
         description:
             "Write an evidence-backed surface brief artifact without blocking the surface."
                 .to_string(),
+        variable_schema: json!({}),
         tasks: vec![
             task(
                 "scope.validate",
@@ -283,6 +298,7 @@ fn backup_create_template() -> ProcessTemplate {
         name: "Create Backup".to_string(),
         version: 1,
         description: "Create a backup artifact and integrity manifest.".to_string(),
+        variable_schema: json!({}),
         tasks: vec![
             task(
                 "boundary.check",
@@ -345,6 +361,7 @@ fn restore_execute_template() -> ProcessTemplate {
         version: 1,
         description: "Restore from an appliance backup with confirmation and safety backup."
             .to_string(),
+        variable_schema: json!({}),
         tasks: vec![
             task(
                 "request.validate",
@@ -419,6 +436,7 @@ fn issue_report_prepare_template() -> ProcessTemplate {
         version: 1,
         description: "Prepare a local issue report with redacted diagnostics and evidence."
             .to_string(),
+        variable_schema: json!({}),
         tasks: vec![
             task(
                 "scope.validate",
@@ -480,6 +498,7 @@ fn promo_video_package_template() -> ProcessTemplate {
         name: "Stage Promo Video Package".to_string(),
         version: 1,
         description: "Create a deterministic staged package for a 10-30 second vertical promo without external publishing.".to_string(),
+        variable_schema: json!({}),
         tasks: vec![
             task(
                 "brief.validate",

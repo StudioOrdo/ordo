@@ -81,7 +81,7 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
           <LearningPanel title="Story Publish Learning" metrics={[...view.sourceStatus, ...view.contentMetrics]} />
           <PublishEvidencePanel sources={view.publishEvidence} />
           <DeferredStatesPanel states={view.deferredStates} />
-          <LimitationsPanel limitations={view.learningLimitations} />
+          <LimitationsPanel limitations={view.limitations} />
           <NextActionsPanel actions={view.nextActions} />
         </>
       ) : !degraded ? (

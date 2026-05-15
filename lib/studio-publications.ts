@@ -171,7 +171,9 @@ export interface StudioPublicationsView {
   sourceStatus: StudioPublicationMetricView[];
   contentMetrics: StudioPublicationMetricView[];
   publishEvidence: StudioPublicationSourceView[];
+  reviewLimitations: string[];
   learningLimitations: string[];
+  limitations: string[];
   deferredStates: StudioPublicationDeferredState[];
   nextActions: string[];
 }
@@ -200,6 +202,7 @@ export function buildStudioPublicationsView(
   const sourceStatus = learning.sourceStatus.map(metricView);
   const contentMetrics = learning.contentMetrics.map(metricView);
   const publishEvidence = learning.publishEvidence.map(sourceView);
+  const reviewLimitations = safeList(review.limitations);
   const learningLimitations = safeList([
     ...learning.limitations,
     ...learning.memorySummary.limitations,
@@ -242,7 +245,9 @@ export function buildStudioPublicationsView(
     sourceStatus,
     contentMetrics,
     publishEvidence,
+    reviewLimitations,
     learningLimitations,
+    limitations: safeList([...reviewLimitations, ...learningLimitations]),
     deferredStates,
     nextActions,
   };
@@ -261,6 +266,9 @@ export function normalizeSourceStatus(status: string): StudioPublicationSourceSt
   }
   if (status === "ready" || status === "complete" || status === "published" || status === "staged") {
     return "measured";
+  }
+  if (status === "fixture") {
+    return "deferred";
   }
   if (status === "partial" || status === "candidate" || status === "needs_review") {
     return "manual";

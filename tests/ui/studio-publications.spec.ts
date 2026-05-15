@@ -41,7 +41,10 @@ test.describe("Studio Publications view model", () => {
     expect(view.deferredStates.map((state) => state.key)).toContain("external_publishing");
     expect(view.deferredStates.map((state) => state.key)).toContain("memory_promotion");
     expect(view.components[0]?.limitations).toContain("External publishing not claimed");
+    expect(view.reviewLimitations).toContain("Story production review is read only");
     expect(view.learningLimitations).toContain("External analytics missing");
+    expect(view.limitations).toContain("Story production review is read only");
+    expect(view.limitations).toContain("External analytics missing");
     expect(JSON.stringify(view)).not.toContain("rawPrompt");
     expect(JSON.stringify(view)).not.toContain("sk_live");
     expect(JSON.stringify(view)).not.toContain("provider internal");
@@ -93,6 +96,7 @@ test.describe("Studio Publications view model", () => {
     expect(studioPublicationStatusTone("manual")).toBe("warn");
     expect(studioPublicationStatusTone("missing")).toBe("error");
     expect(studioPublicationStatusTone("deferred")).toBe("warn");
+    expect(studioPublicationStatusTone("fixture")).toBe("warn");
     expect(studioPublicationStatusTone("unknown")).toBe("error");
   });
 });
@@ -116,6 +120,7 @@ test("Studio Publications renders Story review and learning evidence from protec
     await expect(page.locator("main")).toContainText("Manual publish evidence");
     await expect(page.locator("main")).toContainText("External analytics missing");
     await expect(page.locator("main")).toContainText("External publishing not claimed");
+    await expect(page.locator("main")).toContainText("Story production review is read only");
     await expect(page.locator("main")).toContainText("Memory promotion not performed");
     await expect(page.locator("main")).not.toContainText("rawPrompt");
     await expect(page.locator("main")).not.toContainText("sk_live");

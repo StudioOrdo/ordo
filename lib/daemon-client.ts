@@ -7,6 +7,7 @@ import {
 } from "@/lib/studio-work";
 import type { GrowthPilotReportResponse } from "@/lib/growth-pilot-report";
 import type {
+  GeneratedContentMemoryReviewPacket,
   StoryPublishLearningBrief,
   StudioProductionReviewPacket,
   StudioPublicationsSnapshot,
@@ -819,7 +820,22 @@ export async function getStudioPublicationsSnapshot(
       `/studio/story-publish-learning?${params.toString()}`,
     ),
   ]);
-  const degradedReasons = [reviewResult.error, learningResult.error].filter(Boolean);
+  const memoryArtifactIds = [
+    ...new Set([
+      ...artifactIds,
+      ...(reviewResult.data?.components ?? []).flatMap((component) => artifactIdFromRef(component.artifactRef)),
+    ]),
+  ].sort();
+  const memoryResults = await Promise.all(
+    memoryArtifactIds.map((artifactId) => {
+      const memoryParams = new URLSearchParams({ audience: viewer });
+      return readEndpoint<GeneratedContentMemoryReviewPacket>(
+        baseUrl,
+        `/studio/generated-content-memory/${encodeURIComponent(artifactId)}/review?${memoryParams.toString()}`,
+      );
+    }),
+  );
+  const degradedReasons = [reviewResult.error, learningResult.error, ...memoryResults.map((result) => result.error)].filter(Boolean);
 
   return {
     daemonUrl: baseUrl,
@@ -829,8 +845,17 @@ export async function getStudioPublicationsSnapshot(
     viewer,
     review: reviewResult.data,
     learning: learningResult.data,
+    memoryReviewPackets: memoryResults.flatMap((result) => (result.data ? [result.data] : [])),
     degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
   };
+}
+
+function artifactIdFromRef(ref: string | null): string[] {
+  if (!ref?.startsWith("artifact:")) {
+    return [];
+  }
+  const artifactId = ref.slice("artifact:".length).trim();
+  return artifactId ? [artifactId] : [];
 }
 
 export async function getStudioStoryIntakeSnapshot(

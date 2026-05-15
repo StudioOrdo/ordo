@@ -80,6 +80,45 @@ export interface StudioMemoryReviewPacket {
   limitations?: string[];
 }
 
+export interface GeneratedContentMemoryReviewItem {
+  candidateId: string;
+  memoryKind: string;
+  memoryTier: string;
+  candidateState: string;
+  confidence: number;
+  summaryText: string | null;
+  body?: string | null;
+  bodyRedacted: boolean;
+  sourceArtifactRefs: string[];
+  workflowRefs: string[];
+  evidenceRefs: string[];
+  limitations: string[];
+  approvalEvidenceRefs: string[];
+  publicationEvidenceRefs: string[];
+  feedbackEvidenceRefs: string[];
+  outcomeEvidenceRefs: string[];
+  rejectionEvidenceRefs: string[];
+  memoryEffect: string;
+  recommendedReviewAction: string;
+  confirmedGraphPromotion: boolean;
+}
+
+export interface GeneratedContentMemoryReviewPacket {
+  schemaVersion: string;
+  artifactId: string;
+  sourceArtifactKind: string;
+  audience: string;
+  candidateCount: number;
+  sourceArtifactRefs: string[];
+  workflowRefs: string[];
+  evidenceRefs: string[];
+  limitations: string[];
+  items: GeneratedContentMemoryReviewItem[];
+  extensionPoints: string[];
+  confirmedGraphPromotion: boolean;
+  liveProviderCalled: boolean;
+}
+
 export interface StoryPublishLearningBrief {
   schemaVersion: string;
   status: string;
@@ -112,6 +151,7 @@ export interface StudioPublicationsSnapshot {
   viewer: "staff" | "owner";
   review: StudioProductionReviewPacket | null;
   learning: StoryPublishLearningBrief | null;
+  memoryReviewPackets: GeneratedContentMemoryReviewPacket[];
   degradedReason: string | null;
 }
 
@@ -154,6 +194,38 @@ export interface StudioPublicationDeferredState {
   sourceStatus: StudioPublicationSourceStatus;
 }
 
+export interface StudioMemoryReviewItemView {
+  candidateId: string;
+  label: string;
+  state: string;
+  memoryKind: string;
+  memoryTier: string;
+  confidencePercent: number;
+  summary: string;
+  evidenceRefs: string[];
+  evidenceRefCount: number;
+  limitations: string[];
+  memoryEffect: string;
+  recommendedReviewAction: string;
+  canApprove: boolean;
+  canReject: boolean;
+  confirmedGraphPromotion: boolean;
+}
+
+export interface StudioMemoryReviewPacketView {
+  artifactId: string;
+  sourceArtifactKind: string;
+  audience: string;
+  candidateCount: number;
+  evidenceRefs: string[];
+  evidenceRefCount: number;
+  limitations: string[];
+  extensionPoints: string[];
+  confirmedGraphPromotion: boolean;
+  liveProviderCalled: boolean;
+  items: StudioMemoryReviewItemView[];
+}
+
 export interface StudioPublicationsView {
   status: StudioPublicationSourceStatus;
   reviewStatus: string;
@@ -171,6 +243,7 @@ export interface StudioPublicationsView {
   sourceStatus: StudioPublicationMetricView[];
   contentMetrics: StudioPublicationMetricView[];
   publishEvidence: StudioPublicationSourceView[];
+  memoryReviewPackets: StudioMemoryReviewPacketView[];
   reviewLimitations: string[];
   learningLimitations: string[];
   limitations: string[];
@@ -197,11 +270,13 @@ const unsafeTextPatterns = [
 export function buildStudioPublicationsView(
   review: StudioProductionReviewPacket,
   learning: StoryPublishLearningBrief,
+  generatedMemoryReviewPackets: GeneratedContentMemoryReviewPacket[] = [],
 ): StudioPublicationsView {
   const components = review.components.map(componentView);
   const sourceStatus = learning.sourceStatus.map(metricView);
   const contentMetrics = learning.contentMetrics.map(metricView);
   const publishEvidence = learning.publishEvidence.map(sourceView);
+  const memoryReviewPackets = generatedMemoryReviewPackets.map(memoryReviewPacketView);
   const reviewLimitations = safeList(review.limitations);
   const learningLimitations = safeList([
     ...learning.limitations,
@@ -222,6 +297,8 @@ export function buildStudioPublicationsView(
     ...learning.memorySummary.evidenceRefs,
     ...learning.outcomeSummary.evidenceRefs,
     ...learning.rewardSummary.evidenceRefs,
+    ...memoryReviewPackets.flatMap((packet) => packet.evidenceRefs),
+    ...memoryReviewPackets.flatMap((packet) => packet.items.flatMap((item) => item.evidenceRefs)),
   ]);
   const deferredStates = buildDeferredStates(review, learning);
   const nextActions = safeList([...review.recommendedNextActions, ...learning.recommendedNextActions]).map(humanizeIdentifier);
@@ -237,7 +314,10 @@ export function buildStudioPublicationsView(
     metricCount: sourceStatus.length + contentMetrics.length,
     publishEvidenceCount: publishEvidence.length,
     safeEvidenceRefCount: safeEvidenceRefs,
-    memoryCandidateCount: Number.isSafeInteger(learning.memorySummary.candidateCount) ? learning.memorySummary.candidateCount : 0,
+    memoryCandidateCount: Math.max(
+      Number.isSafeInteger(learning.memorySummary.candidateCount) ? learning.memorySummary.candidateCount : 0,
+      memoryReviewPackets.reduce((total, packet) => total + packet.candidateCount, 0),
+    ),
     missingOrDeferredCount,
     sourceStatusCounts: statusCounts,
     summaryLines: summaryLines(components.length, sourceStatus.length + contentMetrics.length, publishEvidence.length, missingOrDeferredCount),
@@ -245,6 +325,7 @@ export function buildStudioPublicationsView(
     sourceStatus,
     contentMetrics,
     publishEvidence,
+    memoryReviewPackets,
     reviewLimitations,
     learningLimitations,
     limitations: safeList([...reviewLimitations, ...learningLimitations]),
@@ -320,6 +401,46 @@ function sourceView(source: StoryPublishLearningSource): StudioPublicationSource
     sourceStatus: normalizeSourceStatus(source.sourceStatus),
     evidenceRefCount: safeEvidenceRefCount(source.evidenceRefs),
     limitations: safeList(source.limitations),
+  };
+}
+
+function memoryReviewPacketView(packet: GeneratedContentMemoryReviewPacket): StudioMemoryReviewPacketView {
+  const items = packet.items.map(memoryReviewItemView);
+  return {
+    artifactId: safeText(packet.artifactId, "Unknown artifact"),
+    sourceArtifactKind: safeIdentifier(packet.sourceArtifactKind),
+    audience: safeIdentifier(packet.audience),
+    candidateCount: Number.isSafeInteger(packet.candidateCount) ? Math.max(0, packet.candidateCount) : items.length,
+    evidenceRefs: safeEvidenceRefs(packet.evidenceRefs),
+    evidenceRefCount: safeEvidenceRefCount(packet.evidenceRefs),
+    limitations: safeList(packet.limitations),
+    extensionPoints: safeList(packet.extensionPoints).map(humanizeIdentifier),
+    confirmedGraphPromotion: packet.confirmedGraphPromotion === true,
+    liveProviderCalled: packet.liveProviderCalled === true,
+    items,
+  };
+}
+
+function memoryReviewItemView(item: GeneratedContentMemoryReviewItem): StudioMemoryReviewItemView {
+  const candidateId = safeIdentifier(item.candidateId);
+  const evidenceRefs = safeEvidenceRefs(item.evidenceRefs);
+  const state = safeIdentifier(item.candidateState);
+  return {
+    candidateId,
+    label: humanizeIdentifier(candidateId),
+    state,
+    memoryKind: safeIdentifier(item.memoryKind),
+    memoryTier: safeIdentifier(item.memoryTier),
+    confidencePercent: Number.isFinite(item.confidence) ? Math.max(0, Math.min(100, Math.round(item.confidence * 100))) : 0,
+    summary: safeText(item.summaryText, "Candidate summary withheld."),
+    evidenceRefs,
+    evidenceRefCount: evidenceRefs.length,
+    limitations: safeList(item.limitations),
+    memoryEffect: safeIdentifier(item.memoryEffect),
+    recommendedReviewAction: humanizeIdentifier(item.recommendedReviewAction),
+    canApprove: state === "proposed",
+    canReject: state === "proposed",
+    confirmedGraphPromotion: item.confirmedGraphPromotion === true,
   };
 }
 
@@ -406,7 +527,11 @@ function addStatus(counts: Record<StudioPublicationSourceStatus, number>, status
 }
 
 function safeEvidenceRefCount(refs: readonly string[]): number {
-  return new Set(refs.filter((ref) => safeArtifactRef(ref) !== null)).size;
+  return safeEvidenceRefs(refs).length;
+}
+
+function safeEvidenceRefs(refs: readonly string[]): string[] {
+  return [...new Set(refs.filter((ref) => safeArtifactRef(ref) !== null))].sort((left, right) => left.localeCompare(right));
 }
 
 function safeArtifactRef(value: string | null | undefined): string | null {

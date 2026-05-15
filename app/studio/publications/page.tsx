@@ -1,4 +1,5 @@
 import { ProductShell } from "@/components/product-shell";
+import { StudioMemoryDecisionActions } from "@/components/studio-memory-decision-actions";
 import { PageTitle, statusClass } from "@/components/system-panels";
 import { getStudioPublicationsSnapshot } from "@/lib/daemon-client";
 import {
@@ -8,6 +9,8 @@ import {
   studioPublicationStatusTone,
   type StudioPublicationComponentView,
   type StudioPublicationDeferredState,
+  type StudioMemoryReviewItemView,
+  type StudioMemoryReviewPacketView,
   type StudioPublicationMetricView,
   type StudioPublicationSourceView,
   type StudioPublicationsView,
@@ -38,7 +41,9 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
     deckId: firstParam(params.deckId),
     artifactIds: listParam(params.artifactIds ?? params.artifactId),
   });
-  const view = snapshot.review && snapshot.learning ? buildStudioPublicationsView(snapshot.review, snapshot.learning) : null;
+  const view = snapshot.review && snapshot.learning
+    ? buildStudioPublicationsView(snapshot.review, snapshot.learning, snapshot.memoryReviewPackets)
+    : null;
   const role: ProductRole = requestedRole;
   const degraded = Boolean(snapshot.degradedReason);
 
@@ -79,6 +84,7 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
           <StatusSummaryPanel view={view} />
           <ComponentPanel components={view.components} />
           <LearningPanel title="Story Publish Learning" metrics={[...view.sourceStatus, ...view.contentMetrics]} />
+          <MemoryReviewPanel packets={view.memoryReviewPackets} role={role} />
           <PublishEvidencePanel sources={view.publishEvidence} />
           <DeferredStatesPanel states={view.deferredStates} />
           <LimitationsPanel limitations={view.limitations} />
@@ -182,6 +188,69 @@ function ComponentRow({ component }: { component: StudioPublicationComponentView
       </td>
       <td>{component.evidenceRefCount} safe local ref(s)</td>
       <td>{component.nextAction}</td>
+    </tr>
+  );
+}
+
+function MemoryReviewPanel({ packets, role }: { packets: StudioMemoryReviewPacketView[]; role: ProductRole }) {
+  const items = packets.flatMap((packet) => packet.items);
+  return (
+    <section className="plain-panel table-shell">
+      <h3 className="panel-title">Generated-Content Memory Review</h3>
+      {packets.length === 0 || items.length === 0 ? (
+        <p className="brief-body">No generated-content memory candidates are available for owner/staff review.</p>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Candidate</th>
+              <th>Status</th>
+              <th>Evidence</th>
+              <th>Decision</th>
+            </tr>
+          </thead>
+          <tbody>
+            {packets.map((packet) =>
+              packet.items.map((item) => <MemoryReviewRow key={`${packet.artifactId}:${item.candidateId}`} item={item} role={role} />),
+            )}
+          </tbody>
+        </table>
+      )}
+      {packets.length > 0 ? (
+        <ul className="brief-list">
+          {packets.map((packet) => (
+            <li key={packet.artifactId}>
+              {packet.artifactId}: {packet.candidateCount} candidate(s), {packet.evidenceRefCount} safe local ref(s).
+              {packet.confirmedGraphPromotion ? " Graph promotion confirmed." : " Graph promotion not confirmed."}
+              {packet.liveProviderCalled ? " Live provider evidence present." : " Live provider not called."}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function MemoryReviewRow({ item, role }: { item: StudioMemoryReviewItemView; role: ProductRole }) {
+  return (
+    <tr>
+      <td>
+        <strong>{item.summary}</strong>
+        <span className="table-subtle">{item.label}</span>
+        <span className="table-subtle">{studioPublicationStatusLabel(item.memoryKind)} / {studioPublicationStatusLabel(item.memoryTier)}</span>
+      </td>
+      <td>
+        <span className={statusClass(item.canApprove || item.canReject ? "warn" : "ready")}>{studioPublicationStatusLabel(item.state)}</span>
+        <span className="table-subtle">{item.confidencePercent}% confidence</span>
+      </td>
+      <td>{item.evidenceRefCount} safe local ref(s)</td>
+      <td>
+        {item.canApprove || item.canReject ? (
+          <StudioMemoryDecisionActions candidateId={item.candidateId} evidenceRefs={item.evidenceRefs} disabled={false} role={role} />
+        ) : (
+          <span className={statusClass("ready")}>Decision recorded</span>
+        )}
+      </td>
     </tr>
   );
 }

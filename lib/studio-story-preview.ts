@@ -97,7 +97,7 @@ export function buildStudioStoryPreviewView(input: StudioStoryPreviewInput): Stu
     slideCount: slides.length,
     publicationEvidenceCount,
     safeEvidenceRefCount,
-    summaryLines: summaryLines(slides.length, publicationEvidenceCount, degraded || missing),
+    summaryLines: summaryLines(slides.length, publicationEvidenceCount, degraded, missing),
     slides,
     publication,
     limitations,
@@ -128,11 +128,18 @@ function isWithheldText(value: string): boolean {
   return value === "Public-safe content withheld pending review.";
 }
 
-function summaryLines(slideCount: number, publicationEvidenceCount: number, missing: boolean): string[] {
+function summaryLines(slideCount: number, publicationEvidenceCount: number, degraded: boolean, missing: boolean): string[] {
   if (missing) {
     return [
       "No protected preview slides are available from daemon-backed homepage story evidence.",
       "Missing or degraded publication evidence remains explicit.",
+      noMutationLine,
+    ];
+  }
+  if (degraded) {
+    return [
+      `${slideCount} protected preview slide(s) are assembled from daemon-backed homepage story evidence.`,
+      "Some Story publication evidence is degraded or unavailable.",
       noMutationLine,
     ];
   }

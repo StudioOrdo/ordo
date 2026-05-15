@@ -48,6 +48,24 @@ test.describe("Studio Story preview view model", () => {
     ]);
     expect(view.nextActions).toContain("Resolve daemon-backed homepage story deck");
   });
+
+  test("keeps partial daemon degradation explicit without hiding available slides", () => {
+    const view = buildStudioStoryPreviewView({
+      ...previewInputFixture("ready"),
+      learning: null,
+      degradedReason: "/studio/story-publish-learning: responded with 503",
+    });
+
+    expect(view.status).toBe("degraded");
+    expect(view.slideCount).toBe(2);
+    expect(view.publication).toBeNull();
+    expect(view.summaryLines).toEqual([
+      "2 protected preview slide(s) are assembled from daemon-backed homepage story evidence.",
+      "Some Story publication evidence is degraded or unavailable.",
+      "Preview reads do not publish, mutate analytics truth, promote memory, promote graph truth, call providers, or execute tasks.",
+    ]);
+    expect(view.nextActions).toContain("Resolve Story publication readiness evidence");
+  });
 });
 
 test.describe.configure({ mode: "serial" });

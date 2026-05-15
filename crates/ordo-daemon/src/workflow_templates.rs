@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -130,6 +130,19 @@ pub struct StoryHomepageRefreshCompileRequest {
     pub idempotency_key: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoryHomepageRefreshScheduledRequest {
+    pub schedule_id: String,
+    pub enabled: bool,
+    pub due_at: String,
+    pub now: String,
+    pub founder_intake_artifact_id: String,
+    pub publish_mode: String,
+    pub idempotency_key: String,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryHomepageRefreshCompileOutcome {
@@ -148,12 +161,128 @@ pub struct StoryHomepageRefreshBlocker {
     pub live_provider_required: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryHomepageRefreshScheduledOutcome {
+    pub status: String,
+    pub schedule_id: String,
+    pub template_id: String,
+    pub template_version: i64,
+    pub publish_mode: String,
+    pub due_at: String,
+    pub idempotency_key: String,
+    pub compilation: Option<WorkflowCompilation>,
+    pub blocker: Option<StoryHomepageRefreshBlocker>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub approval_required: bool,
+    pub live_provider_required: bool,
+    pub external_publishing_claimed: bool,
+    pub memory_promotion_claimed: bool,
+}
+
 pub fn built_in_workflow_templates() -> Vec<WorkflowTemplateDefinition> {
     vec![
         zodiac_image_set_template(),
         article_with_image_template(),
         story_scrollytelling_homepage_template(),
     ]
+}
+
+pub fn process_story_homepage_refresh_scheduled_request(
+    connection: &mut Connection,
+    request: StoryHomepageRefreshScheduledRequest,
+) -> Result<StoryHomepageRefreshScheduledOutcome> {
+    let schedule_id = require_public_safe_identifier(&request.schedule_id, "schedule id")?;
+    let publish_mode = match request.publish_mode.as_str() {
+        "manual" | "scheduled" => request.publish_mode.clone(),
+        _ => bail!("Story homepage refresh publish mode must be manual or scheduled"),
+    };
+    let due_at = parse_schedule_time(&request.due_at, "due_at")?;
+    let now = parse_schedule_time(&request.now, "now")?;
+    require_public_safe_identifier(&request.idempotency_key, "idempotency key")?;
+    require_public_safe_metadata(&request.evidence_refs, "evidence ref")?;
+    require_public_safe_metadata(&request.limitations, "limitation")?;
+
+    let evidence_refs = scheduled_refresh_evidence_refs(
+        &request.founder_intake_artifact_id,
+        request.evidence_refs.clone(),
+    );
+    let limitations = scheduled_refresh_limitations(&publish_mode, request.limitations.clone());
+
+    if !request.enabled {
+        return Ok(scheduled_refresh_blocked_outcome(
+            schedule_id,
+            publish_mode,
+            request.due_at,
+            request.idempotency_key,
+            evidence_refs,
+            limitations,
+            vec!["enabled Story homepage refresh schedule".to_string()],
+        ));
+    }
+    if due_at > now {
+        return Ok(scheduled_refresh_blocked_outcome(
+            schedule_id,
+            publish_mode,
+            request.due_at,
+            request.idempotency_key,
+            evidence_refs,
+            limitations,
+            vec!["due Story homepage refresh schedule".to_string()],
+        ));
+    }
+
+    let compile_outcome = compile_story_homepage_refresh_workflow(
+        connection,
+        StoryHomepageRefreshCompileRequest {
+            founder_intake_artifact_id: request.founder_intake_artifact_id,
+            publish_mode: publish_mode.clone(),
+            idempotency_key: request.idempotency_key.clone(),
+        },
+    )?;
+
+    if let Some(blocker) = compile_outcome.blocker {
+        return Ok(StoryHomepageRefreshScheduledOutcome {
+            status: "blocked".to_string(),
+            schedule_id,
+            template_id: STORY_HOMEPAGE_REFRESH_TEMPLATE_ID.to_string(),
+            template_version: 1,
+            publish_mode,
+            due_at: request.due_at,
+            idempotency_key: request.idempotency_key,
+            compilation: None,
+            blocker: Some(merge_scheduled_refresh_blocker(
+                blocker,
+                evidence_refs.clone(),
+                limitations.clone(),
+            )),
+            evidence_refs,
+            limitations,
+            approval_required: true,
+            live_provider_required: false,
+            external_publishing_claimed: false,
+            memory_promotion_claimed: false,
+        });
+    }
+
+    Ok(StoryHomepageRefreshScheduledOutcome {
+        status: compile_outcome.status,
+        schedule_id,
+        template_id: STORY_HOMEPAGE_REFRESH_TEMPLATE_ID.to_string(),
+        template_version: 1,
+        publish_mode,
+        due_at: request.due_at,
+        idempotency_key: request.idempotency_key,
+        compilation: compile_outcome.compilation,
+        blocker: None,
+        evidence_refs,
+        limitations,
+        approval_required: true,
+        live_provider_required: false,
+        external_publishing_claimed: false,
+        memory_promotion_claimed: false,
+    })
 }
 
 pub fn compile_story_homepage_refresh_workflow(
@@ -463,6 +592,130 @@ fn public_safe_refs(values: Vec<String>) -> Vec<String> {
             })
             .collect(),
     )
+}
+
+fn scheduled_refresh_evidence_refs(
+    founder_intake_artifact_id: &str,
+    evidence_refs: Vec<String>,
+) -> Vec<String> {
+    public_safe_refs(
+        evidence_refs
+            .into_iter()
+            .chain([format!(
+                "artifact:{}",
+                safe_identifier(founder_intake_artifact_id)
+            )])
+            .collect(),
+    )
+}
+
+fn scheduled_refresh_limitations(publish_mode: &str, limitations: Vec<String>) -> Vec<String> {
+    let mode_limitation = match publish_mode {
+        "scheduled" => {
+            "Scheduled Story homepage refresh requests still require approval before publish."
+        }
+        _ => "Manual Story homepage refresh requests require owner approval before publish.",
+    };
+    public_safe_strings(
+        limitations
+            .into_iter()
+            .chain([
+                mode_limitation.to_string(),
+                "The request contract compiles or blocks the workflow plan only; it does not run providers, publish, record analytics, or promote memory."
+                    .to_string(),
+            ])
+            .collect(),
+    )
+}
+
+fn scheduled_refresh_blocked_outcome(
+    schedule_id: String,
+    publish_mode: String,
+    due_at: String,
+    idempotency_key: String,
+    evidence_refs: Vec<String>,
+    limitations: Vec<String>,
+    missing: Vec<String>,
+) -> StoryHomepageRefreshScheduledOutcome {
+    StoryHomepageRefreshScheduledOutcome {
+        status: "blocked".to_string(),
+        schedule_id,
+        template_id: STORY_HOMEPAGE_REFRESH_TEMPLATE_ID.to_string(),
+        template_version: 1,
+        publish_mode,
+        due_at,
+        idempotency_key,
+        compilation: None,
+        blocker: Some(StoryHomepageRefreshBlocker {
+            request_summary:
+                "Story homepage refresh schedule is not eligible to compile a workflow plan."
+                    .to_string(),
+            missing: stable_strings(missing),
+            evidence_refs: evidence_refs.clone(),
+            limitations: limitations.clone(),
+            live_provider_required: false,
+        }),
+        evidence_refs,
+        limitations,
+        approval_required: true,
+        live_provider_required: false,
+        external_publishing_claimed: false,
+        memory_promotion_claimed: false,
+    }
+}
+
+fn merge_scheduled_refresh_blocker(
+    mut blocker: StoryHomepageRefreshBlocker,
+    evidence_refs: Vec<String>,
+    limitations: Vec<String>,
+) -> StoryHomepageRefreshBlocker {
+    blocker.evidence_refs = public_safe_refs(
+        blocker
+            .evidence_refs
+            .into_iter()
+            .chain(evidence_refs)
+            .collect(),
+    );
+    blocker.limitations =
+        public_safe_strings(blocker.limitations.into_iter().chain(limitations).collect());
+    blocker.live_provider_required = false;
+    blocker
+}
+
+fn parse_schedule_time(value: &str, label: &str) -> Result<DateTime<Utc>> {
+    Ok(DateTime::parse_from_rfc3339(value)
+        .map_err(|error| {
+            anyhow::anyhow!("Story homepage refresh {label} must be RFC3339: {error}")
+        })?
+        .with_timezone(&Utc))
+}
+
+fn require_public_safe_identifier(value: &str, label: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!("Story homepage refresh {label} cannot be blank");
+    }
+    if redaction::contains_sensitive_text(trimmed, &[]) || contains_private_marker(trimmed) {
+        bail!("Story homepage refresh {label} contains private or unsupported metadata");
+    }
+    let safe = safe_identifier(trimmed);
+    if safe != trimmed {
+        bail!("Story homepage refresh {label} must be a stable identifier");
+    }
+    Ok(safe)
+}
+
+fn require_public_safe_metadata(values: &[String], label: &str) -> Result<()> {
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            bail!("Story homepage refresh {label} cannot be blank");
+        }
+        if redaction::contains_sensitive_text(trimmed, &[]) || contains_private_marker(trimmed) {
+            bail!("Story homepage refresh {label} contains private or unsupported metadata");
+        }
+    }
+    Ok(())
 }
 
 fn stable_strings(values: Vec<String>) -> Vec<String> {
@@ -2074,6 +2327,274 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error.contains("idempotency key conflicts"));
+    }
+
+    #[test]
+    fn scheduled_story_homepage_refresh_request_compiles_ready_due_workflow() {
+        let mut connection = setup_connection();
+        seed_public_homepage_story(&connection);
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let outcome = process_story_homepage_refresh_scheduled_request(
+            &mut connection,
+            StoryHomepageRefreshScheduledRequest {
+                schedule_id: "schedule_story_homepage_daily".to_string(),
+                enabled: true,
+                due_at: "2026-05-15T09:00:00Z".to_string(),
+                now: "2026-05-15T09:05:00Z".to_string(),
+                founder_intake_artifact_id: intake_artifact_id,
+                publish_mode: "scheduled".to_string(),
+                idempotency_key: "story-refresh-scheduled-2026-05-15".to_string(),
+                evidence_refs: vec!["schedule:story_homepage_daily".to_string()],
+                limitations: vec!["Scheduled refresh remains approval gated.".to_string()],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.status, "compiled");
+        assert_eq!(outcome.template_id, STORY_HOMEPAGE_REFRESH_TEMPLATE_ID);
+        assert_eq!(outcome.publish_mode, "scheduled");
+        assert!(outcome.approval_required);
+        assert!(!outcome.live_provider_required);
+        assert!(!outcome.external_publishing_claimed);
+        assert!(!outcome.memory_promotion_claimed);
+        assert!(outcome
+            .evidence_refs
+            .contains(&"schedule:story_homepage_daily".to_string()));
+        assert!(outcome
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("approval")));
+
+        let compilation = outcome.compilation.unwrap();
+        assert!(
+            compilation.safe_compiled_plan["variables"]["publishMode"]["privateValueHash"]
+                .as_str()
+                .unwrap()
+                .starts_with("sha256:")
+        );
+        assert_eq!(
+            compilation.safe_compiled_plan["approvalGates"][0]["action"],
+            "publish"
+        );
+        let safe_plan_json = compilation.safe_compiled_plan.to_string();
+        for forbidden in [
+            "Private founder note",
+            "manual_owner_intake",
+            "provider internal",
+            "prompt internal",
+            "compiled plan private input",
+            "task private payload",
+        ] {
+            assert!(
+                !safe_plan_json.contains(forbidden),
+                "compiled plan leaked {forbidden}: {safe_plan_json}"
+            );
+        }
+    }
+
+    #[test]
+    fn scheduled_story_homepage_refresh_blocks_missing_readiness_and_disabled_schedule() {
+        let mut connection = setup_connection();
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let missing_readiness = process_story_homepage_refresh_scheduled_request(
+            &mut connection,
+            StoryHomepageRefreshScheduledRequest {
+                schedule_id: "schedule_story_homepage_daily".to_string(),
+                enabled: true,
+                due_at: "2026-05-15T09:00:00Z".to_string(),
+                now: "2026-05-15T09:05:00Z".to_string(),
+                founder_intake_artifact_id: intake_artifact_id.clone(),
+                publish_mode: "scheduled".to_string(),
+                idempotency_key: "story-refresh-missing-readiness-scheduled".to_string(),
+                evidence_refs: vec!["schedule:story_homepage_daily".to_string()],
+                limitations: vec![],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(missing_readiness.status, "blocked");
+        assert!(missing_readiness.compilation.is_none());
+        let blocker = missing_readiness.blocker.unwrap();
+        assert!(blocker
+            .missing
+            .contains(&"published public homepage profile positioning".to_string()));
+        assert!(!blocker.live_provider_required);
+
+        let disabled = process_story_homepage_refresh_scheduled_request(
+            &mut connection,
+            StoryHomepageRefreshScheduledRequest {
+                schedule_id: "schedule_story_homepage_disabled".to_string(),
+                enabled: false,
+                due_at: "2026-05-15T09:00:00Z".to_string(),
+                now: "2026-05-15T09:05:00Z".to_string(),
+                founder_intake_artifact_id: intake_artifact_id,
+                publish_mode: "scheduled".to_string(),
+                idempotency_key: "story-refresh-disabled-schedule".to_string(),
+                evidence_refs: vec!["schedule:story_homepage_disabled".to_string()],
+                limitations: vec![],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(disabled.status, "blocked");
+        assert!(disabled.compilation.is_none());
+        assert!(disabled
+            .blocker
+            .unwrap()
+            .missing
+            .contains(&"enabled Story homepage refresh schedule".to_string()));
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_template_compilations
+                 WHERE idempotency_key IN (
+                    'story-refresh-missing-readiness-scheduled',
+                    'story-refresh-disabled-schedule'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn scheduled_story_homepage_refresh_preserves_manual_and_scheduled_approval_modes() {
+        let mut connection = setup_connection();
+        seed_public_homepage_story(&connection);
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let manual = process_story_homepage_refresh_scheduled_request(
+            &mut connection,
+            StoryHomepageRefreshScheduledRequest {
+                schedule_id: "schedule_story_homepage_manual".to_string(),
+                enabled: true,
+                due_at: "2026-05-15T09:00:00Z".to_string(),
+                now: "2026-05-15T09:05:00Z".to_string(),
+                founder_intake_artifact_id: intake_artifact_id.clone(),
+                publish_mode: "manual".to_string(),
+                idempotency_key: "story-refresh-manual-request".to_string(),
+                evidence_refs: vec!["schedule:story_homepage_manual".to_string()],
+                limitations: vec![],
+            },
+        )
+        .unwrap();
+        let scheduled = process_story_homepage_refresh_scheduled_request(
+            &mut connection,
+            StoryHomepageRefreshScheduledRequest {
+                schedule_id: "schedule_story_homepage_scheduled".to_string(),
+                enabled: true,
+                due_at: "2026-05-15T09:00:00Z".to_string(),
+                now: "2026-05-15T09:05:00Z".to_string(),
+                founder_intake_artifact_id: intake_artifact_id,
+                publish_mode: "scheduled".to_string(),
+                idempotency_key: "story-refresh-scheduled-request".to_string(),
+                evidence_refs: vec!["schedule:story_homepage_scheduled".to_string()],
+                limitations: vec![],
+            },
+        )
+        .unwrap();
+
+        assert!(manual.approval_required);
+        assert!(scheduled.approval_required);
+        assert_ne!(manual.limitations, scheduled.limitations);
+        let manual_publish_mode_hash = manual.compilation.unwrap().safe_compiled_plan["variables"]
+            ["publishMode"]["privateValueHash"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let scheduled_publish_mode_hash = scheduled.compilation.unwrap().safe_compiled_plan
+            ["variables"]["publishMode"]["privateValueHash"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_ne!(manual_publish_mode_hash, scheduled_publish_mode_hash);
+    }
+
+    #[test]
+    fn scheduled_story_homepage_refresh_request_is_idempotent_and_rejects_conflicts() {
+        let mut connection = setup_connection();
+        seed_public_homepage_story(&connection);
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let request = StoryHomepageRefreshScheduledRequest {
+            schedule_id: "schedule_story_homepage_daily".to_string(),
+            enabled: true,
+            due_at: "2026-05-15T09:00:00Z".to_string(),
+            now: "2026-05-15T09:05:00Z".to_string(),
+            founder_intake_artifact_id: intake_artifact_id.clone(),
+            publish_mode: "scheduled".to_string(),
+            idempotency_key: "story-refresh-scheduled-idempotent".to_string(),
+            evidence_refs: vec!["schedule:story_homepage_daily".to_string()],
+            limitations: vec![],
+        };
+        let first =
+            process_story_homepage_refresh_scheduled_request(&mut connection, request.clone())
+                .unwrap()
+                .compilation
+                .unwrap();
+        let repeated = process_story_homepage_refresh_scheduled_request(&mut connection, request)
+            .unwrap()
+            .compilation
+            .unwrap();
+
+        assert_eq!(first.id, repeated.id);
+        assert_eq!(first.input_hash, repeated.input_hash);
+
+        let error = process_story_homepage_refresh_scheduled_request(
+            &mut connection,
+            StoryHomepageRefreshScheduledRequest {
+                schedule_id: "schedule_story_homepage_daily".to_string(),
+                enabled: true,
+                due_at: "2026-05-15T09:00:00Z".to_string(),
+                now: "2026-05-15T09:05:00Z".to_string(),
+                founder_intake_artifact_id: intake_artifact_id,
+                publish_mode: "manual".to_string(),
+                idempotency_key: "story-refresh-scheduled-idempotent".to_string(),
+                evidence_refs: vec!["schedule:story_homepage_daily".to_string()],
+                limitations: vec![],
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("idempotency key conflicts"));
+    }
+
+    #[test]
+    fn scheduled_story_homepage_refresh_rejects_unsafe_metadata_without_compilation() {
+        let mut connection = setup_connection();
+        seed_public_homepage_story(&connection);
+        let intake_artifact_id = record_valid_story_intake(&connection);
+
+        let error = process_story_homepage_refresh_scheduled_request(
+            &mut connection,
+            StoryHomepageRefreshScheduledRequest {
+                schedule_id: "schedule_story_homepage_daily".to_string(),
+                enabled: true,
+                due_at: "2026-05-15T09:00:00Z".to_string(),
+                now: "2026-05-15T09:05:00Z".to_string(),
+                founder_intake_artifact_id: intake_artifact_id,
+                publish_mode: "scheduled".to_string(),
+                idempotency_key: "story-refresh-unsafe-metadata".to_string(),
+                evidence_refs: vec!["prompt internal:do-not-leak".to_string()],
+                limitations: vec![],
+            },
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("private or unsupported metadata"));
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_template_compilations
+                 WHERE idempotency_key = 'story-refresh-unsafe-metadata'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]

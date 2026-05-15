@@ -130,6 +130,73 @@ pub struct GeneratedContentMemoryCandidateView {
     pub state_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GeneratedContentMemoryReviewAudience {
+    Staff,
+    Owner,
+    Member,
+    Public,
+}
+
+impl GeneratedContentMemoryReviewAudience {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Staff => "staff",
+            Self::Owner => "owner",
+            Self::Member => "member",
+            Self::Public => "public",
+        }
+    }
+
+    fn can_read_private_memory(self) -> bool {
+        matches!(self, Self::Staff | Self::Owner)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedContentMemoryReviewPacket {
+    pub schema_version: String,
+    pub artifact_id: String,
+    pub source_artifact_kind: String,
+    pub audience: String,
+    pub candidate_count: usize,
+    pub source_artifact_refs: Vec<String>,
+    pub workflow_refs: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub items: Vec<GeneratedContentMemoryReviewItem>,
+    pub extension_points: Vec<String>,
+    pub confirmed_graph_promotion: bool,
+    pub live_provider_called: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedContentMemoryReviewItem {
+    pub candidate_id: String,
+    pub memory_kind: String,
+    pub memory_tier: String,
+    pub candidate_state: String,
+    pub confidence: f64,
+    pub summary_text: String,
+    pub body: Value,
+    pub body_redacted: bool,
+    pub source_artifact_refs: Vec<String>,
+    pub workflow_refs: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub approval_evidence_refs: Vec<String>,
+    pub publication_evidence_refs: Vec<String>,
+    pub feedback_evidence_refs: Vec<String>,
+    pub outcome_evidence_refs: Vec<String>,
+    pub rejection_evidence_refs: Vec<String>,
+    pub memory_effect: String,
+    pub recommended_review_action: String,
+    pub confirmed_graph_promotion: bool,
+}
+
 pub fn ingest_generated_content_memory_candidates(
     connection: &Connection,
     input: GeneratedContentMemoryIngestionInput,
@@ -282,6 +349,72 @@ pub fn list_generated_content_memory_for_artifact(
     )
 }
 
+pub fn generated_content_memory_review_packet_for_artifact(
+    connection: &Connection,
+    artifact_id: &str,
+    audience: GeneratedContentMemoryReviewAudience,
+) -> Result<GeneratedContentMemoryReviewPacket> {
+    let artifact = load_artifact(connection, artifact_id)?;
+    let candidates = list_generated_content_memory_for_artifact(connection, artifact_id)?;
+    let items = candidates
+        .iter()
+        .filter(|candidate| is_story_memory_candidate(candidate))
+        .map(|candidate| generated_content_memory_review_item(candidate, audience))
+        .collect::<Vec<_>>();
+
+    let mut source_artifact_refs = vec![format!("artifact:{}", artifact.id)];
+    let mut workflow_refs = artifact.evidence_refs.clone();
+    let mut evidence_refs = Vec::new();
+    let mut limitations = Vec::new();
+    for item in &items {
+        append_unique(&mut source_artifact_refs, &item.source_artifact_refs);
+        append_unique(&mut workflow_refs, &item.workflow_refs);
+        append_unique(&mut evidence_refs, &item.evidence_refs);
+        append_unique(&mut limitations, &item.limitations);
+        append_unique(&mut evidence_refs, &item.approval_evidence_refs);
+        append_unique(&mut evidence_refs, &item.publication_evidence_refs);
+        append_unique(&mut evidence_refs, &item.feedback_evidence_refs);
+        append_unique(&mut evidence_refs, &item.outcome_evidence_refs);
+        append_unique(&mut evidence_refs, &item.rejection_evidence_refs);
+    }
+    append_unique(
+        &mut limitations,
+        &[
+            "generated_content_memory_review_is_read_only".to_string(),
+            "generated_content_memory_candidates_do_not_confirm_graph_truth".to_string(),
+            "future_owner_review_ui_and_graph_promotion_are_extension_points".to_string(),
+        ],
+    );
+    if !audience.can_read_private_memory() {
+        append_unique(
+            &mut limitations,
+            &[
+                "member_safe_packet_redacts_candidate_bodies".to_string(),
+                "member_safe_packet_omits_private_review_evidence".to_string(),
+            ],
+        );
+    }
+
+    Ok(GeneratedContentMemoryReviewPacket {
+        schema_version: GENERATED_CONTENT_MEMORY_SCHEMA_VERSION.to_string(),
+        artifact_id: artifact.id,
+        source_artifact_kind: artifact.artifact_kind,
+        audience: audience.as_str().to_string(),
+        candidate_count: items.len(),
+        source_artifact_refs,
+        workflow_refs: sorted_unique(workflow_refs),
+        evidence_refs: sorted_unique(evidence_refs),
+        limitations: sorted_unique(limitations),
+        items,
+        extension_points: vec![
+            "owner_review_ui".to_string(),
+            "authorized_graph_memory_promotion".to_string(),
+        ],
+        confirmed_graph_promotion: false,
+        live_provider_called: false,
+    })
+}
+
 pub fn load_generated_content_memory_candidate(
     connection: &Connection,
     candidate_id: &str,
@@ -301,6 +434,132 @@ pub fn load_generated_content_memory_candidate(
             generated_content_memory_from_row,
         )
         .map_err(Into::into)
+}
+
+fn generated_content_memory_review_item(
+    candidate: &GeneratedContentMemoryCandidateView,
+    audience: GeneratedContentMemoryReviewAudience,
+) -> GeneratedContentMemoryReviewItem {
+    let private_audience = audience.can_read_private_memory();
+    let body_redacted = !private_audience;
+    let summary_text = if private_audience {
+        candidate.summary_text.clone()
+    } else {
+        "Generated content memory candidate requires authorized review.".to_string()
+    };
+    let body = if body_redacted {
+        json!({})
+    } else {
+        candidate.body.clone()
+    };
+    let mut source_artifact_refs = vec![format!("artifact:{}", candidate.artifact_id)];
+    if let Some(version_id) = candidate.artifact_version_id.as_deref() {
+        source_artifact_refs.push(format!("artifact_version:{version_id}"));
+    }
+    let workflow_refs = workflow_refs_for_candidate(candidate);
+    let evidence_refs = audience_safe_refs(audience, &candidate.evidence_refs);
+    let approval_evidence_refs = audience_safe_refs(audience, &candidate.approval_evidence_refs);
+    let publication_evidence_refs =
+        audience_safe_refs(audience, &candidate.publication_evidence_refs);
+    let feedback_evidence_refs = audience_safe_refs(audience, &candidate.feedback_evidence_refs);
+    let outcome_evidence_refs = audience_safe_refs(audience, &candidate.outcome_evidence_refs);
+    let rejection_evidence_refs = audience_safe_refs(audience, &candidate.rejection_evidence_refs);
+    let mut limitations = if private_audience {
+        candidate.limitations.clone()
+    } else {
+        vec![
+            "member_safe_packet_redacts_candidate_bodies".to_string(),
+            "member_safe_packet_omits_private_review_evidence".to_string(),
+        ]
+    };
+    append_unique(
+        &mut limitations,
+        &[
+            "generated_content_memory_candidate_only".to_string(),
+            "no_confirmed_graph_promotion".to_string(),
+        ],
+    );
+
+    GeneratedContentMemoryReviewItem {
+        candidate_id: candidate.id.clone(),
+        memory_kind: candidate.memory_kind.clone(),
+        memory_tier: candidate.memory_tier.clone(),
+        candidate_state: candidate.candidate_state.clone(),
+        confidence: candidate.confidence,
+        summary_text,
+        body,
+        body_redacted,
+        source_artifact_refs: sorted_unique(source_artifact_refs),
+        workflow_refs,
+        evidence_refs,
+        limitations: sorted_unique(limitations),
+        approval_evidence_refs,
+        publication_evidence_refs,
+        feedback_evidence_refs,
+        outcome_evidence_refs,
+        rejection_evidence_refs,
+        memory_effect: candidate.memory_effect.clone(),
+        recommended_review_action: recommended_review_action(candidate).to_string(),
+        confirmed_graph_promotion: false,
+    }
+}
+
+fn is_story_memory_candidate(candidate: &GeneratedContentMemoryCandidateView) -> bool {
+    candidate.source_artifact_kind.starts_with("story.")
+        || candidate
+            .workflow_template_id
+            .as_deref()
+            .is_some_and(|value| value.contains("story"))
+        || candidate
+            .job_id
+            .as_deref()
+            .is_some_and(|value| value.contains("story"))
+}
+
+fn workflow_refs_for_candidate(candidate: &GeneratedContentMemoryCandidateView) -> Vec<String> {
+    let mut refs = Vec::new();
+    if let Some(value) = candidate.workflow_template_id.as_deref() {
+        refs.push(format!("workflow_template:{}", safe_identifier(value)));
+    }
+    if let Some(value) = candidate.workflow_compilation_id.as_deref() {
+        refs.push(format!("workflow_compilation:{}", safe_identifier(value)));
+    }
+    if let Some(value) = candidate.job_id.as_deref() {
+        refs.push(format!("job:{}", safe_identifier(value)));
+    }
+    sorted_unique(refs)
+}
+
+fn audience_safe_refs(
+    audience: GeneratedContentMemoryReviewAudience,
+    refs: &[String],
+) -> Vec<String> {
+    if audience.can_read_private_memory() {
+        return sorted_unique(refs.to_vec());
+    }
+    sorted_unique(
+        refs.iter()
+            .filter(|value| {
+                value.starts_with("artifact:") || value.starts_with("artifact_version:")
+            })
+            .cloned()
+            .collect(),
+    )
+}
+
+fn recommended_review_action(candidate: &GeneratedContentMemoryCandidateView) -> &'static str {
+    match candidate.candidate_state.as_str() {
+        "published" => "review_for_memory_strengthening",
+        "approved" => "consider_publication_or_memory_review",
+        "rejected" if candidate.memory_kind == "negative_memory" => {
+            "retain_as_negative_or_preference_memory"
+        }
+        "rejected" => "keep_rejected_as_limitation",
+        "superseded" => "archive_superseded_candidate",
+        "proposed" if candidate.confidence < 0.5 => "needs_more_evidence",
+        "proposed" => "review_candidate",
+        _ => "review_candidate",
+    }
 }
 
 fn upsert_generated_content_memory_candidate(
@@ -638,6 +897,13 @@ fn append_unique(target: &mut Vec<String>, refs: &[String]) {
             target.push(safe);
         }
     }
+}
+
+fn sorted_unique(mut values: Vec<String>) -> Vec<String> {
+    values.retain(|value| !value.trim().is_empty());
+    values.sort();
+    values.dedup();
+    values
 }
 
 fn stable_hash(value: &str) -> String {
@@ -1060,5 +1326,229 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
             .unwrap();
         assert_eq!(graph_node_count, 0);
+    }
+
+    #[test]
+    fn story_memory_review_packet_summarizes_states_and_evidence_without_truth_promotion() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-review-packet");
+
+        let mut published = claim_item("Published story content can inform candidate memory.");
+        published.candidate_state = Some(GeneratedContentMemoryState::Published);
+        published.publication_evidence_refs = vec!["publication:homepage_v1".to_string()];
+        published.feedback_evidence_refs = vec!["feedback:visitor_response_1".to_string()];
+        published.outcome_evidence_refs = vec!["outcome:trial_started_1".to_string()];
+        let mut superseded =
+            claim_item("Earlier story framing was replaced by a stronger owner-approved version.");
+        superseded.confidence = 0.72;
+        let mut low_confidence =
+            claim_item("Weak draft claim needs more evidence before any memory review.");
+        low_confidence.confidence = 0.32;
+        let rejected = GeneratedContentMemoryItemInput {
+            memory_kind: GeneratedContentMemoryKind::NegativeMemory,
+            candidate_state: None,
+            summary_text: "Do not reuse the rejected heavy jargon direction.".to_string(),
+            body: json!({"preference": "avoid heavy jargon"}),
+            confidence: 0.8,
+            evidence_refs: vec!["artifact_review:review_1".to_string()],
+            limitations: vec!["Rejected content guides preference memory only.".to_string()],
+            visibility: "staff".to_string(),
+            approval_evidence_refs: vec![],
+            publication_evidence_refs: vec![],
+            feedback_evidence_refs: vec![],
+            outcome_evidence_refs: vec![],
+            rejection_evidence_refs: vec!["artifact_review:review_1".to_string()],
+        };
+
+        let (candidates, _) = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id.clone(),
+                artifact_version_id: None,
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_story_packet".to_string()),
+                job_id: Some("job_story_packet".to_string()),
+                extraction_fixture_id: "fixture.story.review_packet.v1".to_string(),
+                items: vec![published, superseded, low_confidence, rejected],
+            },
+        )
+        .unwrap();
+        let superseded_candidate = candidates
+            .iter()
+            .find(|candidate| {
+                candidate
+                    .summary_text
+                    .starts_with("Earlier story framing was replaced")
+            })
+            .unwrap();
+        record_generated_content_memory_decision(
+            &connection,
+            &superseded_candidate.id,
+            GeneratedContentMemoryDecisionInput {
+                decision: GeneratedContentMemoryState::Superseded,
+                reason: "Owner approved newer story framing.".to_string(),
+                evidence_refs: vec!["artifact_review:superseded_by_v2".to_string()],
+            },
+        )
+        .unwrap();
+
+        let packet = generated_content_memory_review_packet_for_artifact(
+            &connection,
+            &artifact.id,
+            GeneratedContentMemoryReviewAudience::Staff,
+        )
+        .unwrap();
+
+        assert_eq!(
+            packet.schema_version,
+            GENERATED_CONTENT_MEMORY_SCHEMA_VERSION
+        );
+        assert_eq!(packet.artifact_id, artifact.id);
+        assert_eq!(packet.audience, "staff");
+        assert_eq!(packet.candidate_count, 4);
+        assert_eq!(packet.confirmed_graph_promotion, false);
+        assert_eq!(packet.live_provider_called, false);
+        assert!(packet
+            .workflow_refs
+            .contains(&"workflow_template:studio.story.scrollytelling_homepage".to_string()));
+        assert!(packet
+            .evidence_refs
+            .contains(&"publication:homepage_v1".to_string()));
+        assert!(packet
+            .evidence_refs
+            .contains(&"feedback:visitor_response_1".to_string()));
+        assert!(packet
+            .evidence_refs
+            .contains(&"outcome:trial_started_1".to_string()));
+        assert!(packet
+            .evidence_refs
+            .contains(&"artifact_review:review_1".to_string()));
+        assert!(packet
+            .evidence_refs
+            .contains(&"artifact_review:superseded_by_v2".to_string()));
+
+        let published_item = packet
+            .items
+            .iter()
+            .find(|item| item.candidate_state == "published")
+            .unwrap();
+        assert_eq!(
+            published_item.recommended_review_action,
+            "review_for_memory_strengthening"
+        );
+        assert_eq!(published_item.body_redacted, false);
+        assert!(published_item.body.is_object());
+
+        let rejected_item = packet
+            .items
+            .iter()
+            .find(|item| item.memory_kind == "negative_memory")
+            .unwrap();
+        assert_eq!(rejected_item.memory_tier, "negative_memory");
+        assert_eq!(
+            rejected_item.recommended_review_action,
+            "retain_as_negative_or_preference_memory"
+        );
+
+        let superseded_item = packet
+            .items
+            .iter()
+            .find(|item| item.candidate_state == "superseded")
+            .unwrap();
+        assert_eq!(
+            superseded_item.recommended_review_action,
+            "archive_superseded_candidate"
+        );
+
+        let low_confidence_item = packet
+            .items
+            .iter()
+            .find(|item| item.confidence < 0.5)
+            .unwrap();
+        assert_eq!(
+            low_confidence_item.recommended_review_action,
+            "needs_more_evidence"
+        );
+
+        let graph_node_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(graph_node_count, 0);
+    }
+
+    #[test]
+    fn member_safe_story_memory_review_packet_redacts_private_fields_and_remains_read_only() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-member-packet");
+        let mut approved = claim_item("Owner approved concise homepage positioning.");
+        approved.candidate_state = Some(GeneratedContentMemoryState::Approved);
+        approved.approval_evidence_refs = vec!["approval:owner_1".to_string()];
+        approved.visibility = "public".to_string();
+        approved.body = json!({
+            "claim": "Owner approved concise homepage positioning.",
+            "privateReviewerNote": "Internal note should not appear in member packet."
+        });
+
+        ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id.clone(),
+                artifact_version_id: None,
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_member_packet".to_string()),
+                job_id: Some("job_member_packet".to_string()),
+                extraction_fixture_id: "fixture.story.member_packet.v1".to_string(),
+                items: vec![approved],
+            },
+        )
+        .unwrap();
+        let before_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let packet = generated_content_memory_review_packet_for_artifact(
+            &connection,
+            &artifact.id,
+            GeneratedContentMemoryReviewAudience::Member,
+        )
+        .unwrap();
+
+        let after_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(before_count, after_count);
+        assert_eq!(packet.audience, "member");
+        assert_eq!(packet.candidate_count, 1);
+        assert!(packet
+            .limitations
+            .contains(&"member_safe_packet_redacts_candidate_bodies".to_string()));
+        assert_eq!(
+            packet.items[0].summary_text,
+            "Generated content memory candidate requires authorized review."
+        );
+        assert_eq!(packet.items[0].body, json!({}));
+        assert_eq!(packet.items[0].body_redacted, true);
+        assert!(packet.items[0].evidence_refs.iter().all(|reference| {
+            reference.starts_with("artifact:") || reference.starts_with("artifact_version:")
+        }));
+        let encoded = serde_json::to_string(&packet).unwrap();
+        assert!(!encoded.contains("Owner approved concise homepage positioning"));
+        assert!(!encoded.contains("Internal note"));
+        assert!(!encoded.contains("privateReviewerNote"));
+        assert!(!encoded.contains("provider internal"));
+        assert!(!encoded.contains("prompt internal"));
+        assert!(!encoded.contains("graph certainty"));
+        assert_eq!(packet.confirmed_graph_promotion, false);
+        assert_eq!(packet.live_provider_called, false);
     }
 }

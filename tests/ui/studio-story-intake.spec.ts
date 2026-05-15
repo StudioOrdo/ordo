@@ -38,6 +38,37 @@ test.describe("Studio Story intake view model", () => {
     expect(JSON.stringify(view)).not.toContain("graph certainty");
   });
 
+  test("filters unsafe identifier-shaped internal text", () => {
+    const packet = storyIntakePacketFixture("ready");
+    packet.publicDerivative.claims = [
+      {
+        claim: "provider_internal_prompt should not render",
+        evidenceRefs: ["artifact:founder_note"],
+        reviewState: "raw_policy_internal",
+        limitations: ["owner_only_data", "staff_routing", "task_private_payload"],
+      },
+      {
+        claim: "Public-safe claim remains visible.",
+        evidenceRefs: ["business_fact:positioning"],
+        reviewState: "evidence_backed",
+        limitations: [],
+      },
+    ];
+    packet.publicDerivative.limitations = ["compiled_plan_inputs", "owner_review_required_before_public_derivative_use"];
+
+    const view = buildStudioStoryIntakeView(packet);
+    const serialized = JSON.stringify(view);
+
+    expect(view.claims.map((claim) => claim.claim)).toEqual(["Public safe claim remains visible"]);
+    expect(view.limitations).toContain("Owner review required before public derivative use");
+    expect(serialized).not.toContain("provider internal");
+    expect(serialized).not.toContain("raw policy");
+    expect(serialized).not.toContain("owner only");
+    expect(serialized).not.toContain("staff routing");
+    expect(serialized).not.toContain("task private payload");
+    expect(serialized).not.toContain("compiled plan");
+  });
+
   test("keeps blocked readiness explicit", () => {
     const view = buildStudioStoryIntakeView(storyIntakePacketFixture("blocked"));
 

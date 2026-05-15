@@ -27,7 +27,9 @@ const ALLOWED_FAMILIES: &[&str] = &[
     "job",
     "memory",
     "pack",
+    "publish",
     "studio",
+    "story",
     "support",
     "system",
     "tool",
@@ -580,6 +582,16 @@ fn builtin_contracts() -> Vec<LlmMethodContractSeed> {
             json!({"type": "object", "required": ["status", "summary", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"const": "public"}, "memoryEffect": {"const": "none"}}}),
             json!({"reads": ["business_facts", "artifacts", "graph_nodes"], "writes": []}),
         ),
+        mutation_contract(
+            "homepage.createNarrativeDeck",
+            "Create a governed narrative deck draft from public-safe Story Pack evidence.",
+            "homepage_story_mutation",
+            "staff",
+            json!({"type": "object", "required": ["businessPositioning", "evidenceRefs"], "properties": {"businessPositioning": {"type": "object"}, "founderProfile": {"type": "object"}, "evidenceRefs": {"type": "object"}, "limitations": {"type": "object"}}}),
+            json!({"type": "object", "required": ["status", "deckArtifactRef", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "deckArtifactRef": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
+            json!({"reads": ["business_facts", "artifacts"], "writes": ["artifacts"]}),
+            true,
+        ),
         read_contract(
             "homepage.prepare_image_briefs",
             "Prepare public-safe image brief metadata for homepage story sections.",
@@ -588,6 +600,26 @@ fn builtin_contracts() -> Vec<LlmMethodContractSeed> {
             json!({"type": "object", "required": ["storyDeckId"], "properties": {"storyDeckId": {"type": "string"}, "sectionIds": {"type": "array", "items": {"type": "string"}}}}),
             json!({"type": "object", "required": ["status", "briefs", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "briefs": {"type": "array"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "none"}}}),
             json!({"reads": ["future_homepage_story_deck", "artifacts"], "writes": []}),
+        ),
+        mutation_contract(
+            "story.createImageBriefs",
+            "Create typed Story image brief artifacts for bounded homepage sections.",
+            "story_artifact_mutation",
+            "staff",
+            json!({"type": "object", "required": ["section"], "properties": {"section": {"type": "object"}, "evidenceRefs": {"type": "object"}}}),
+            json!({"type": "object", "required": ["status", "briefArtifactRef", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "briefArtifactRef": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
+            json!({"reads": ["artifacts", "business_facts"], "writes": ["artifacts"]}),
+            true,
+        ),
+        mutation_contract(
+            "image.generateVariants",
+            "Record deterministic image generation request envelopes and generated candidate artifact refs.",
+            "image_artifact_mutation",
+            "staff",
+            json!({"type": "object", "required": ["section", "briefArtifactRef"], "properties": {"section": {"type": "object"}, "briefArtifactRef": {"type": "object"}, "evidenceRefs": {"type": "object"}, "limitations": {"type": "object"}}}),
+            json!({"type": "object", "required": ["status", "requestEnvelopeArtifactRef", "candidateArtifactRefs", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "requestEnvelopeArtifactRef": {"type": "string"}, "candidateArtifactRefs": {"type": "array"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
+            json!({"reads": ["artifacts"], "writes": ["artifacts"]}),
+            true,
         ),
         read_contract(
             "pack.inspect_manifest",
@@ -607,14 +639,74 @@ fn builtin_contracts() -> Vec<LlmMethodContractSeed> {
             json!({"type": "object", "required": ["status", "resolvedVariables", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "resolvedVariables": {"type": "array"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "none"}}}),
             json!({"reads": ["process_templates", "jobs"], "writes": []}),
         ),
-        read_contract(
+        mutation_contract(
             "image.reviewAgainstBrief",
             "Review generated image candidates against an approved image brief without invoking a live provider.",
-            "image_review_read",
+            "image_review_mutation",
             "staff",
             json!({"type": "object", "required": ["artifactId", "briefArtifactId"], "properties": {"artifactId": {"type": "string"}, "briefArtifactId": {"type": "string"}}}),
             json!({"type": "object", "required": ["status", "summary", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
-            json!({"reads": ["artifacts", "artifact_versions"], "writes": []}),
+            json!({"reads": ["artifacts", "artifact_versions"], "writes": ["artifacts"]}),
+            true,
+        ),
+        mutation_contract(
+            "artifact.preparePublicDerivative",
+            "Prepare a public-safe derivative from approved generated Story artifacts.",
+            "artifact_mutation",
+            "staff",
+            json!({"type": "object", "required": ["candidateArtifactRef", "reviewArtifactRef"], "properties": {"candidateArtifactRef": {"type": "object"}, "reviewArtifactRef": {"type": "object"}, "visibility": {"type": "string"}, "evidenceRefs": {"type": "object"}}}),
+            json!({"type": "object", "required": ["status", "publicDerivativeArtifactRef", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "publicDerivativeArtifactRef": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
+            json!({"reads": ["artifacts", "artifact_versions"], "writes": ["artifacts"]}),
+            true,
+        ),
+        mutation_contract(
+            "homepage.compileScrollytellingDraft",
+            "Compile a Story homepage draft from deck and public derivative artifact refs.",
+            "homepage_story_mutation",
+            "staff",
+            json!({"type": "object", "required": ["deckArtifactRef", "sectionDerivativeRefs"], "properties": {"deckArtifactRef": {"type": "object"}, "sectionDerivativeRefs": {"type": "object"}, "evidenceRefs": {"type": "object"}, "limitations": {"type": "object"}}}),
+            json!({"type": "object", "required": ["status", "homepageVersionArtifactRef", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "homepageVersionArtifactRef": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
+            json!({"reads": ["artifacts", "business_facts"], "writes": ["artifacts"]}),
+            true,
+        ),
+        mutation_contract(
+            "publish.requestApproval",
+            "Request governed manual publish approval without external publishing authority.",
+            "publish_mutation",
+            "staff",
+            json!({"type": "object", "required": ["publishMode", "sourceArtifactRefs", "evidenceRefs"], "properties": {"publishMode": {"type": "object"}, "sourceArtifactRefs": {"type": "object"}, "evidenceRefs": {"type": "object"}, "readinessMissing": {"type": "object"}}}),
+            json!({"type": "object", "required": ["status", "approvalArtifactRef", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "approvalArtifactRef": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
+            json!({"reads": ["artifacts"], "writes": ["artifacts"]}),
+            true,
+        ),
+        mutation_contract(
+            "analytics.recordContentEvent",
+            "Record local-first content analytics events with explicit limitations.",
+            "analytics_mutation",
+            "staff",
+            json!({"type": "object", "required": ["contentRef", "eventKind", "surface", "evidenceRefs"], "properties": {"contentRef": {"type": "object"}, "eventKind": {"type": "string"}, "surface": {"type": "string"}, "evidenceRefs": {"type": "object"}, "limitations": {"type": "array"}}}),
+            json!({"type": "object", "required": ["status", "analyticsEventRef", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "analyticsEventRef": {"type": "string"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "none"}}}),
+            json!({"reads": ["artifacts"], "writes": ["content_analytics_events"]}),
+            false,
+        ),
+        mutation_contract(
+            "memory.proposeCandidateClaims",
+            "Propose generated-content memory candidates without promoting graph truth.",
+            "memory_mutation",
+            "staff",
+            json!({"type": "object", "required": ["sourceArtifactRefs", "evidenceRefs"], "properties": {"sourceArtifactRefs": {"type": "array"}, "evidenceRefs": {"type": "object"}, "limitations": {"type": "object"}, "memoryEffect": {"type": "string"}}}),
+            json!({"type": "object", "required": ["status", "candidateRefs", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "candidateRefs": {"type": "array"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "candidate"}}}),
+            json!({"reads": ["artifacts", "content_analytics_events"], "writes": ["generated_content_memory_candidates"]}),
+            false,
+        ),
+        read_contract(
+            "memory.prepareReviewPacket",
+            "Prepare an authorized generated-content memory review packet without exposing candidate text publicly.",
+            "memory_read",
+            "staff",
+            json!({"type": "object", "required": ["sourceArtifactRefs", "audience", "evidenceRefs"], "properties": {"sourceArtifactRefs": {"type": "array"}, "audience": {"type": "string"}, "evidenceRefs": {"type": "object"}, "memoryPromotionAllowed": {"type": "boolean"}}}),
+            json!({"type": "object", "required": ["status", "reviewPacket", "evidenceRefs", "limitations", "visibilityClass", "memoryEffect"], "properties": {"status": {"type": "string"}, "reviewPacket": {"type": "object"}, "evidenceRefs": {"type": "array"}, "limitations": {"type": "array"}, "visibilityClass": {"type": "string"}, "memoryEffect": {"const": "none"}}}),
+            json!({"reads": ["generated_content_memory_candidates", "artifacts"], "writes": []}),
         ),
     ]
 }
@@ -627,6 +719,53 @@ fn read_contract(
     input_schema: Value,
     output_schema: Value,
     evidence_sources: Value,
+) -> LlmMethodContractSeed {
+    method_contract(
+        name,
+        purpose,
+        authority,
+        visibility_ceiling,
+        input_schema,
+        output_schema,
+        evidence_sources,
+        READ_ONLY,
+        false,
+    )
+}
+
+fn mutation_contract(
+    name: &str,
+    purpose: &str,
+    authority: &str,
+    visibility_ceiling: &str,
+    input_schema: Value,
+    output_schema: Value,
+    evidence_sources: Value,
+    creates_artifacts: bool,
+) -> LlmMethodContractSeed {
+    method_contract(
+        name,
+        purpose,
+        authority,
+        visibility_ceiling,
+        input_schema,
+        output_schema,
+        evidence_sources,
+        MUTATION,
+        creates_artifacts,
+    )
+}
+
+fn method_contract(
+    name: &str,
+    purpose: &str,
+    authority: &str,
+    visibility_ceiling: &str,
+    input_schema: Value,
+    output_schema: Value,
+    evidence_sources: Value,
+    access_mode: &str,
+    creates_artifacts: bool,
 ) -> LlmMethodContractSeed {
     LlmMethodContractSeed {
         name: name.to_string(),
@@ -644,11 +783,11 @@ fn read_contract(
         ],
         evidence_required: true,
         limitations_required: true,
-        access_mode: READ_ONLY.to_string(),
+        access_mode: access_mode.to_string(),
         provider_expectation: "no_live_provider_contract_metadata_only".to_string(),
         live_call_allowed: false,
         events_emitted: json!([]),
-        artifact_behavior: json!({"createsArtifacts": false, "exposesPrivateText": false}),
+        artifact_behavior: json!({"createsArtifacts": creates_artifacts, "exposesPrivateText": false}),
         graph_behavior: evidence_sources,
         deterministic_fixtures: json!({"defaultValidation": "sqlite_fixture_only"}),
         provenance: json!({
@@ -729,6 +868,66 @@ mod tests {
                 .any(|limitation| limitation.contains("Prompt internals, provider secrets")));
             assert_ne!(contract.provider_expectation, "live_provider");
         }
+    }
+
+    #[test]
+    fn story_workflow_method_contracts_preserve_mutation_boundaries() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("ordo-test.sqlite3");
+        crate::schema::init_database(&db_path).unwrap();
+
+        let listed = list_llm_method_contracts(&db_path).unwrap();
+        let contract = |name: &str| {
+            listed
+                .contracts
+                .iter()
+                .find(|contract| contract.name == name)
+                .unwrap_or_else(|| panic!("missing contract {name}"))
+        };
+
+        for name in [
+            "homepage.createNarrativeDeck",
+            "story.createImageBriefs",
+            "image.generateVariants",
+            "image.reviewAgainstBrief",
+            "artifact.preparePublicDerivative",
+            "homepage.compileScrollytellingDraft",
+            "publish.requestApproval",
+            "analytics.recordContentEvent",
+            "memory.proposeCandidateClaims",
+        ] {
+            let contract = contract(name);
+            assert_eq!(contract.access_mode, MUTATION, "{name} must be mutation");
+            assert!(
+                contract.graph_behavior["writes"]
+                    .as_array()
+                    .is_some_and(|writes| !writes.is_empty()),
+                "{name} must declare write targets"
+            );
+        }
+
+        for name in [
+            "homepage.createNarrativeDeck",
+            "story.createImageBriefs",
+            "image.generateVariants",
+            "image.reviewAgainstBrief",
+            "artifact.preparePublicDerivative",
+            "homepage.compileScrollytellingDraft",
+            "publish.requestApproval",
+        ] {
+            assert_eq!(
+                contract(name).artifact_behavior["createsArtifacts"],
+                json!(true),
+                "{name} must declare artifact creation"
+            );
+        }
+
+        let memory_review = contract("memory.prepareReviewPacket");
+        assert_eq!(memory_review.access_mode, READ_ONLY);
+        assert_eq!(
+            memory_review.artifact_behavior["createsArtifacts"],
+            json!(false)
+        );
     }
 
     #[test]

@@ -207,6 +207,10 @@ pub async fn serve(
             get(studio_story_production_review_handler),
         )
         .route(
+            "/studio/story-founder-intake",
+            post(studio_story_founder_intake_handler),
+        )
+        .route(
             "/studio/story-publish-learning",
             get(studio_story_publish_learning_handler),
         )

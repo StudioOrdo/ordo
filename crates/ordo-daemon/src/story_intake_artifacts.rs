@@ -13,29 +13,44 @@ use crate::security::redaction;
 
 pub const STORY_FOUNDER_INTAKE_ARTIFACT_KIND: &str = "story.founder_intake";
 const CONTRACT_SCHEMA_VERSION: &str = "ordo.story_founder_intake_contract.v1";
+const PACKET_SCHEMA_VERSION: &str = "ordo.story_founder_intake_packet.v1";
 const MAX_TEXT_LEN: usize = 4096;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StoryFounderIntakeInput {
     pub intake_id: String,
     pub founder_story: String,
     pub business_stance: String,
+    #[serde(default)]
     pub audience: Option<String>,
+    #[serde(default)]
     pub public_claims: Vec<StoryIntakeClaimInput>,
+    #[serde(default)]
     pub proof_evidence_refs: Vec<String>,
+    #[serde(default)]
     pub private_notes: Vec<String>,
+    #[serde(default)]
     pub style_preferences: Vec<String>,
+    #[serde(default)]
     pub offer_refs: Vec<String>,
+    #[serde(default)]
     pub cta_refs: Vec<String>,
+    #[serde(default)]
     pub limitations: Vec<String>,
+    #[serde(default)]
     pub source_kind: Option<String>,
+    #[serde(default)]
     pub source_id: Option<String>,
+    #[serde(default)]
     pub created_by_job_id: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StoryIntakeClaimInput {
     pub claim: String,
+    #[serde(default)]
     pub evidence_refs: Vec<String>,
 }
 
@@ -94,6 +109,48 @@ pub struct StoryFounderIntakeArtifact {
     pub event: Option<RealtimeEvent>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryFounderIntakeReadiness {
+    pub status: String,
+    pub narrative_deck_ready: bool,
+    pub missing: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub live_provider_required: bool,
+    pub external_publishing_claimed: bool,
+    pub automatic_memory_promotion: bool,
+    pub confirmed_graph_promotion: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryFounderIntakePacket {
+    pub schema_version: String,
+    pub intake_id: String,
+    pub artifact_ref: String,
+    pub artifact: ArtifactView,
+    pub version: Option<ArtifactVersionView>,
+    pub public_derivative: StoryFounderIntakePublicDerivative,
+    pub readiness: StoryFounderIntakeReadiness,
+    pub mutation_performed: bool,
+    pub approval_state: String,
+    pub visibility_ceiling: String,
+    pub live_provider_called: bool,
+    pub external_publishing_claimed: bool,
+    pub memory_promotion_performed: bool,
+    pub confirmed_graph_promotion: bool,
+    pub event: Option<RealtimeEvent>,
+}
+
+pub fn record_story_founder_intake_packet(
+    connection: &Connection,
+    input: StoryFounderIntakeInput,
+) -> Result<StoryFounderIntakePacket> {
+    let recorded = record_story_founder_intake_artifact(connection, input)?;
+    Ok(story_founder_intake_packet(recorded))
+}
+
 pub fn record_story_founder_intake_artifact(
     connection: &Connection,
     input: StoryFounderIntakeInput,
@@ -101,6 +158,12 @@ pub fn record_story_founder_intake_artifact(
     let contract = story_founder_intake_contract(input)?;
     let contract_json = serde_json::to_value(&contract)?;
     let content_hash = stable_json_hash(&contract_json)?;
+
+    ensure_no_conflicting_story_founder_intake_artifact(
+        connection,
+        &contract.intake_id,
+        &content_hash,
+    )?;
 
     if let Some(existing) =
         load_existing_story_founder_intake_artifact(connection, &contract.intake_id, &content_hash)?
@@ -164,6 +227,82 @@ pub fn record_story_founder_intake_artifact(
         contract,
         event: Some(event),
     })
+}
+
+fn story_founder_intake_packet(recorded: StoryFounderIntakeArtifact) -> StoryFounderIntakePacket {
+    let readiness = story_founder_intake_readiness(&recorded.public_derivative);
+    let mutation_performed = recorded.event.is_some();
+    StoryFounderIntakePacket {
+        schema_version: PACKET_SCHEMA_VERSION.to_string(),
+        intake_id: recorded.contract.intake_id.clone(),
+        artifact_ref: format!("artifact:{}", recorded.artifact.id),
+        visibility_ceiling: recorded.artifact.visibility_ceiling.clone(),
+        artifact: recorded.artifact,
+        // Artifact versions persist the owner-scoped source contract for audit.
+        // The readiness packet is a surface envelope, so it returns refs only.
+        version: None,
+        public_derivative: recorded.public_derivative,
+        readiness,
+        mutation_performed,
+        approval_state: "needs_review".to_string(),
+        live_provider_called: false,
+        external_publishing_claimed: false,
+        memory_promotion_performed: false,
+        confirmed_graph_promotion: false,
+        event: recorded.event,
+    }
+}
+
+fn story_founder_intake_readiness(
+    derivative: &StoryFounderIntakePublicDerivative,
+) -> StoryFounderIntakeReadiness {
+    let mut missing = Vec::new();
+    if derivative.summary.trim().is_empty()
+        || derivative.summary.contains("[REDACTED_POLICY_BOUNDARY]")
+        || redaction::contains_sensitive_text(&derivative.summary, &[])
+    {
+        missing.push("public-safe founder/business intake summary".to_string());
+    }
+    if derivative
+        .claims
+        .iter()
+        .any(|claim| claim.review_state == "needs_review")
+    {
+        missing.push("evidence-backed public Story Pack claims".to_string());
+    }
+    if derivative
+        .evidence_refs
+        .iter()
+        .any(|reference| reference == "story_intake:needs_evidence")
+    {
+        missing.push("durable public-safe proof evidence".to_string());
+    }
+    missing = stable_strings(missing);
+    let narrative_deck_ready = missing.is_empty();
+    let mut limitations = derivative.limitations.clone();
+    limitations.push(
+        "Story founder intake readiness is deterministic and does not call live providers."
+            .to_string(),
+    );
+    limitations.push(
+        "Readiness does not publish, promote graph truth, promote memory truth, grant rewards, or execute tasks."
+            .to_string(),
+    );
+    StoryFounderIntakeReadiness {
+        status: if narrative_deck_ready {
+            "ready_for_narrative_deck".to_string()
+        } else {
+            "blocked".to_string()
+        },
+        narrative_deck_ready,
+        missing,
+        evidence_refs: derivative.evidence_refs.clone(),
+        limitations: stable_strings(limitations),
+        live_provider_required: false,
+        external_publishing_claimed: false,
+        automatic_memory_promotion: false,
+        confirmed_graph_promotion: false,
+    }
 }
 
 fn story_founder_intake_contract(
@@ -378,6 +517,33 @@ fn load_existing_story_founder_intake_artifact(
     artifact_id
         .map(|id| load_artifact(connection, &id))
         .transpose()
+}
+
+fn ensure_no_conflicting_story_founder_intake_artifact(
+    connection: &Connection,
+    intake_id: &str,
+    content_hash: &str,
+) -> Result<()> {
+    let existing_hash = connection
+        .query_row(
+            "SELECT content_hash FROM artifacts
+             WHERE artifact_kind = ?1
+               AND source_kind = 'story_pack_intake'
+               AND source_id = ?2
+             ORDER BY created_at ASC
+             LIMIT 1",
+            params![STORY_FOUNDER_INTAKE_ARTIFACT_KIND, intake_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    ensure!(
+        existing_hash
+            .as_deref()
+            .map(|existing| existing == content_hash)
+            .unwrap_or(true),
+        "story intake idempotency key conflicts with a different founder intake payload"
+    );
+    Ok(())
 }
 
 fn bounded_text(value: &str) -> String {
@@ -717,6 +883,104 @@ mod tests {
             )
             .unwrap();
         assert_eq!(artifact_count, 1);
+    }
+
+    #[test]
+    fn conflicting_same_intake_id_fails_without_duplicate_artifact() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        record_story_founder_intake_artifact(&connection, valid_intake()).unwrap();
+        let mut conflicting = valid_intake();
+        conflicting.business_stance = "A materially different intake payload.".to_string();
+
+        let error = record_story_founder_intake_artifact(&connection, conflicting)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("idempotency key conflicts"));
+
+        let artifact_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [STORY_FOUNDER_INTAKE_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(artifact_count, 1);
+    }
+
+    #[test]
+    fn founder_intake_packet_reports_readiness_without_provider_or_memory_claims() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let packet = record_story_founder_intake_packet(&connection, valid_intake()).unwrap();
+
+        assert_eq!(packet.schema_version, PACKET_SCHEMA_VERSION);
+        assert_eq!(packet.approval_state, "needs_review");
+        assert_eq!(packet.visibility_ceiling, "owner");
+        assert_eq!(packet.readiness.status, "ready_for_narrative_deck");
+        assert!(packet.readiness.narrative_deck_ready);
+        assert!(packet.version.is_none());
+        assert!(packet.readiness.missing.is_empty());
+        assert!(!packet.readiness.live_provider_required);
+        assert!(!packet.live_provider_called);
+        assert!(!packet.external_publishing_claimed);
+        assert!(!packet.memory_promotion_performed);
+        assert!(!packet.confirmed_graph_promotion);
+        assert!(packet
+            .readiness
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("does not call live providers")));
+    }
+
+    #[test]
+    fn founder_intake_packet_does_not_expose_private_version_metadata() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let mut input = valid_intake();
+        input.private_notes = vec![
+            "Owner-only source note with sk-live-secret and private artifact text.".to_string(),
+        ];
+
+        let packet = record_story_founder_intake_packet(&connection, input).unwrap();
+        let packet_json = serde_json::to_string(&packet).unwrap();
+
+        assert!(packet.version.is_none());
+        for forbidden in [
+            "Owner-only source note",
+            "sk-live-secret",
+            "private artifact text",
+            "privateNotes",
+        ] {
+            assert!(
+                !packet_json.contains(forbidden),
+                "packet leaked private source metadata {forbidden}: {packet_json}"
+            );
+        }
+    }
+
+    #[test]
+    fn founder_intake_packet_blocks_unreviewed_public_claims() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let mut input = valid_intake();
+        input.public_claims = vec![StoryIntakeClaimInput {
+            claim: "Ordo makes unsupported claims without evidence.".to_string(),
+            evidence_refs: vec![],
+        }];
+
+        let packet = record_story_founder_intake_packet(&connection, input).unwrap();
+
+        assert_eq!(packet.readiness.status, "blocked");
+        assert!(!packet.readiness.narrative_deck_ready);
+        assert!(packet
+            .readiness
+            .missing
+            .contains(&"evidence-backed public Story Pack claims".to_string()));
+        assert!(!packet.readiness.automatic_memory_promotion);
+        assert!(!packet.readiness.confirmed_graph_promotion);
     }
 
     fn valid_intake() -> StoryFounderIntakeInput {

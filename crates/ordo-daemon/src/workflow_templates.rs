@@ -201,8 +201,9 @@ pub fn process_story_homepage_refresh_scheduled_request(
     let due_at = parse_schedule_time(&request.due_at, "due_at")?;
     let now = parse_schedule_time(&request.now, "now")?;
     require_public_safe_identifier(&request.idempotency_key, "idempotency key")?;
-    require_public_safe_metadata(&request.evidence_refs, "evidence ref")?;
-    require_public_safe_metadata(&request.limitations, "limitation")?;
+    let unsafe_metadata = require_public_safe_metadata(&request.evidence_refs, "evidence ref")
+        .and_then(|_| require_public_safe_metadata(&request.limitations, "limitation"))
+        .is_err();
 
     let evidence_refs = scheduled_refresh_evidence_refs(
         &request.founder_intake_artifact_id,
@@ -210,6 +211,17 @@ pub fn process_story_homepage_refresh_scheduled_request(
     );
     let limitations = scheduled_refresh_limitations(&publish_mode, request.limitations.clone());
 
+    if unsafe_metadata {
+        return Ok(scheduled_refresh_blocked_outcome(
+            schedule_id,
+            publish_mode,
+            request.due_at,
+            request.idempotency_key,
+            evidence_refs,
+            limitations,
+            vec!["public-safe Story homepage refresh metadata".to_string()],
+        ));
+    }
     if !request.enabled {
         return Ok(scheduled_refresh_blocked_outcome(
             schedule_id,
@@ -2568,7 +2580,7 @@ mod tests {
         seed_public_homepage_story(&connection);
         let intake_artifact_id = record_valid_story_intake(&connection);
 
-        let error = process_story_homepage_refresh_scheduled_request(
+        let outcome = process_story_homepage_refresh_scheduled_request(
             &mut connection,
             StoryHomepageRefreshScheduledRequest {
                 schedule_id: "schedule_story_homepage_daily".to_string(),
@@ -2582,10 +2594,17 @@ mod tests {
                 limitations: vec![],
             },
         )
-        .unwrap_err()
-        .to_string();
+        .unwrap();
 
-        assert!(error.contains("private or unsupported metadata"));
+        assert_eq!(outcome.status, "blocked");
+        assert!(outcome.compilation.is_none());
+        let outcome_json = serde_json::to_string(&outcome).unwrap();
+        assert!(!outcome_json.contains("prompt internal"));
+        assert!(outcome
+            .blocker
+            .unwrap()
+            .missing
+            .contains(&"public-safe Story homepage refresh metadata".to_string()));
         let count: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM workflow_template_compilations

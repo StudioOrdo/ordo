@@ -131,15 +131,17 @@ pub fn story_production_review_packet(
                 append_unique(&mut evidence_refs, &artifact.evidence_refs);
                 components.push(component_for_artifact(&artifact, request.audience));
 
-                let memory_packet = generated_content_memory_review_packet_for_artifact(
-                    connection,
-                    &artifact.id,
-                    request.audience.memory_audience(),
-                )?;
-                if memory_packet.candidate_count > 0 {
-                    append_unique(&mut evidence_refs, &memory_packet.evidence_refs);
-                    append_unique(&mut limitations, &memory_packet.limitations);
-                    memory_review_packets.push(memory_packet);
+                if request.audience.can_read_staff_packet() {
+                    let memory_packet = generated_content_memory_review_packet_for_artifact(
+                        connection,
+                        &artifact.id,
+                        request.audience.memory_audience(),
+                    )?;
+                    if memory_packet.candidate_count > 0 {
+                        append_unique(&mut evidence_refs, &memory_packet.evidence_refs);
+                        append_unique(&mut limitations, &memory_packet.limitations);
+                        memory_review_packets.push(memory_packet);
+                    }
                 }
             }
             Err(_) => {
@@ -160,9 +162,17 @@ pub fn story_production_review_packet(
         }
     }
 
-    let analytics_summary = if let Some(deck_id) = deck_id.as_deref() {
-        let summary =
-            summarize_content_analytics_for_content(connection, "homepage_story_deck", deck_id)?;
+    let analytics_summary = if request.audience.can_read_staff_packet() {
+        deck_id
+            .as_deref()
+            .map(|deck_id| {
+                summarize_content_analytics_for_content(connection, "homepage_story_deck", deck_id)
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    if let Some(summary) = analytics_summary.as_ref() {
         append_unique(&mut evidence_refs, &summary.evidence_refs);
         append_unique(
             &mut limitations,
@@ -172,10 +182,7 @@ pub fn story_production_review_packet(
                 .map(|limitation| limitation.key.clone())
                 .collect::<Vec<_>>(),
         );
-        Some(summary)
-    } else {
-        None
-    };
+    }
 
     let missing_prerequisites = missing_prerequisites(
         &components,
@@ -253,8 +260,8 @@ fn restricted_component(
     StoryProductionReviewComponent {
         key: component_key(&artifact.artifact_kind).to_string(),
         status: "not_available".to_string(),
-        artifact_ref: Some(format!("artifact:{}", artifact.id)),
-        artifact_kind: Some(artifact.artifact_kind.clone()),
+        artifact_ref: None,
+        artifact_kind: None,
         title: None,
         summary: None,
         visibility: audience.as_str().to_string(),
@@ -683,6 +690,16 @@ mod tests {
             .components
             .iter()
             .any(|component| component.status == "not_available"));
+        assert!(
+            packet
+                .components
+                .iter()
+                .filter(|component| component.status == "not_available")
+                .all(|component| component.artifact_ref.is_none()
+                    && component.artifact_kind.is_none())
+        );
+        assert!(packet.analytics_summary.is_none());
+        assert!(packet.memory_review_packets.is_empty());
         assert!(packet
             .limitations
             .contains(&"generated_content_candidate_text_is_redacted".to_string()));

@@ -2918,6 +2918,7 @@ pub(crate) async fn send_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artifacts::{record_artifact, ArtifactInput};
     use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
     use crate::schema::init_database;
     use std::collections::BTreeSet;
@@ -4113,6 +4114,92 @@ mod tests {
             StoryProductionReviewAudience::Staff
         );
         assert!(default_request.artifact_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn story_production_review_handler_returns_packet_without_mutation() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let (artifact, _) = record_artifact(
+            &connection,
+            ArtifactInput {
+                artifact_kind: "story.narrative_deck".to_string(),
+                title: "Founder Story Deck".to_string(),
+                status: "ready".to_string(),
+                visibility_ceiling: "staff".to_string(),
+                summary: "Evidence-backed founder story deck.".to_string(),
+                source_kind: Some("story_pack".to_string()),
+                source_id: Some("story_pack_homepage".to_string()),
+                evidence_refs: vec!["workflow:story_homepage".to_string()],
+                provenance: json!({"generatedBy": "story_pack.test", "contract": {"deckId": "homepage.story.v1"}}),
+                content_hash: "sha256:story-production-review-handler".to_string(),
+                storage_uri: Some("ordo://artifact/story-production-review-handler".to_string()),
+                health_status: Some("available".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap();
+        let artifact_count_before = table_count(&connection, "artifacts");
+        let memory_count_before = table_count(&connection, "generated_content_memory_candidates");
+        drop(connection);
+
+        let (event_sender, _) = broadcast::channel(8);
+        let (conversation_sender, _) = broadcast::channel(8);
+        let state = AppState {
+            db_path: Arc::new(db_path),
+            event_sender,
+            conversation_sender,
+            next_supervisor_status: None,
+            access_policy: DaemonAccessPolicy::new(None),
+        };
+
+        let response = studio_story_production_review_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state),
+            Query(StoryProductionReviewQuery {
+                audience: Some(StoryProductionReviewAudience::Owner),
+                artifact_ids: Some(artifact.id.clone()),
+                artifact_id: None,
+                deck_id: None,
+            }),
+        )
+        .await
+        .expect("loopback protected route returns Story production review packet");
+        let packet = response.0;
+
+        assert_eq!(packet.audience, "owner");
+        assert_eq!(packet.read_only, true);
+        assert_eq!(packet.mutation_performed, false);
+        assert_eq!(packet.confirmed_graph_promotion, false);
+        assert_eq!(packet.live_provider_called, false);
+        assert_eq!(packet.external_publishing_claimed, false);
+        assert_eq!(packet.deck_id, Some("homepage.story.v1".to_string()));
+        assert!(packet
+            .components
+            .iter()
+            .any(|component| component.artifact_ref == Some(format!("artifact:{}", artifact.id))));
+
+        let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
+        assert_eq!(table_count(&connection, "artifacts"), artifact_count_before);
+        assert_eq!(
+            table_count(&connection, "generated_content_memory_candidates"),
+            memory_count_before
+        );
+    }
+
+    fn packet_db_path(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {
+        temp_dir.path().join("local.db")
+    }
+
+    fn table_count(connection: &rusqlite::Connection, table: &str) -> i64 {
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
     }
 
     #[test]

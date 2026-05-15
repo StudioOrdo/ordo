@@ -515,6 +515,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "studio.story.production_review.read",
     ),
     protected(
+        HttpMethod::Get,
+        "/studio/story-publish-learning",
+        "/studio/story-publish-learning",
+        PolicyAction::Inspect,
+        "studio.story.publish_learning.read",
+    ),
+    protected(
         HttpMethod::Post,
         "/studio/promo-video-packages",
         "/studio/promo-video-packages",

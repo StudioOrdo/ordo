@@ -207,6 +207,10 @@ pub async fn serve(
             get(studio_story_production_review_handler),
         )
         .route(
+            "/studio/story-publish-learning",
+            get(studio_story_publish_learning_handler),
+        )
+        .route(
             "/studio/promo-video-packages",
             post(studio_promo_video_package_create_handler),
         )

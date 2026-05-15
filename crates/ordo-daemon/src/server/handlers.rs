@@ -80,6 +80,11 @@ use crate::feedback::{
     FeedbackRequestQuery, FeedbackRequestRespondRequest, FeedbackRequestReviewRequest,
     FeedbackRequestView,
 };
+use crate::generated_content_memory::{
+    generated_content_memory_review_packet_for_artifact, record_generated_content_memory_decision,
+    GeneratedContentMemoryCandidateView, GeneratedContentMemoryDecisionInput,
+    GeneratedContentMemoryReviewAudience, GeneratedContentMemoryReviewPacket,
+};
 use crate::growth_report::{growth_pilot_report, GrowthPilotReportResponse};
 use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
 use crate::install::{
@@ -1718,6 +1723,20 @@ pub(crate) struct StoryPublishLearningQuery {
     deck_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GeneratedContentMemoryReviewQuery {
+    #[serde(default)]
+    audience: Option<GeneratedContentMemoryReviewAudience>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GeneratedContentMemoryDecisionResponse {
+    candidate: GeneratedContentMemoryCandidateView,
+    event: RealtimeEvent,
+}
+
 impl StoryProductionReviewQuery {
     fn into_request(self) -> StoryProductionReviewPacketRequest {
         let mut artifact_ids = Vec::new();
@@ -1814,6 +1833,69 @@ pub(crate) async fn studio_story_publish_learning_handler(
     story_publish_learning_brief(&connection, query.into_request())
         .map(Json)
         .map_err(internal_error)
+}
+
+pub(crate) async fn generated_content_memory_review_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(artifact_id): AxumPath<String>,
+    Query(query): Query<GeneratedContentMemoryReviewQuery>,
+) -> Result<Json<GeneratedContentMemoryReviewPacket>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/studio/generated-content-memory/{artifact_id}/review"),
+        ),
+        Some("memory.candidates.review"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    generated_content_memory_review_packet_for_artifact(
+        &connection,
+        &artifact_id,
+        query
+            .audience
+            .unwrap_or(GeneratedContentMemoryReviewAudience::Staff),
+    )
+    .map(Json)
+    .map_err(internal_error)
+}
+
+pub(crate) async fn generated_content_memory_decision_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumPath(candidate_id): AxumPath<String>,
+    Json(request): Json<GeneratedContentMemoryDecisionInput>,
+) -> Result<Json<GeneratedContentMemoryDecisionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Approve,
+        ResourceRef::new(
+            ResourceKind::DaemonRoute,
+            format!("/studio/generated-content-memory/candidates/{candidate_id}/decision"),
+        ),
+        Some("memory.candidates.decide"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    let (candidate, event) =
+        record_generated_content_memory_decision(&connection, &candidate_id, request)
+            .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event.clone());
+    Ok(Json(GeneratedContentMemoryDecisionResponse {
+        candidate,
+        event,
+    }))
 }
 
 pub(crate) async fn studio_promo_video_package_create_handler(
@@ -2981,6 +3063,10 @@ mod tests {
     use super::*;
     use crate::artifacts::{record_artifact, ArtifactInput};
     use crate::capabilities::built_in_capabilities;
+    use crate::generated_content_memory::{
+        ingest_generated_content_memory_candidates, GeneratedContentMemoryIngestionInput,
+        GeneratedContentMemoryItemInput, GeneratedContentMemoryKind, GeneratedContentMemoryState,
+    };
     use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
     use crate::schema::init_database;
     use crate::story_publish_approvals::STORY_HOMEPAGE_PUBLISH_APPROVAL_PACKAGE_ARTIFACT_KIND;
@@ -4438,6 +4524,303 @@ mod tests {
             table_count(&connection, "reward_events"),
             reward_count_before
         );
+    }
+
+    #[test]
+    fn generated_content_memory_routes_use_protected_access_boundary() {
+        for (pattern, sample_route, action, capability) in [
+            (
+                "/studio/generated-content-memory/:artifact_id/review",
+                "/studio/generated-content-memory/artifact_1/review",
+                PolicyAction::Inspect,
+                "memory.candidates.review",
+            ),
+            (
+                "/studio/generated-content-memory/candidates/:candidate_id/decision",
+                "/studio/generated-content-memory/candidates/generated_content_memory_candidate_1/decision",
+                PolicyAction::Approve,
+                "memory.candidates.decide",
+            ),
+        ] {
+            let contract = DAEMON_ROUTE_CONTRACTS
+                .iter()
+                .find(|contract| contract.pattern == pattern)
+                .unwrap_or_else(|| panic!("{pattern} route contract"));
+            assert_eq!(contract.sample_route, sample_route);
+            assert!(matches!(
+                contract.protection,
+                RouteProtection::Protected {
+                    action: contract_action,
+                    capability_id: contract_capability,
+                } if contract_action == action && contract_capability == capability
+            ));
+        }
+
+        let review_capability = built_in_capabilities()
+            .into_iter()
+            .find(|capability| capability.id == "memory.candidates.review")
+            .expect("memory candidate review capability");
+        assert_eq!(review_capability.family, "memory");
+        let decision_capability = built_in_capabilities()
+            .into_iter()
+            .find(|capability| capability.id == "memory.candidates.decide")
+            .expect("memory candidate decision capability");
+        assert_eq!(decision_capability.family, "memory");
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        for (route, action, capability) in [
+            (
+                "/studio/generated-content-memory/artifact_1/review",
+                PolicyAction::Inspect,
+                "memory.candidates.review",
+            ),
+            (
+                "/studio/generated-content-memory/candidates/generated_content_memory_candidate_1/decision",
+                PolicyAction::Approve,
+                "memory.candidates.decide",
+            ),
+        ] {
+            let denied = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("192.168.1.10:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(denied.is_err(), "{route} should deny non-loopback access");
+
+            let allowed = authorize_protected_daemon_route(
+                &policy,
+                &db_path,
+                &headers,
+                socket_addr("127.0.0.1:4000"),
+                action,
+                ResourceRef::new(ResourceKind::DaemonRoute, route),
+                Some(capability),
+            );
+            assert!(allowed.is_ok(), "{route} should allow protected loopback access");
+        }
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id IN ('memory.candidates.review', 'memory.candidates.decide')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 4);
+    }
+
+    #[tokio::test]
+    async fn generated_content_memory_review_route_returns_role_safe_packet_without_mutation() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let (artifact, _) = story_memory_artifact(&connection);
+        let private_summary = "The founder story can state that Ordo learns from approved work.";
+        let (candidates, _) = ingest_generated_content_memory_candidates(
+            &connection,
+            story_memory_ingestion_input(&artifact.id, private_summary),
+        )
+        .unwrap();
+        let candidate_id = candidates[0].id.clone();
+        let candidate_count_before =
+            table_count(&connection, "generated_content_memory_candidates");
+        let event_count_before = table_count(&connection, "realtime_events");
+        drop(connection);
+
+        let state = test_state(db_path);
+        let response = generated_content_memory_review_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state),
+            AxumPath(artifact.id.clone()),
+            Query(GeneratedContentMemoryReviewQuery {
+                audience: Some(GeneratedContentMemoryReviewAudience::Member),
+            }),
+        )
+        .await
+        .expect("loopback protected route returns memory review packet");
+        let packet = response.0;
+
+        assert_eq!(packet.artifact_id, artifact.id);
+        assert_eq!(packet.audience, "member");
+        assert_eq!(packet.candidate_count, 1);
+        assert_eq!(packet.confirmed_graph_promotion, false);
+        assert_eq!(packet.live_provider_called, false);
+        assert_eq!(packet.items[0].candidate_id, candidate_id);
+        assert_eq!(packet.items[0].body_redacted, true);
+        assert_eq!(
+            packet.items[0].summary_text,
+            "Generated content memory candidate requires authorized review."
+        );
+        assert!(!packet.items[0].summary_text.contains("Ordo learns"));
+        assert_eq!(packet.items[0].body, json!({}));
+        assert!(packet
+            .limitations
+            .contains(&"member_safe_packet_redacts_candidate_bodies".to_string()));
+
+        let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
+        assert_eq!(
+            table_count(&connection, "generated_content_memory_candidates"),
+            candidate_count_before
+        );
+        assert_eq!(
+            table_count(&connection, "realtime_events"),
+            event_count_before
+        );
+    }
+
+    #[tokio::test]
+    async fn generated_content_memory_decision_route_records_safe_event_without_graph_promotion() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let (artifact, _) = story_memory_artifact(&connection);
+        let (candidates, _) = ingest_generated_content_memory_candidates(
+            &connection,
+            story_memory_ingestion_input(
+                &artifact.id,
+                "Approved homepage story claims can inform candidate memory.",
+            ),
+        )
+        .unwrap();
+        let candidate_id = candidates[0].id.clone();
+        drop(connection);
+
+        let state = test_state(db_path);
+        let response = generated_content_memory_decision_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state),
+            AxumPath(candidate_id.clone()),
+            Json(GeneratedContentMemoryDecisionInput {
+                decision: GeneratedContentMemoryState::Approved,
+                reason: "Owner approved this as candidate evidence.".to_string(),
+                evidence_refs: vec!["owner_review:memory_candidate".to_string()],
+            }),
+        )
+        .await
+        .expect("loopback protected route records memory candidate decision");
+        let response = response.0;
+
+        assert_eq!(response.candidate.id, candidate_id);
+        assert_eq!(response.candidate.candidate_state, "approved");
+        assert_eq!(
+            response.candidate.memory_effect,
+            "candidate_stronger_evidence"
+        );
+        assert_eq!(
+            response.event.event_type,
+            "generated_content_memory.decision_recorded"
+        );
+        assert_eq!(response.event.payload["candidateId"], candidate_id);
+        assert_eq!(response.event.payload["candidateState"], "approved");
+        assert!(response.event.payload.get("body").is_none());
+        assert!(response.event.payload.get("summaryText").is_none());
+        assert!(response.event.payload.get("providerPayload").is_none());
+        assert!(response
+            .event
+            .payload
+            .get("confirmedGraphPromotion")
+            .is_none());
+
+        let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
+        let event_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM realtime_events
+                 WHERE event_type = 'generated_content_memory.decision_recorded'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 1);
+    }
+
+    fn story_memory_artifact(
+        connection: &rusqlite::Connection,
+    ) -> (crate::artifacts::ArtifactView, RealtimeEvent) {
+        record_artifact(
+            connection,
+            ArtifactInput {
+                artifact_kind: "story.narrative_deck".to_string(),
+                title: "Founder Story Deck".to_string(),
+                status: "ready".to_string(),
+                visibility_ceiling: "staff".to_string(),
+                summary: "Evidence-backed founder story deck.".to_string(),
+                source_kind: Some("story_pack".to_string()),
+                source_id: Some("story_pack_homepage".to_string()),
+                evidence_refs: vec!["workflow:story_homepage".to_string()],
+                provenance: json!({
+                    "generatedBy": "story_pack.test",
+                    "contract": {"deckId": "homepage.story.v1"}
+                }),
+                content_hash: "sha256:generated-content-memory-route-artifact".to_string(),
+                storage_uri: Some("ordo://artifact/generated-content-memory-route".to_string()),
+                health_status: Some("available".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap()
+    }
+
+    fn story_memory_ingestion_input(
+        artifact_id: &str,
+        summary_text: &str,
+    ) -> GeneratedContentMemoryIngestionInput {
+        GeneratedContentMemoryIngestionInput {
+            artifact_id: artifact_id.to_string(),
+            artifact_version_id: None,
+            workflow_template_id: Some("story.homepage.scrollytelling.v1".to_string()),
+            workflow_compilation_id: Some("workflow_compilation_story_homepage".to_string()),
+            job_id: Some("job_story_homepage_memory".to_string()),
+            extraction_fixture_id: "fixture.story.memory.route".to_string(),
+            items: vec![GeneratedContentMemoryItemInput {
+                memory_kind: GeneratedContentMemoryKind::CandidateClaim,
+                candidate_state: None,
+                summary_text: summary_text.to_string(),
+                body: json!({
+                    "claim": summary_text,
+                    "source": "generated_story_artifact"
+                }),
+                confidence: 0.84,
+                evidence_refs: vec![
+                    format!("artifact:{artifact_id}"),
+                    "workflow:story_homepage".to_string(),
+                    "private_note:owner_only".to_string(),
+                ],
+                limitations: vec!["candidate_requires_owner_review".to_string()],
+                visibility: "staff".to_string(),
+                approval_evidence_refs: vec![],
+                publication_evidence_refs: vec![],
+                feedback_evidence_refs: vec![],
+                outcome_evidence_refs: vec![],
+                rejection_evidence_refs: vec![],
+            }],
+        }
+    }
+
+    fn test_state(db_path: std::path::PathBuf) -> AppState {
+        let (event_sender, _) = broadcast::channel(8);
+        let (conversation_sender, _) = broadcast::channel(8);
+        AppState {
+            db_path: Arc::new(db_path),
+            event_sender,
+            conversation_sender,
+            next_supervisor_status: None,
+            access_policy: DaemonAccessPolicy::new(None),
+        }
     }
 
     fn packet_db_path(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {

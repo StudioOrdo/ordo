@@ -1294,6 +1294,50 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["story.publish_learning_brief"],
         ),
         capability(
+            "memory.candidates.review",
+            "Review Generated Content Memory Candidates",
+            "Read a protected, role-safe generated-content memory review packet for an artifact without promoting graph truth or mutating candidate state.",
+            "memory",
+            json!({
+                "type": "object",
+                "required": ["artifactId"],
+                "properties": {
+                    "artifactId": { "type": "string" },
+                    "audience": { "type": "string", "enum": ["staff", "owner", "member", "public"] }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object", "required": ["schemaVersion", "candidateCount", "confirmedGraphPromotion"], "properties": { "schemaVersion": { "type": "string" }, "candidateCount": { "type": "integer" }, "confirmedGraphPromotion": { "type": "boolean" } } }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["generated_content_memory.review_packet"],
+        ),
+        capability(
+            "memory.candidates.decide",
+            "Decide Generated Content Memory Candidate",
+            "Record an owner/staff generated-content memory candidate approval, rejection, supersession, or published decision with safe audit evidence and no automatic graph promotion.",
+            "memory",
+            json!({
+                "type": "object",
+                "required": ["candidateId", "decision", "reason", "evidenceRefs"],
+                "properties": {
+                    "candidateId": { "type": "string" },
+                    "decision": { "type": "string", "enum": ["approved", "rejected", "published", "superseded"] },
+                    "reason": { "type": "string" },
+                    "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object", "required": ["candidate", "event"], "properties": { "candidate": { "type": "object" }, "event": { "type": "object" } } }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["generated_content_memory_candidate", "generated_content_memory.decision_recorded"],
+        ),
+        capability(
             "studio.promo_video.package",
             "Stage Promo Video Package",
             "Create a deterministic staged promo package with script, prompts, captions, metadata, provenance, and manual publication limits.",
@@ -2123,6 +2167,17 @@ fn side_effects_for_capability(id: &str, mcp_export_policy: &str) -> Vec<String>
             "reads_sqlite",
             "returns_role_safe_story_publish_learning_brief",
             "does_not_mutate_analytics_rewards_graph_artifacts_or_memory",
+        ][..],
+        "memory.candidates.review" => &[
+            "reads_sqlite",
+            "returns_role_safe_generated_content_memory_review_packet",
+            "does_not_mutate_candidate_state_or_graph",
+        ][..],
+        "memory.candidates.decide" => &[
+            "writes_sqlite",
+            "records_generated_content_memory_decision",
+            "emits_safe_memory_decision_event",
+            "does_not_promote_graph_truth",
         ][..],
         "studio.artifact_patch.review" => &["reads_sqlite", "returns_bounded_patch_preview"][..],
         "studio.artifact_patch.accept" => &[

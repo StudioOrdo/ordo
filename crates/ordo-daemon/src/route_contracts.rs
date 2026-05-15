@@ -522,6 +522,20 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "studio.story.publish_learning.read",
     ),
     protected(
+        HttpMethod::Get,
+        "/studio/generated-content-memory/:artifact_id/review",
+        "/studio/generated-content-memory/artifact_1/review",
+        PolicyAction::Inspect,
+        "memory.candidates.review",
+    ),
+    protected(
+        HttpMethod::Post,
+        "/studio/generated-content-memory/candidates/:candidate_id/decision",
+        "/studio/generated-content-memory/candidates/generated_content_memory_candidate_1/decision",
+        PolicyAction::Approve,
+        "memory.candidates.decide",
+    ),
+    protected(
         HttpMethod::Post,
         "/studio/promo-video-packages",
         "/studio/promo-video-packages",

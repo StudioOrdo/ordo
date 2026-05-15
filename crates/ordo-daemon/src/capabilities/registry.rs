@@ -1250,6 +1250,28 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["artifact.surface_brief"],
         ),
         capability(
+            "studio.story.production_review.read",
+            "Read Story Production Review",
+            "Read a protected Story production review packet for staff and owner Studio inspection without mutating artifacts, analytics, graph, or memory state.",
+            "studio",
+            json!({
+                "type": "object",
+                "properties": {
+                    "audience": { "type": "string", "enum": ["staff", "owner", "member", "public"] },
+                    "artifactIds": { "type": "string" },
+                    "artifactId": { "type": "string" },
+                    "deckId": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object", "required": ["schemaVersion", "readOnly", "components"], "properties": { "schemaVersion": { "type": "string" }, "readOnly": { "type": "boolean" }, "components": { "type": "array" } } }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["story.production_review_packet"],
+        ),
+        capability(
             "studio.promo_video.package",
             "Stage Promo Video Package",
             "Create a deterministic staged promo package with script, prompts, captions, metadata, provenance, and manual publication limits.",
@@ -2069,6 +2091,11 @@ fn side_effects_for_capability(id: &str, mcp_export_policy: &str) -> Vec<String>
             "writes_sqlite",
             "records_owner_review_state",
             "does_not_publish_external",
+        ][..],
+        "studio.story.production_review.read" => &[
+            "reads_sqlite",
+            "returns_role_safe_story_review_packet",
+            "does_not_mutate_artifacts_or_memory",
         ][..],
         "studio.artifact_patch.review" => &["reads_sqlite", "returns_bounded_patch_preview"][..],
         "studio.artifact_patch.accept" => &[

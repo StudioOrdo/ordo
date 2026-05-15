@@ -203,6 +203,10 @@ pub async fn serve(
         .route("/schedules", get(schedules_handler))
         .route("/surface/work-items", get(surface_work_items_handler))
         .route(
+            "/studio/story-production-review",
+            get(studio_story_production_review_handler),
+        )
+        .route(
             "/studio/promo-video-packages",
             post(studio_promo_video_package_create_handler),
         )

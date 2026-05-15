@@ -1272,6 +1272,39 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["story.production_review_packet"],
         ),
         capability(
+            "studio.story.founder_intake.write",
+            "Write Story Founder Intake",
+            "Record a protected Story founder intake artifact and return owner/staff narrative-deck readiness without live providers, publishing, graph promotion, or memory promotion.",
+            "studio",
+            json!({
+                "type": "object",
+                "required": ["intakeId", "founderStory", "businessStance"],
+                "properties": {
+                    "intakeId": { "type": "string" },
+                    "founderStory": { "type": "string" },
+                    "businessStance": { "type": "string" },
+                    "audience": { "type": "string" },
+                    "publicClaims": { "type": "array" },
+                    "proofEvidenceRefs": { "type": "array" },
+                    "privateNotes": { "type": "array" },
+                    "stylePreferences": { "type": "array" },
+                    "offerRefs": { "type": "array" },
+                    "ctaRefs": { "type": "array" },
+                    "limitations": { "type": "array" },
+                    "sourceKind": { "type": "string" },
+                    "sourceId": { "type": "string" },
+                    "createdByJobId": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object", "required": ["schemaVersion", "artifactRef", "publicDerivative", "readiness"], "properties": { "schemaVersion": { "type": "string" }, "artifactRef": { "type": "string" }, "publicDerivative": { "type": "object" }, "readiness": { "type": "object" } } }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["story.founder_intake", "story.founder_intake_packet"],
+        ),
+        capability(
             "studio.story.publish_learning.read",
             "Read Story Publish Learning",
             "Read a protected Story publish learning brief for staff and owner Studio/Growth inspection without mutating analytics, rewards, graph, artifacts, or memory state.",
@@ -2162,6 +2195,13 @@ fn side_effects_for_capability(id: &str, mcp_export_policy: &str) -> Vec<String>
             "reads_sqlite",
             "returns_role_safe_story_review_packet",
             "does_not_mutate_artifacts_or_memory",
+        ][..],
+        "studio.story.founder_intake.write" => &[
+            "writes_sqlite",
+            "creates_story_founder_intake_artifact",
+            "returns_story_intake_readiness_packet",
+            "does_not_call_live_provider",
+            "does_not_publish_or_promote_memory_or_graph",
         ][..],
         "studio.story.publish_learning.read" => &[
             "reads_sqlite",

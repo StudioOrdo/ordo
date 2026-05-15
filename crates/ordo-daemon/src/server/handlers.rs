@@ -142,6 +142,9 @@ use crate::rewards::{
 };
 use crate::scheduler::{read_scheduler_operations, SchedulerOperationsResponse};
 use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
+use crate::story_intake_artifacts::{
+    record_story_founder_intake_packet, StoryFounderIntakeInput, StoryFounderIntakePacket,
+};
 use crate::story_production_review::{
     story_production_review_packet, StoryProductionReviewAudience, StoryProductionReviewPacket,
     StoryProductionReviewPacketRequest,
@@ -1813,6 +1816,31 @@ pub(crate) async fn studio_story_production_review_handler(
         .map_err(internal_error)
 }
 
+pub(crate) async fn studio_story_founder_intake_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<StoryFounderIntakeInput>,
+) -> Result<Json<StoryFounderIntakePacket>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Create,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-founder-intake"),
+        Some("studio.story.founder_intake.write"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    let packet =
+        record_story_founder_intake_packet(&connection, request).map_err(invalid_request_error)?;
+    if let Some(event) = packet.event.clone() {
+        let _ = state.event_sender.send(event);
+    }
+    Ok(Json(packet))
+}
+
 pub(crate) async fn studio_story_publish_learning_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -3069,6 +3097,9 @@ mod tests {
     };
     use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
     use crate::schema::init_database;
+    use crate::story_intake_artifacts::{
+        StoryFounderIntakeInput, StoryIntakeClaimInput, STORY_FOUNDER_INTAKE_ARTIFACT_KIND,
+    };
     use crate::story_publish_approvals::STORY_HOMEPAGE_PUBLISH_APPROVAL_PACKAGE_ARTIFACT_KIND;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
@@ -4292,6 +4323,71 @@ mod tests {
     }
 
     #[test]
+    fn studio_story_intake_story_founder_intake_route_uses_protected_access_boundary() {
+        let contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/studio/story-founder-intake")
+            .expect("story founder intake route contract");
+        assert_eq!(contract.sample_route, "/studio/story-founder-intake");
+        assert!(matches!(
+            contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Create,
+                capability_id: "studio.story.founder_intake.write",
+            }
+        ));
+
+        let capability = built_in_capabilities()
+            .into_iter()
+            .find(|capability| capability.id == "studio.story.founder_intake.write")
+            .expect("story founder intake capability");
+        assert_eq!(capability.family, "studio");
+        assert!(capability
+            .artifact_kinds
+            .contains(&"story.founder_intake_packet".to_string()));
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-founder-intake"),
+            Some("studio.story.founder_intake.write"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-founder-intake"),
+            Some("studio.story.founder_intake.write"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'studio.story.founder_intake.write'
+                   AND resource_id = '/studio/story-founder-intake'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
+    }
+
+    #[test]
     fn story_production_review_query_maps_to_packet_request() {
         let request = StoryProductionReviewQuery {
             audience: Some(StoryProductionReviewAudience::Owner),
@@ -4436,6 +4532,103 @@ mod tests {
             table_count(&connection, "generated_content_memory_candidates"),
             memory_count_before
         );
+    }
+
+    #[tokio::test]
+    async fn studio_story_intake_story_founder_intake_handler_records_packet_and_handles_retries() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let state = test_state(db_path.clone());
+
+        let response = studio_story_founder_intake_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state.clone()),
+            Json(valid_story_founder_intake_input()),
+        )
+        .await
+        .expect("loopback protected route records Story founder intake packet");
+        let packet = response.0;
+
+        assert_eq!(packet.schema_version, "ordo.story_founder_intake_packet.v1");
+        assert_eq!(packet.intake_id, "story-founder-intake-handler");
+        assert_eq!(packet.visibility_ceiling, "owner");
+        assert_eq!(packet.approval_state, "needs_review");
+        assert_eq!(packet.readiness.status, "ready_for_narrative_deck");
+        assert!(packet.readiness.narrative_deck_ready);
+        assert!(packet.mutation_performed);
+        assert!(!packet.live_provider_called);
+        assert!(!packet.external_publishing_claimed);
+        assert!(!packet.memory_promotion_performed);
+        assert!(!packet.confirmed_graph_promotion);
+        assert!(!packet.readiness.automatic_memory_promotion);
+        assert!(!packet.readiness.confirmed_graph_promotion);
+        assert!(packet.event.is_some());
+
+        let retry = studio_story_founder_intake_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state.clone()),
+            Json(valid_story_founder_intake_input()),
+        )
+        .await
+        .expect("same intake payload is idempotent");
+        let retry_packet = retry.0;
+        assert!(!retry_packet.mutation_performed);
+        assert!(retry_packet.event.is_none());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let artifact_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [STORY_FOUNDER_INTAKE_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(artifact_count, 1);
+    }
+
+    #[tokio::test]
+    async fn studio_story_intake_story_founder_intake_handler_rejects_conflicting_retry_fail_closed(
+    ) {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let state = test_state(db_path.clone());
+
+        let _ = studio_story_founder_intake_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state.clone()),
+            Json(valid_story_founder_intake_input()),
+        )
+        .await
+        .expect("initial intake succeeds");
+
+        let mut conflicting = valid_story_founder_intake_input();
+        conflicting.business_stance = "A materially different Story Pack stance.".to_string();
+        let error = studio_story_founder_intake_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state),
+            Json(conflicting),
+        )
+        .await
+        .expect_err("same intake id with different payload fails closed");
+
+        assert_eq!(error.0, StatusCode::BAD_REQUEST);
+        assert!(error.1 .0.error.contains("idempotency key conflicts"));
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let artifact_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [STORY_FOUNDER_INTAKE_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(artifact_count, 1);
     }
 
     #[tokio::test]
@@ -4820,6 +5013,28 @@ mod tests {
             conversation_sender,
             next_supervisor_status: None,
             access_policy: DaemonAccessPolicy::new(None),
+        }
+    }
+
+    fn valid_story_founder_intake_input() -> StoryFounderIntakeInput {
+        StoryFounderIntakeInput {
+            intake_id: "story-founder-intake-handler".to_string(),
+            founder_story: "A local-first studio operator helps founders publish durable public stories from approved evidence.".to_string(),
+            business_stance: "Ordo is a practical answer to brittle hosted tooling and extractive content platforms.".to_string(),
+            audience: Some("founders evaluating local-first AI operations".to_string()),
+            public_claims: vec![StoryIntakeClaimInput {
+                claim: "Ordo keeps public Story Pack claims evidence-backed and reviewable.".to_string(),
+                evidence_refs: vec!["artifact:approved-founder-note".to_string()],
+            }],
+            proof_evidence_refs: vec!["artifact:approved-founder-note".to_string()],
+            private_notes: vec!["Internal founder note that must remain owner scoped.".to_string()],
+            style_preferences: vec!["plainspoken".to_string()],
+            offer_refs: vec!["offer:pilot-foundations".to_string()],
+            cta_refs: vec!["cta:request-onboarding".to_string()],
+            limitations: vec!["Requires owner review before public derivative use.".to_string()],
+            source_kind: Some("story_pack_intake".to_string()),
+            source_id: Some("story-founder-intake-handler".to_string()),
+            created_by_job_id: None,
         }
     }
 

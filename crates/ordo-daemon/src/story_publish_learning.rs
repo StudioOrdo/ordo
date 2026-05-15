@@ -236,9 +236,18 @@ fn publish_evidence_for_artifacts(
     let mut sources = Vec::new();
     for artifact_id in artifact_ids {
         let Ok(artifact) = load_artifact(connection, artifact_id) else {
+            let private_audience = audience.can_read_learning_evidence();
             sources.push(StoryPublishLearningSource {
-                source_kind: "artifact".to_string(),
-                source_id: safe_identifier(artifact_id),
+                source_kind: if private_audience {
+                    "artifact".to_string()
+                } else {
+                    "story_publish_evidence".to_string()
+                },
+                source_id: if private_audience {
+                    safe_identifier(artifact_id)
+                } else {
+                    "story_publish_evidence_unavailable".to_string()
+                },
                 status: "missing".to_string(),
                 source_status: "missing".to_string(),
                 evidence_refs: Vec::new(),
@@ -264,7 +273,11 @@ fn source_for_publish_artifact(
         limitations.push("member_public_publish_learning_is_summary_only".to_string());
     }
     StoryPublishLearningSource {
-        source_kind: artifact.artifact_kind.clone(),
+        source_kind: if private_audience {
+            artifact.artifact_kind.clone()
+        } else {
+            "story_publish_evidence".to_string()
+        },
         source_id: if private_audience {
             artifact.id.clone()
         } else {
@@ -825,7 +838,11 @@ mod tests {
             StoryPublishLearningBriefRequest {
                 audience: StoryPublishLearningAudience::Member,
                 deck_id: "homepage.story.v1".to_string(),
-                artifact_ids: vec![source.id, publish.package_artifact.id],
+                artifact_ids: vec![
+                    source.id,
+                    publish.package_artifact.id,
+                    "internal-missing-artifact-id".to_string(),
+                ],
             },
         )
         .unwrap();
@@ -854,6 +871,8 @@ mod tests {
         assert!(!encoded.contains("approval:owner_1"));
         assert!(!encoded.contains("business_outcome:outcome_trial_1"));
         assert!(!encoded.contains("reward_event:reward_event_referral_1"));
+        assert!(!encoded.contains("story.homepage_publish_approval_package"));
+        assert!(!encoded.contains("internal-missing-artifact-id"));
         assert!(!encoded.contains("provider internal"));
         assert!(!encoded.contains("prompt internal"));
         assert!(!encoded.contains("private artifact text"));

@@ -11,6 +11,11 @@ import type {
   StudioProductionReviewPacket,
   StudioPublicationsSnapshot,
 } from "@/lib/studio-publications";
+import type {
+  StoryFounderIntakePacket,
+  StudioStoryIntakeRequest,
+  StudioStoryIntakeSnapshot,
+} from "@/lib/studio-story-intake";
 
 export type {
   GrowthPilotEvidenceRef,
@@ -665,6 +670,38 @@ async function readEndpoint<T>(baseUrl: string, path: string): Promise<{ data: T
   }
 }
 
+async function postEndpoint<T>(
+  baseUrl: string,
+  path: string,
+  body: unknown,
+): Promise<{ data: T | null; error: string | null }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DAEMON_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`${path} responded with ${response.status}`);
+    }
+
+    return { data: (await response.json()) as T, error: null };
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? `${path}: ${error.message}` : `${path}: unavailable`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function getBackupRestoreSnapshot(): Promise<BackupRestoreSnapshot> {
   const baseUrl = daemonUrl();
   const createdAt = new Date().toISOString();
@@ -791,6 +828,44 @@ export async function getStudioPublicationsSnapshot(
     review: reviewResult.data,
     learning: learningResult.data,
     degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
+  };
+}
+
+export async function getStudioStoryIntakeSnapshot(
+  viewer: StudioWorkViewer,
+  request: StudioStoryIntakeRequest | null,
+): Promise<StudioStoryIntakeSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  if (!request) {
+    return {
+      daemonUrl: baseUrl,
+      createdAt,
+      viewer,
+      request: null,
+      packet: null,
+      degradedReason: null,
+      emptyReason: "No Story founder intake has been submitted from this workbench yet.",
+    };
+  }
+
+  const result = await postEndpoint<StoryFounderIntakePacket>(baseUrl, "/studio/story-founder-intake", {
+    intakeId: request.intakeId,
+    founderStory: request.founderStory,
+    businessStance: request.businessStance,
+    audience: request.audience,
+    evidenceRefs: request.evidenceRefs,
+    source: "studio_story_intake_workbench",
+  });
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    viewer,
+    request,
+    packet: result.data,
+    degradedReason: result.error,
+    emptyReason: null,
   };
 }
 

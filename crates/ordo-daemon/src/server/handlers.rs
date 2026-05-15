@@ -137,6 +137,10 @@ use crate::rewards::{
 };
 use crate::scheduler::{read_scheduler_operations, SchedulerOperationsResponse};
 use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
+use crate::story_production_review::{
+    story_production_review_packet, StoryProductionReviewAudience, StoryProductionReviewPacket,
+    StoryProductionReviewPacketRequest,
+};
 use crate::studio_promos::{
     create_promo_video_package, review_promo_video_package, PromoVideoPackageRequest,
     PromoVideoPackageResponse, PromoVideoPackageReviewRequest, PromoVideoPackageReviewResponse,
@@ -1684,6 +1688,73 @@ pub(crate) async fn surface_work_items_handler(
         .map_err(internal_error)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoryProductionReviewQuery {
+    #[serde(default)]
+    audience: Option<StoryProductionReviewAudience>,
+    #[serde(default, alias = "artifact_ids")]
+    artifact_ids: Option<String>,
+    #[serde(default, alias = "artifactId", alias = "artifact_id")]
+    artifact_id: Option<String>,
+    #[serde(default, alias = "deck_id")]
+    deck_id: Option<String>,
+}
+
+impl StoryProductionReviewQuery {
+    fn into_request(self) -> StoryProductionReviewPacketRequest {
+        let mut artifact_ids = Vec::new();
+        if let Some(artifact_id) = self.artifact_id {
+            push_artifact_ids(&mut artifact_ids, &artifact_id);
+        }
+        if let Some(artifact_ids_value) = self.artifact_ids {
+            push_artifact_ids(&mut artifact_ids, &artifact_ids_value);
+        }
+        artifact_ids.sort();
+        artifact_ids.dedup();
+
+        StoryProductionReviewPacketRequest {
+            audience: self
+                .audience
+                .unwrap_or(StoryProductionReviewAudience::Staff),
+            artifact_ids,
+            deck_id: self.deck_id,
+        }
+    }
+}
+
+fn push_artifact_ids(artifact_ids: &mut Vec<String>, value: &str) {
+    artifact_ids.extend(
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string),
+    );
+}
+
+pub(crate) async fn studio_story_production_review_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<StoryProductionReviewQuery>,
+) -> Result<Json<StoryProductionReviewPacket>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-production-review"),
+        Some("studio.story.production_review.read"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    story_production_review_packet(&connection, query.into_request())
+        .map(Json)
+        .map_err(internal_error)
+}
+
 pub(crate) async fn studio_promo_video_package_create_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -2847,6 +2918,7 @@ pub(crate) async fn send_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artifacts::{record_artifact, ArtifactInput};
     use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
     use crate::schema::init_database;
     use std::collections::BTreeSet;
@@ -3950,6 +4022,184 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn story_production_review_route_uses_protected_access_boundary() {
+        let contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/studio/story-production-review")
+            .expect("story production review route contract");
+        assert_eq!(contract.sample_route, "/studio/story-production-review");
+        assert!(matches!(
+            contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Inspect,
+                capability_id: "studio.story.production_review.read",
+            }
+        ));
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-production-review"),
+            Some("studio.story.production_review.read"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-production-review"),
+            Some("studio.story.production_review.read"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'studio.story.production_review.read'
+                   AND resource_id = '/studio/story-production-review'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn story_production_review_query_maps_to_packet_request() {
+        let request = StoryProductionReviewQuery {
+            audience: Some(StoryProductionReviewAudience::Owner),
+            artifact_ids: Some("artifact_b, artifact_a, artifact_b".to_string()),
+            artifact_id: Some("artifact_c".to_string()),
+            deck_id: Some("homepage.story.v1".to_string()),
+        }
+        .into_request();
+
+        assert_eq!(request.audience, StoryProductionReviewAudience::Owner);
+        assert_eq!(
+            request.artifact_ids,
+            vec![
+                "artifact_a".to_string(),
+                "artifact_b".to_string(),
+                "artifact_c".to_string()
+            ]
+        );
+        assert_eq!(request.deck_id, Some("homepage.story.v1".to_string()));
+
+        let default_request = StoryProductionReviewQuery {
+            audience: None,
+            artifact_ids: None,
+            artifact_id: None,
+            deck_id: None,
+        }
+        .into_request();
+
+        assert_eq!(
+            default_request.audience,
+            StoryProductionReviewAudience::Staff
+        );
+        assert!(default_request.artifact_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn story_production_review_handler_returns_packet_without_mutation() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let (artifact, _) = record_artifact(
+            &connection,
+            ArtifactInput {
+                artifact_kind: "story.narrative_deck".to_string(),
+                title: "Founder Story Deck".to_string(),
+                status: "ready".to_string(),
+                visibility_ceiling: "staff".to_string(),
+                summary: "Evidence-backed founder story deck.".to_string(),
+                source_kind: Some("story_pack".to_string()),
+                source_id: Some("story_pack_homepage".to_string()),
+                evidence_refs: vec!["workflow:story_homepage".to_string()],
+                provenance: json!({"generatedBy": "story_pack.test", "contract": {"deckId": "homepage.story.v1"}}),
+                content_hash: "sha256:story-production-review-handler".to_string(),
+                storage_uri: Some("ordo://artifact/story-production-review-handler".to_string()),
+                health_status: Some("available".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap();
+        let artifact_count_before = table_count(&connection, "artifacts");
+        let memory_count_before = table_count(&connection, "generated_content_memory_candidates");
+        drop(connection);
+
+        let (event_sender, _) = broadcast::channel(8);
+        let (conversation_sender, _) = broadcast::channel(8);
+        let state = AppState {
+            db_path: Arc::new(db_path),
+            event_sender,
+            conversation_sender,
+            next_supervisor_status: None,
+            access_policy: DaemonAccessPolicy::new(None),
+        };
+
+        let response = studio_story_production_review_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state),
+            Query(StoryProductionReviewQuery {
+                audience: Some(StoryProductionReviewAudience::Owner),
+                artifact_ids: Some(artifact.id.clone()),
+                artifact_id: None,
+                deck_id: None,
+            }),
+        )
+        .await
+        .expect("loopback protected route returns Story production review packet");
+        let packet = response.0;
+
+        assert_eq!(packet.audience, "owner");
+        assert_eq!(packet.read_only, true);
+        assert_eq!(packet.mutation_performed, false);
+        assert_eq!(packet.confirmed_graph_promotion, false);
+        assert_eq!(packet.live_provider_called, false);
+        assert_eq!(packet.external_publishing_claimed, false);
+        assert_eq!(packet.deck_id, Some("homepage.story.v1".to_string()));
+        assert!(packet
+            .components
+            .iter()
+            .any(|component| component.artifact_ref == Some(format!("artifact:{}", artifact.id))));
+
+        let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
+        assert_eq!(table_count(&connection, "artifacts"), artifact_count_before);
+        assert_eq!(
+            table_count(&connection, "generated_content_memory_candidates"),
+            memory_count_before
+        );
+    }
+
+    fn packet_db_path(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {
+        temp_dir.path().join("local.db")
+    }
+
+    fn table_count(connection: &rusqlite::Connection, table: &str) -> i64 {
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
     }
 
     #[test]

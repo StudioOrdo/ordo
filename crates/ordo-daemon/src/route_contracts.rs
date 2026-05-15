@@ -508,6 +508,13 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
         "surface.work_items.list",
     ),
     protected(
+        HttpMethod::Get,
+        "/studio/story-production-review",
+        "/studio/story-production-review",
+        PolicyAction::Inspect,
+        "studio.story.production_review.read",
+    ),
+    protected(
         HttpMethod::Post,
         "/studio/promo-video-packages",
         "/studio/promo-video-packages",

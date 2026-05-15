@@ -63,6 +63,7 @@ pub mod story_image_artifacts;
 pub mod story_intake_artifacts;
 pub mod story_production_review;
 pub mod story_publish_approvals;
+pub mod story_publish_learning;
 pub mod surface_briefs;
 pub mod surface_object_timeline;
 pub mod surface_work_items;

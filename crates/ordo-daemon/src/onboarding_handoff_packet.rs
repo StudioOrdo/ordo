@@ -210,6 +210,7 @@ pub fn prepare_first_user_onboarding_handoff_packet(
     request: FirstUserOnboardingHandoffPacketRequest,
 ) -> Result<FirstUserOnboardingHandoffPacket> {
     let connection = Connection::open(db_path)?;
+    let can_view_staff_context = request.viewer.can_view_staff_context();
     let handoff = request
         .handoff_item_id
         .as_deref()
@@ -247,9 +248,14 @@ pub fn prepare_first_user_onboarding_handoff_packet(
         .transpose()?
         .flatten();
     let product_request = find_product_request(&connection, &handoff, &conversation, &visitor)?;
-    let trial = build_trial_hint(&connection, visitor.as_ref(), tracked_entry.as_ref())?;
-    let referral = build_referral_hint(&connection, visitor.as_ref())?;
-    let reward = build_reward_hint(&connection, visitor.as_ref(), &referral, &trial)?;
+    let mut trial = build_trial_hint(&connection, visitor.as_ref(), tracked_entry.as_ref())?;
+    let mut referral = build_referral_hint(&connection, visitor.as_ref())?;
+    let mut reward = build_reward_hint(&connection, visitor.as_ref(), &referral, &trial)?;
+    if !can_view_staff_context {
+        trial.evidence_refs.clear();
+        referral.evidence_refs.clear();
+        reward.evidence_refs.clear();
+    }
 
     let mut evidence_refs = BTreeSet::new();
     if let Some(visitor) = &visitor {
@@ -299,8 +305,13 @@ pub fn prepare_first_user_onboarding_handoff_packet(
         .into_iter()
         .filter(|reference| allowed_packet_evidence_ref(reference, request.viewer))
         .collect::<Vec<_>>();
-    let member_status = member_status_for(state, &handoff, &trial, &evidence_refs);
-    let staff_context = request.viewer.can_view_staff_context().then(|| {
+    let member_status_evidence_refs = if can_view_staff_context {
+        evidence_refs.as_slice()
+    } else {
+        &[]
+    };
+    let member_status = member_status_for(state, &handoff, &trial, member_status_evidence_refs);
+    let staff_context = can_view_staff_context.then(|| {
         staff_context_for(
             state,
             visitor.as_ref(),
@@ -326,11 +337,27 @@ pub fn prepare_first_user_onboarding_handoff_packet(
         visibility: request.viewer.visibility_label().to_string(),
         member_status,
         staff_context,
-        visitor: visitor.map(VisitorRecord::into_context),
-        tracked_entry: tracked_entry.map(EntryPointRecord::into_context),
-        handoff: handoff_context,
-        conversation: conversation.map(ConversationRecord::into_context),
-        product_request: if request.viewer.can_view_staff_context() {
+        visitor: if can_view_staff_context {
+            visitor.map(VisitorRecord::into_context)
+        } else {
+            None
+        },
+        tracked_entry: if can_view_staff_context {
+            tracked_entry.map(EntryPointRecord::into_context)
+        } else {
+            None
+        },
+        handoff: if can_view_staff_context {
+            handoff_context
+        } else {
+            None
+        },
+        conversation: if can_view_staff_context {
+            conversation.map(ConversationRecord::into_context)
+        } else {
+            None
+        },
+        product_request: if can_view_staff_context {
             product_request.map(ProductRequestRecord::into_context)
         } else {
             None
@@ -338,8 +365,16 @@ pub fn prepare_first_user_onboarding_handoff_packet(
         trial,
         referral,
         reward,
-        evidence_refs,
-        missing,
+        evidence_refs: if can_view_staff_context {
+            evidence_refs
+        } else {
+            Vec::new()
+        },
+        missing: if can_view_staff_context {
+            missing
+        } else {
+            Vec::new()
+        },
         limitations: vec![
             "Packet generation is read-only and does not grant access, rewards, or trial authority."
                 .to_string(),
@@ -1224,8 +1259,13 @@ mod tests {
         let serialized = serde_json::to_string(&packet).unwrap();
 
         assert!(packet.staff_context.is_none());
+        assert!(packet.visitor.is_none());
+        assert!(packet.tracked_entry.is_none());
+        assert!(packet.handoff.is_none());
+        assert!(packet.conversation.is_none());
         assert!(packet.product_request.is_none());
-        assert!(packet.handoff.as_ref().unwrap().requested_action.is_none());
+        assert!(packet.evidence_refs.is_empty());
+        assert!(packet.missing.is_empty());
         for forbidden in [
             "private_note",
             "route to staff",
@@ -1235,6 +1275,11 @@ mod tests {
             "memberActorId",
             "rawPrompt",
             "owner-only",
+            "product_request_spine",
+            "handoff_item",
+            "conversation_1",
+            "visitor_session_1",
+            "entry_story",
         ] {
             assert!(
                 !serialized.contains(forbidden),

@@ -88,7 +88,8 @@ pub struct GeneratedContentMemoryItemInput {
     pub rejection_evidence_refs: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GeneratedContentMemoryDecisionInput {
     pub decision: GeneratedContentMemoryState,
     pub reason: String,

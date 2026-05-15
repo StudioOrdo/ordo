@@ -211,6 +211,14 @@ pub async fn serve(
             get(studio_story_publish_learning_handler),
         )
         .route(
+            "/studio/generated-content-memory/:artifact_id/review",
+            get(generated_content_memory_review_handler),
+        )
+        .route(
+            "/studio/generated-content-memory/candidates/:candidate_id/decision",
+            post(generated_content_memory_decision_handler),
+        )
+        .route(
             "/studio/promo-video-packages",
             post(studio_promo_video_package_create_handler),
         )

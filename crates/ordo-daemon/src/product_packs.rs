@@ -476,6 +476,7 @@ pub fn story_pack_manifest() -> ProductPackManifest {
                 "story.generated_image_candidate",
             ),
             artifact_contract("image_review", "story.image_review"),
+            artifact_contract("public_image_derivative", "story.public_image_derivative"),
             artifact_contract(
                 "homepage_publish_approval_package",
                 "story.homepage_publish_approval_package",
@@ -507,10 +508,34 @@ pub fn story_pack_manifest() -> ProductPackManifest {
             llm_method_binding("pack_inspect_manifest", "pack.inspect_manifest"),
             llm_method_binding("workflow_resolve_variables", "workflow.resolveVariables"),
             llm_method_binding(
+                "homepage_create_narrative_deck",
+                "homepage.createNarrativeDeck",
+            ),
+            llm_method_binding(
                 "homepage_prepare_image_briefs",
                 "homepage.prepare_image_briefs",
             ),
+            llm_method_binding("story_create_image_briefs", "story.createImageBriefs"),
+            llm_method_binding("image_generate_variants", "image.generateVariants"),
             llm_method_binding("image_review_against_brief", "image.reviewAgainstBrief"),
+            llm_method_binding(
+                "artifact_prepare_public_derivative",
+                "artifact.preparePublicDerivative",
+            ),
+            llm_method_binding(
+                "homepage_compile_scrollytelling_draft",
+                "homepage.compileScrollytellingDraft",
+            ),
+            llm_method_binding("publish_request_approval", "publish.requestApproval"),
+            llm_method_binding(
+                "analytics_record_content_event",
+                "analytics.recordContentEvent",
+            ),
+            llm_method_binding(
+                "memory_propose_candidate_claims",
+                "memory.proposeCandidateClaims",
+            ),
+            llm_method_binding("memory_prepare_review_packet", "memory.prepareReviewPacket"),
             llm_method_binding("claim_validate_public_claim", "claim.validate_public_claim"),
             llm_method_binding(
                 "graph_get_resource_neighborhood",
@@ -1649,7 +1674,10 @@ mod tests {
             installed.pack.validation["projectionSurfaceCount"],
             json!(4)
         );
-        assert_eq!(installed.pack.validation["llmMethodBindingCount"], json!(6));
+        assert_eq!(
+            installed.pack.validation["llmMethodBindingCount"],
+            json!(15)
+        );
         assert_eq!(
             installed.pack.manifest["metadata"]["workflowDeclaresOnly"],
             json!(true)
@@ -1672,6 +1700,10 @@ mod tests {
         }));
         assert!(installed.pack.bindings.iter().any(|binding| {
             binding.binding_kind == "artifact_contract"
+                && binding.artifact_kind.as_deref() == Some("story.public_image_derivative")
+        }));
+        assert!(installed.pack.bindings.iter().any(|binding| {
+            binding.binding_kind == "artifact_contract"
                 && binding.artifact_kind.as_deref()
                     == Some("story.homepage_publish_approval_package")
         }));
@@ -1679,6 +1711,25 @@ mod tests {
             binding.binding_kind == "llm_method"
                 && binding.artifact_kind.as_deref() == Some("homepage.prepare_image_briefs")
         }));
+        for method in [
+            "homepage.createNarrativeDeck",
+            "story.createImageBriefs",
+            "image.generateVariants",
+            "image.reviewAgainstBrief",
+            "artifact.preparePublicDerivative",
+            "homepage.compileScrollytellingDraft",
+            "analytics.recordContentEvent",
+            "memory.proposeCandidateClaims",
+            "memory.prepareReviewPacket",
+        ] {
+            assert!(
+                installed.pack.bindings.iter().any(|binding| {
+                    binding.binding_kind == "llm_method"
+                        && binding.artifact_kind.as_deref() == Some(method)
+                }),
+                "missing Story Pack method binding {method}"
+            );
+        }
         assert!(installed.pack.bindings.iter().any(|binding| {
             binding.binding_kind == "projection_surface"
                 && binding.artifact_kind.as_deref() == Some("public.homepage_story")

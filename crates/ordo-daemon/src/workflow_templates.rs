@@ -1379,6 +1379,100 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
                 sensitive_action: None,
             },
             WorkflowTaskBinding {
+                key: "section.image_generate".to_string(),
+                method: "image.generateVariants".to_string(),
+                input: json!({
+                    "section": { "$fanoutItem": "value" },
+                    "briefArtifactRef": {
+                        "$taskOutput": "section.image_brief",
+                        "artifactKind": "story.image_brief"
+                    },
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" },
+                    "limitations": { "$var": "storyLimitations" }
+                }),
+                retry_policy: json!({ "maxAttempts": 2 }),
+                depends_on: vec!["section.image_brief".to_string()],
+                visibility: "staff".to_string(),
+                fanout: Some("section".to_string()),
+                provider_requirement: Some("image.mock".to_string()),
+                output_artifact_kind: Some("story.image_provider_request_envelope".to_string()),
+                sensitive_action: None,
+            },
+            WorkflowTaskBinding {
+                key: "section.image_review".to_string(),
+                method: "image.reviewAgainstBrief".to_string(),
+                input: json!({
+                    "section": { "$fanoutItem": "value" },
+                    "candidateArtifactRef": {
+                        "$taskOutput": "section.image_generate",
+                        "artifactKind": "story.generated_image_candidate"
+                    },
+                    "briefArtifactRef": {
+                        "$taskOutput": "section.image_brief",
+                        "artifactKind": "story.image_brief"
+                    },
+                    "fixtureRef": "fixture:image.reviewAgainstBrief:approved",
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" }
+                }),
+                retry_policy: json!({ "maxAttempts": 1 }),
+                depends_on: vec!["section.image_generate".to_string()],
+                visibility: "staff".to_string(),
+                fanout: Some("section".to_string()),
+                provider_requirement: Some("image.review.mock".to_string()),
+                output_artifact_kind: Some("story.image_review".to_string()),
+                sensitive_action: None,
+            },
+            WorkflowTaskBinding {
+                key: "section.public_derivative".to_string(),
+                method: "artifact.preparePublicDerivative".to_string(),
+                input: json!({
+                    "section": { "$fanoutItem": "value" },
+                    "candidateArtifactRef": {
+                        "$taskOutput": "section.image_generate",
+                        "artifactKind": "story.generated_image_candidate"
+                    },
+                    "reviewArtifactRef": {
+                        "$taskOutput": "section.image_review",
+                        "artifactKind": "story.image_review"
+                    },
+                    "visibility": "public_derivative",
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" }
+                }),
+                retry_policy: json!({ "maxAttempts": 1 }),
+                depends_on: vec!["section.image_review".to_string()],
+                visibility: "staff".to_string(),
+                fanout: Some("section".to_string()),
+                provider_requirement: None,
+                output_artifact_kind: Some("story.public_image_derivative".to_string()),
+                sensitive_action: None,
+            },
+            WorkflowTaskBinding {
+                key: "homepage.compile_draft".to_string(),
+                method: "homepage.compileScrollytellingDraft".to_string(),
+                input: json!({
+                    "deckArtifactRef": {
+                        "$taskOutput": "deck.create",
+                        "artifactKind": "story.narrative_deck"
+                    },
+                    "sectionDerivativeRefs": {
+                        "$taskOutput": "section.public_derivative",
+                        "artifactKind": "story.public_image_derivative"
+                    },
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" },
+                    "limitations": { "$var": "storyLimitations" }
+                }),
+                retry_policy: json!({ "maxAttempts": 1 }),
+                depends_on: vec![
+                    "deck.create".to_string(),
+                    "section.public_derivative".to_string(),
+                ],
+                visibility: "staff".to_string(),
+                fanout: None,
+                provider_requirement: None,
+                output_artifact_kind: Some("story.homepage_version".to_string()),
+                sensitive_action: None,
+            },
+            WorkflowTaskBinding {
                 key: "publish.approval".to_string(),
                 method: "publish.requestApproval".to_string(),
                 input: json!({
@@ -1388,12 +1482,95 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
                     "readinessMissing": { "$var": "readinessMissing" }
                 }),
                 retry_policy: json!({ "maxAttempts": 1 }),
-                depends_on: vec!["section.image_brief".to_string()],
+                depends_on: vec![
+                    "homepage.compile_draft".to_string(),
+                    "section.public_derivative".to_string(),
+                ],
                 visibility: "staff".to_string(),
                 fanout: None,
                 provider_requirement: None,
-                output_artifact_kind: Some("approval_request".to_string()),
+                output_artifact_kind: Some("story.homepage_publish_approval_package".to_string()),
                 sensitive_action: Some("publish".to_string()),
+            },
+            WorkflowTaskBinding {
+                key: "analytics.record_publish".to_string(),
+                method: "analytics.recordContentEvent".to_string(),
+                input: json!({
+                    "contentRef": {
+                        "$taskOutput": "publish.approval",
+                        "artifactKind": "story.homepage_publish_approval_package"
+                    },
+                    "eventKind": "published",
+                    "surface": "public.homepage_story",
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" },
+                    "limitations": [
+                        "external_analytics_missing",
+                        "manual_local_publish_evidence_required"
+                    ]
+                }),
+                retry_policy: json!({ "maxAttempts": 1 }),
+                depends_on: vec!["publish.approval".to_string()],
+                visibility: "staff".to_string(),
+                fanout: None,
+                provider_requirement: None,
+                output_artifact_kind: None,
+                sensitive_action: None,
+            },
+            WorkflowTaskBinding {
+                key: "memory.propose_candidates".to_string(),
+                method: "memory.proposeCandidateClaims".to_string(),
+                input: json!({
+                    "sourceArtifactRefs": [
+                        {
+                            "$taskOutput": "homepage.compile_draft",
+                            "artifactKind": "story.homepage_version"
+                        },
+                        {
+                            "$taskOutput": "publish.approval",
+                            "artifactKind": "story.homepage_publish_approval_package"
+                        }
+                    ],
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" },
+                    "limitations": { "$var": "storyLimitations" },
+                    "memoryEffect": "candidate_only"
+                }),
+                retry_policy: json!({ "maxAttempts": 1 }),
+                depends_on: vec![
+                    "homepage.compile_draft".to_string(),
+                    "publish.approval".to_string(),
+                    "analytics.record_publish".to_string(),
+                ],
+                visibility: "staff".to_string(),
+                fanout: None,
+                provider_requirement: None,
+                output_artifact_kind: None,
+                sensitive_action: None,
+            },
+            WorkflowTaskBinding {
+                key: "memory.review_packet".to_string(),
+                method: "memory.prepareReviewPacket".to_string(),
+                input: json!({
+                    "sourceArtifactRefs": [
+                        {
+                            "$taskOutput": "homepage.compile_draft",
+                            "artifactKind": "story.homepage_version"
+                        },
+                        {
+                            "$taskOutput": "publish.approval",
+                            "artifactKind": "story.homepage_publish_approval_package"
+                        }
+                    ],
+                    "audience": "staff",
+                    "evidenceRefs": { "$var": "storyEvidenceRefs" },
+                    "memoryPromotionAllowed": false
+                }),
+                retry_policy: json!({ "maxAttempts": 1 }),
+                depends_on: vec!["memory.propose_candidates".to_string()],
+                visibility: "staff".to_string(),
+                fanout: None,
+                provider_requirement: None,
+                output_artifact_kind: None,
+                sensitive_action: None,
             },
         ],
         approval_gates: vec![WorkflowApprovalGate {
@@ -1401,15 +1578,35 @@ fn story_scrollytelling_homepage_template() -> WorkflowTemplateDefinition {
             action: "publish".to_string(),
             required: true,
         }],
-        provider_requirements: vec![mock_provider("llm.mock", "homepage.createNarrativeDeck")],
-        deterministic_mocks: vec![WorkflowDeterministicMock {
-            key: "llm.mock".to_string(),
-            capability: "homepage.createNarrativeDeck".to_string(),
-            fixture_ref: "fixtures/story/scrollytelling-homepage.json".to_string(),
-        }],
+        provider_requirements: vec![
+            mock_provider("llm.mock", "homepage.createNarrativeDeck"),
+            mock_provider("image.mock", "image.generateVariants"),
+            mock_provider("image.review.mock", "image.reviewAgainstBrief"),
+        ],
+        deterministic_mocks: vec![
+            WorkflowDeterministicMock {
+                key: "llm.mock".to_string(),
+                capability: "homepage.createNarrativeDeck".to_string(),
+                fixture_ref: "fixtures/story/scrollytelling-homepage.json".to_string(),
+            },
+            WorkflowDeterministicMock {
+                key: "image.mock".to_string(),
+                capability: "image.generateVariants".to_string(),
+                fixture_ref: "fixtures/story/homepage-image-generation.json".to_string(),
+            },
+            WorkflowDeterministicMock {
+                key: "image.review.mock".to_string(),
+                capability: "image.reviewAgainstBrief".to_string(),
+                fixture_ref: "fixtures/story/homepage-image-review.json".to_string(),
+            },
+        ],
         audit_events: vec![
             "workflow.template.compiled".to_string(),
+            "artifact.created".to_string(),
+            "image.review.recorded".to_string(),
             "approval.requested".to_string(),
+            "content_analytics.event_recorded".to_string(),
+            "generated_content_memory.candidate_proposed".to_string(),
         ],
     }
 }
@@ -1628,15 +1825,65 @@ mod tests {
         );
 
         let expanded_tasks = compilation.safe_compiled_plan["tasks"].as_array().unwrap();
-        assert_eq!(expanded_tasks.len(), 5);
+        assert_eq!(expanded_tasks.len(), 18);
+        for method in [
+            "homepage.createNarrativeDeck",
+            "story.createImageBriefs",
+            "image.generateVariants",
+            "image.reviewAgainstBrief",
+            "artifact.preparePublicDerivative",
+            "homepage.compileScrollytellingDraft",
+            "publish.requestApproval",
+            "analytics.recordContentEvent",
+            "memory.proposeCandidateClaims",
+            "memory.prepareReviewPacket",
+        ] {
+            assert!(
+                expanded_tasks.iter().any(|task| task["method"] == method),
+                "missing task method {method}: {expanded_tasks:?}"
+            );
+        }
         assert!(expanded_tasks.iter().any(|task| task["key"]
             .as_str()
             .unwrap()
             .starts_with("section.image_brief[item-0-")));
+        assert!(expanded_tasks.iter().any(|task| task["key"]
+            .as_str()
+            .unwrap()
+            .starts_with("section.image_review[item-0-")));
         assert!(expanded_tasks
             .iter()
             .filter_map(|task| task["input"]["section"]["privateValueHash"].as_str())
             .any(|hash| hash.starts_with("sha256:")));
+
+        let publish_task = expanded_tasks
+            .iter()
+            .find(|task| task["method"] == "publish.requestApproval")
+            .unwrap();
+        assert_eq!(
+            publish_task["dependsOn"],
+            json!(["homepage.compile_draft", "section.public_derivative"])
+        );
+        let analytics_task = expanded_tasks
+            .iter()
+            .find(|task| task["method"] == "analytics.recordContentEvent")
+            .unwrap();
+        assert_eq!(analytics_task["dependsOn"], json!(["publish.approval"]));
+        let memory_review_task = expanded_tasks
+            .iter()
+            .find(|task| task["method"] == "memory.prepareReviewPacket")
+            .unwrap();
+        assert_eq!(
+            memory_review_task["dependsOn"],
+            json!(["memory.propose_candidates"])
+        );
+        assert_eq!(
+            compilation.safe_compiled_plan["providerRequirements"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -1670,6 +1917,26 @@ mod tests {
             compilation.safe_compiled_plan["providerRequirements"][0]["mode"],
             "deterministic_mock"
         );
+        let task_methods = compilation.safe_compiled_plan["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|task| task["method"].as_str().unwrap().to_string())
+            .collect::<BTreeSet<_>>();
+        for method in [
+            "homepage.createNarrativeDeck",
+            "story.createImageBriefs",
+            "image.generateVariants",
+            "image.reviewAgainstBrief",
+            "artifact.preparePublicDerivative",
+            "homepage.compileScrollytellingDraft",
+            "publish.requestApproval",
+            "analytics.recordContentEvent",
+            "memory.proposeCandidateClaims",
+            "memory.prepareReviewPacket",
+        ] {
+            assert!(task_methods.contains(method));
+        }
         assert_eq!(
             compilation.safe_compiled_plan["approvalGates"][0]["action"],
             "publish"

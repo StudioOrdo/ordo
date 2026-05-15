@@ -194,6 +194,24 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
     return jsonResponse(response, storyLearningFixture());
   }
 
+  if (method === "GET" && path.startsWith("/studio/generated-content-memory/")) {
+    return jsonResponse(response, {
+      schemaVersion: "ordo.generated_content_memory_review_packet.v1",
+      artifactId: path.split("/studio/generated-content-memory/")[1]?.split("/review")[0] ?? "unknown",
+      sourceArtifactKind: "story_publication_artifact",
+      audience: "staff",
+      candidateCount: 0,
+      sourceArtifactRefs: [],
+      workflowRefs: [],
+      evidenceRefs: [],
+      limitations: ["no_generated_content_memory_candidates"],
+      items: [],
+      extensionPoints: ["manual_owner_review"],
+      confirmedGraphPromotion: false,
+      liveProviderCalled: false,
+    });
+  }
+
   response.writeHead(404, { "content-type": "application/json" });
   response.end(JSON.stringify({ error: `Unhandled mock daemon route: ${method} ${path}` }));
 }

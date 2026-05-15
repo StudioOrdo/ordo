@@ -67,6 +67,10 @@ pub async fn serve(
         .route("/public/asks", get(public_asks_handler))
         .route("/public/feed", get(public_feed_handler))
         .route("/public/homepage-story", get(public_homepage_story_handler))
+        .route(
+            "/public/story-analytics",
+            post(public_story_analytics_handler),
+        )
         .route("/entry-points", get(entry_points_handler))
         .route("/entry-points", post(entry_point_create_handler))
         .route(

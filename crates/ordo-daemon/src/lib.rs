@@ -42,6 +42,7 @@ pub mod local_sessions;
 pub mod markdown_artifacts;
 pub mod mcp;
 pub mod mcp_packs;
+pub mod onboarding_handoff_packet;
 pub mod offers;
 pub mod policy;
 pub mod policy_audit;

@@ -777,6 +777,8 @@ fn story_image_review_contract(
     let candidate =
         require_generated_image_candidate_artifact(connection, &input.candidate_artifact_id)?;
     let brief_artifact = require_story_image_brief_artifact(connection, &input.brief_artifact_id)?;
+    let _brief_contract = story_image_brief_contract_from_artifact(&brief_artifact)
+        .map_err(|_| anyhow::anyhow!("image review source brief is missing provider contract"))?;
     ensure!(
         candidate.contract.brief_artifact_id == brief_artifact.id,
         "image review source brief must match generated candidate brief"
@@ -2075,6 +2077,66 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("private or unsupported markers"));
+    }
+
+    #[test]
+    fn image_review_rejects_malformed_source_brief_contract() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let (_brief, mut candidate) =
+            generated_candidate(&connection, "hero-image-review-malformed-brief");
+        let (malformed_brief, _) = record_artifact(
+            &connection,
+            ArtifactInput {
+                artifact_kind: STORY_IMAGE_BRIEF_ARTIFACT_KIND.to_string(),
+                title: "Malformed image brief".to_string(),
+                status: "draft".to_string(),
+                visibility_ceiling: "staff".to_string(),
+                summary: "Missing provider contract.".to_string(),
+                source_kind: Some("homepage_story_slide".to_string()),
+                source_id: Some("malformed".to_string()),
+                evidence_refs: vec!["business_fact:homepage".to_string()],
+                provenance: json!({"schemaVersion": CONTRACT_SCHEMA_VERSION}),
+                content_hash: "sha256:malformed-brief".to_string(),
+                storage_uri: None,
+                health_status: Some("contract_only".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap();
+        candidate.contract.brief_artifact_id = malformed_brief.id.clone();
+        connection
+            .execute(
+                "UPDATE artifacts
+                 SET provenance_json = json_set(provenance_json, '$.contract', json(?2))
+                 WHERE id = ?1",
+                params![
+                    candidate.artifact.id,
+                    serde_json::to_string(&candidate.contract).unwrap()
+                ],
+            )
+            .unwrap();
+
+        let review = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id,
+                brief_artifact_id: malformed_brief.id,
+                idempotency_key: "malformed-brief-review".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Approved,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec![],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        );
+
+        assert!(review
+            .unwrap_err()
+            .to_string()
+            .contains("source brief is missing provider contract"));
     }
 
     #[test]

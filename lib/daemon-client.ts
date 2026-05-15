@@ -16,6 +16,8 @@ import type {
   StudioStoryIntakeRequest,
   StudioStoryIntakeSnapshot,
 } from "@/lib/studio-story-intake";
+import type { HomepageStoryDeckResponse } from "@/lib/scrollytelling-runtime";
+import type { StudioStoryPreviewSnapshot } from "@/lib/studio-story-preview";
 
 export type {
   GrowthPilotEvidenceRef,
@@ -866,6 +868,43 @@ export async function getStudioStoryIntakeSnapshot(
     packet: result.data,
     degradedReason: result.error,
     emptyReason: null,
+  };
+}
+
+export async function getStudioStoryPreviewSnapshot(
+  viewer: StudioWorkViewer,
+  options: { deckId?: string } = {},
+): Promise<StudioStoryPreviewSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const deckId = options.deckId?.trim() || "homepage.story.v1";
+  const params = new URLSearchParams({
+    audience: viewer,
+    deckId,
+  });
+
+  const [deckResult, reviewResult, learningResult] = await Promise.all([
+    readEndpoint<HomepageStoryDeckResponse>(baseUrl, "/public/homepage-story"),
+    readEndpoint<StudioProductionReviewPacket>(
+      baseUrl,
+      `/studio/story-production-review?${params.toString()}`,
+    ),
+    readEndpoint<StoryPublishLearningBrief>(
+      baseUrl,
+      `/studio/story-publish-learning?${params.toString()}`,
+    ),
+  ]);
+  const degradedReasons = [deckResult.error, reviewResult.error, learningResult.error].filter(Boolean);
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    viewer,
+    deckId,
+    deck: deckResult.data,
+    review: reviewResult.data,
+    learning: learningResult.data,
+    degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
   };
 }
 

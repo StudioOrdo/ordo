@@ -133,6 +133,7 @@ export const staffRailItems: readonly ProductNavItem[] = [
 export const studioRailItems: readonly ProductNavItem[] = [
   streamRoomItem("studio", "knowledge", "Knowledge", "/studio/knowledge", "Business truth and source material."),
   streamRoomItem("studio", "story-intake", "Story Intake", "/studio/story-intake", "Founder intake readiness and narrative deck prerequisites."),
+  streamRoomItem("studio", "story-preview", "Story Preview", "/studio/story-preview", "Protected homepage story preview before publication."),
   streamRoomItem("studio", "factory-jobs", "Jobs", "/studio/factory-jobs", "Production work that creates artifacts."),
   streamRoomItem("studio", "artifacts", "Artifacts", "/studio/artifacts", "Briefs, media, reports, and deliverables."),
   streamRoomItem("studio", "publications", "Publications", "/studio/publications", "Where approved artifacts appear."),

@@ -251,7 +251,7 @@ function publicText(value: unknown): string {
 const WITHHELD_PUBLIC_TEXT = "Public-safe content withheld pending review.";
 
 function unsafePublicText(text: string): boolean {
-  const normalized = text.toLowerCase();
+  const normalized = text.toLowerCase().replace(/[_-]+/g, " ");
   return [
     "staff routing",
     "provider internal",
@@ -259,11 +259,13 @@ function unsafePublicText(text: string): boolean {
     "prompt internal",
     "raw policy",
     "policy internal",
-    "owner-only",
+    "owner only",
     "private artifact",
-    "compiled-plan",
+    "compiled plan",
     "compiled plan private",
     "task result private",
+    "task private payload",
+    "generated content candidate",
     "graph certainty",
     "secret:",
     "api key",

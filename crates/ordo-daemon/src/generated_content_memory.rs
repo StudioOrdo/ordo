@@ -442,7 +442,7 @@ fn generated_content_memory_review_item(
 ) -> GeneratedContentMemoryReviewItem {
     let private_audience = audience.can_read_private_memory();
     let body_redacted = !private_audience;
-    let summary_text = if private_audience || candidate.visibility == "public" {
+    let summary_text = if private_audience {
         candidate.summary_text.clone()
     } else {
         "Generated content memory candidate requires authorized review.".to_string()
@@ -1485,6 +1485,7 @@ mod tests {
         let mut approved = claim_item("Owner approved concise homepage positioning.");
         approved.candidate_state = Some(GeneratedContentMemoryState::Approved);
         approved.approval_evidence_refs = vec!["approval:owner_1".to_string()];
+        approved.visibility = "public".to_string();
         approved.body = json!({
             "claim": "Owner approved concise homepage positioning.",
             "privateReviewerNote": "Internal note should not appear in member packet."
@@ -1531,12 +1532,17 @@ mod tests {
         assert!(packet
             .limitations
             .contains(&"member_safe_packet_redacts_candidate_bodies".to_string()));
+        assert_eq!(
+            packet.items[0].summary_text,
+            "Generated content memory candidate requires authorized review."
+        );
         assert_eq!(packet.items[0].body, json!({}));
         assert_eq!(packet.items[0].body_redacted, true);
         assert!(packet.items[0].evidence_refs.iter().all(|reference| {
             reference.starts_with("artifact:") || reference.starts_with("artifact_version:")
         }));
         let encoded = serde_json::to_string(&packet).unwrap();
+        assert!(!encoded.contains("Owner approved concise homepage positioning"));
         assert!(!encoded.contains("Internal note"));
         assert!(!encoded.contains("privateReviewerNote"));
         assert!(!encoded.contains("provider internal"));

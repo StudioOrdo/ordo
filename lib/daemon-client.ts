@@ -6,6 +6,11 @@ import {
   type StudioWorkViewer,
 } from "@/lib/studio-work";
 import type { GrowthPilotReportResponse } from "@/lib/growth-pilot-report";
+import type {
+  StoryPublishLearningBrief,
+  StudioProductionReviewPacket,
+  StudioPublicationsSnapshot,
+} from "@/lib/studio-publications";
 
 export type {
   GrowthPilotEvidenceRef,
@@ -377,6 +382,8 @@ export interface GrowthPilotReportSnapshot {
   degradedReason: string | null;
 }
 
+export type { StoryPublishLearningBrief, StudioProductionReviewPacket, StudioPublicationsSnapshot };
+
 export interface ProviderReadinessSummary {
   configuredProviderMode: string;
   requestedProviderId: string | null;
@@ -742,6 +749,48 @@ export async function getStudioArtifactPatchSnapshot(): Promise<StudioArtifactPa
     createdAt,
     proposals: patchResult.data?.proposals ?? [],
     degradedReason: patchResult.error,
+  };
+}
+
+export async function getStudioPublicationsSnapshot(
+  viewer: StudioWorkViewer,
+  options: { deckId?: string; artifactIds?: string[] } = {},
+): Promise<StudioPublicationsSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const deckId = options.deckId?.trim() || "homepage.story.v1";
+  const artifactIds = [
+    ...new Set((options.artifactIds ?? []).map((id) => id.trim()).filter(Boolean)),
+  ].sort();
+  const params = new URLSearchParams({
+    audience: viewer,
+    deckId,
+  });
+  if (artifactIds.length > 0) {
+    params.set("artifactIds", artifactIds.join(","));
+  }
+
+  const [reviewResult, learningResult] = await Promise.all([
+    readEndpoint<StudioProductionReviewPacket>(
+      baseUrl,
+      `/studio/story-production-review?${params.toString()}`,
+    ),
+    readEndpoint<StoryPublishLearningBrief>(
+      baseUrl,
+      `/studio/story-publish-learning?${params.toString()}`,
+    ),
+  ]);
+  const degradedReasons = [reviewResult.error, learningResult.error].filter(Boolean);
+
+  return {
+    daemonUrl: baseUrl,
+    createdAt,
+    deckId,
+    artifactIds,
+    viewer,
+    review: reviewResult.data,
+    learning: learningResult.data,
+    degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
   };
 }
 

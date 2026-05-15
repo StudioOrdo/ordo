@@ -141,6 +141,10 @@ use crate::story_production_review::{
     story_production_review_packet, StoryProductionReviewAudience, StoryProductionReviewPacket,
     StoryProductionReviewPacketRequest,
 };
+use crate::story_publish_learning::{
+    story_publish_learning_brief, StoryPublishLearningAudience, StoryPublishLearningBrief,
+    StoryPublishLearningBriefRequest,
+};
 use crate::studio_promos::{
     create_promo_video_package, review_promo_video_package, PromoVideoPackageRequest,
     PromoVideoPackageResponse, PromoVideoPackageReviewRequest, PromoVideoPackageReviewResponse,
@@ -1701,6 +1705,19 @@ pub(crate) struct StoryProductionReviewQuery {
     deck_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoryPublishLearningQuery {
+    #[serde(default)]
+    audience: Option<StoryPublishLearningAudience>,
+    #[serde(default, alias = "artifact_ids")]
+    artifact_ids: Option<String>,
+    #[serde(default, alias = "artifactId", alias = "artifact_id")]
+    artifact_id: Option<String>,
+    #[serde(default, alias = "deck_id")]
+    deck_id: Option<String>,
+}
+
 impl StoryProductionReviewQuery {
     fn into_request(self) -> StoryProductionReviewPacketRequest {
         let mut artifact_ids = Vec::new();
@@ -1719,6 +1736,28 @@ impl StoryProductionReviewQuery {
                 .unwrap_or(StoryProductionReviewAudience::Staff),
             artifact_ids,
             deck_id: self.deck_id,
+        }
+    }
+}
+
+impl StoryPublishLearningQuery {
+    fn into_request(self) -> StoryPublishLearningBriefRequest {
+        let mut artifact_ids = Vec::new();
+        if let Some(artifact_id) = self.artifact_id {
+            push_artifact_ids(&mut artifact_ids, &artifact_id);
+        }
+        if let Some(artifact_ids_value) = self.artifact_ids {
+            push_artifact_ids(&mut artifact_ids, &artifact_ids_value);
+        }
+        artifact_ids.sort();
+        artifact_ids.dedup();
+
+        StoryPublishLearningBriefRequest {
+            audience: self.audience.unwrap_or(StoryPublishLearningAudience::Staff),
+            deck_id: self
+                .deck_id
+                .unwrap_or_else(|| "homepage.story.v1".to_string()),
+            artifact_ids,
         }
     }
 }
@@ -1751,6 +1790,28 @@ pub(crate) async fn studio_story_production_review_handler(
     let connection = rusqlite::Connection::open(state.db_path.as_ref())
         .map_err(|error| internal_error(error.into()))?;
     story_production_review_packet(&connection, query.into_request())
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub(crate) async fn studio_story_publish_learning_handler(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<StoryPublishLearningQuery>,
+) -> Result<Json<StoryPublishLearningBrief>, (StatusCode, Json<ErrorResponse>)> {
+    authorize_protected_daemon_route(
+        &state.access_policy,
+        &state.db_path,
+        &headers,
+        remote_addr,
+        PolicyAction::Inspect,
+        ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-publish-learning"),
+        Some("studio.story.publish_learning.read"),
+    )?;
+    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+        .map_err(|error| internal_error(error.into()))?;
+    story_publish_learning_brief(&connection, query.into_request())
         .map(Json)
         .map_err(internal_error)
 }
@@ -2919,8 +2980,10 @@ pub(crate) async fn send_event(
 mod tests {
     use super::*;
     use crate::artifacts::{record_artifact, ArtifactInput};
+    use crate::capabilities::built_in_capabilities;
     use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
     use crate::schema::init_database;
+    use crate::story_publish_approvals::STORY_HOMEPAGE_PUBLISH_APPROVAL_PACKAGE_ARTIFACT_KIND;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
 
@@ -4081,6 +4144,68 @@ mod tests {
     }
 
     #[test]
+    fn story_publish_learning_route_uses_protected_access_boundary() {
+        let contract = DAEMON_ROUTE_CONTRACTS
+            .iter()
+            .find(|contract| contract.pattern == "/studio/story-publish-learning")
+            .expect("story publish learning route contract");
+        assert_eq!(contract.sample_route, "/studio/story-publish-learning");
+        assert!(matches!(
+            contract.protection,
+            RouteProtection::Protected {
+                action: PolicyAction::Inspect,
+                capability_id: "studio.story.publish_learning.read",
+            }
+        ));
+
+        let capability = built_in_capabilities()
+            .into_iter()
+            .find(|capability| capability.id == "studio.story.publish_learning.read")
+            .expect("story publish learning capability");
+        assert_eq!(capability.family, "studio");
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let denied = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("192.168.1.10:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-publish-learning"),
+            Some("studio.story.publish_learning.read"),
+        );
+        assert!(denied.is_err());
+
+        let allowed = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Inspect,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-publish-learning"),
+            Some("studio.story.publish_learning.read"),
+        );
+        assert!(allowed.is_ok());
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let audit_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM policy_decisions
+                 WHERE capability_id = 'studio.story.publish_learning.read'
+                   AND resource_id = '/studio/story-publish-learning'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audit_count, 2);
+    }
+
+    #[test]
     fn story_production_review_query_maps_to_packet_request() {
         let request = StoryProductionReviewQuery {
             audience: Some(StoryProductionReviewAudience::Owner),
@@ -4113,6 +4238,43 @@ mod tests {
             default_request.audience,
             StoryProductionReviewAudience::Staff
         );
+        assert!(default_request.artifact_ids.is_empty());
+    }
+
+    #[test]
+    fn story_publish_learning_query_maps_to_brief_request() {
+        let request = StoryPublishLearningQuery {
+            audience: Some(StoryPublishLearningAudience::Owner),
+            artifact_ids: Some("artifact_b, artifact_a, artifact_b".to_string()),
+            artifact_id: Some("artifact_c".to_string()),
+            deck_id: Some("homepage.story.custom".to_string()),
+        }
+        .into_request();
+
+        assert_eq!(request.audience, StoryPublishLearningAudience::Owner);
+        assert_eq!(request.deck_id, "homepage.story.custom");
+        assert_eq!(
+            request.artifact_ids,
+            vec![
+                "artifact_a".to_string(),
+                "artifact_b".to_string(),
+                "artifact_c".to_string()
+            ]
+        );
+
+        let default_request = StoryPublishLearningQuery {
+            audience: None,
+            artifact_ids: None,
+            artifact_id: None,
+            deck_id: None,
+        }
+        .into_request();
+
+        assert_eq!(
+            default_request.audience,
+            StoryPublishLearningAudience::Staff
+        );
+        assert_eq!(default_request.deck_id, "homepage.story.v1");
         assert!(default_request.artifact_ids.is_empty());
     }
 
@@ -4187,6 +4349,94 @@ mod tests {
         assert_eq!(
             table_count(&connection, "generated_content_memory_candidates"),
             memory_count_before
+        );
+    }
+
+    #[tokio::test]
+    async fn story_publish_learning_handler_returns_brief_without_mutation() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let (artifact, _) = record_artifact(
+            &connection,
+            ArtifactInput {
+                artifact_kind: STORY_HOMEPAGE_PUBLISH_APPROVAL_PACKAGE_ARTIFACT_KIND.to_string(),
+                title: "Story Homepage Publish Package".to_string(),
+                status: "published".to_string(),
+                visibility_ceiling: "staff".to_string(),
+                summary: "Manual publish approval package.".to_string(),
+                source_kind: Some("story_pack".to_string()),
+                source_id: Some("story_pack_homepage".to_string()),
+                evidence_refs: vec!["publish_approval:story_homepage".to_string()],
+                provenance: json!({"contract": {"deckId": "homepage.story.v1", "limitations": ["manual external platform metrics not imported"]}}),
+                content_hash: "sha256:story-publish-learning-handler".to_string(),
+                storage_uri: Some("ordo://artifact/story-publish-learning-handler".to_string()),
+                health_status: Some("available".to_string()),
+                created_by_job_id: None,
+            },
+        )
+        .unwrap();
+        let artifact_count_before = table_count(&connection, "artifacts");
+        let memory_count_before = table_count(&connection, "generated_content_memory_candidates");
+        let analytics_count_before = table_count(&connection, "content_analytics_events");
+        let reward_count_before = table_count(&connection, "reward_events");
+        drop(connection);
+
+        let (event_sender, _) = broadcast::channel(8);
+        let (conversation_sender, _) = broadcast::channel(8);
+        let state = AppState {
+            db_path: Arc::new(db_path),
+            event_sender,
+            conversation_sender,
+            next_supervisor_status: None,
+            access_policy: DaemonAccessPolicy::new(None),
+        };
+
+        let response = studio_story_publish_learning_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state),
+            Query(StoryPublishLearningQuery {
+                audience: Some(StoryPublishLearningAudience::Owner),
+                artifact_ids: Some(artifact.id.clone()),
+                artifact_id: None,
+                deck_id: Some("homepage.story.v1".to_string()),
+            }),
+        )
+        .await
+        .expect("loopback protected route returns Story publish learning brief");
+        let brief = response.0;
+
+        assert_eq!(brief.audience, "owner");
+        assert_eq!(brief.deck_id, "homepage.story.v1");
+        assert_eq!(brief.read_only, true);
+        assert_eq!(brief.mutation_performed, false);
+        assert_eq!(brief.confirmed_graph_promotion, false);
+        assert_eq!(brief.memory_promotion_performed, false);
+        assert_eq!(brief.live_provider_called, false);
+        assert_eq!(brief.external_publishing_claimed, false);
+        assert!(brief
+            .publish_evidence
+            .iter()
+            .any(|source| source.source_id == artifact.id));
+        assert!(brief
+            .limitations
+            .contains(&"story_publish_learning_brief_is_read_only".to_string()));
+
+        let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
+        assert_eq!(table_count(&connection, "artifacts"), artifact_count_before);
+        assert_eq!(
+            table_count(&connection, "generated_content_memory_candidates"),
+            memory_count_before
+        );
+        assert_eq!(
+            table_count(&connection, "content_analytics_events"),
+            analytics_count_before
+        );
+        assert_eq!(
+            table_count(&connection, "reward_events"),
+            reward_count_before
         );
     }
 

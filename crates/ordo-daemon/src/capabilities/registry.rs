@@ -1272,6 +1272,28 @@ pub fn built_in_capabilities() -> Vec<CapabilityDefinition> {
             &["story.production_review_packet"],
         ),
         capability(
+            "studio.story.publish_learning.read",
+            "Read Story Publish Learning",
+            "Read a protected Story publish learning brief for staff and owner Studio/Growth inspection without mutating analytics, rewards, graph, artifacts, or memory state.",
+            "studio",
+            json!({
+                "type": "object",
+                "properties": {
+                    "audience": { "type": "string", "enum": ["staff", "owner", "member", "public"] },
+                    "artifactIds": { "type": "string" },
+                    "artifactId": { "type": "string" },
+                    "deckId": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "type": "object", "required": ["schemaVersion", "readOnly", "sourceStatus", "limitations"], "properties": { "schemaVersion": { "type": "string" }, "readOnly": { "type": "boolean" }, "sourceStatus": { "type": "array" }, "limitations": { "type": "array" } } }),
+            "rust",
+            false,
+            MCP_EXPORT_POLICY_DANGEROUS_NONE,
+            false,
+            &["story.publish_learning_brief"],
+        ),
+        capability(
             "studio.promo_video.package",
             "Stage Promo Video Package",
             "Create a deterministic staged promo package with script, prompts, captions, metadata, provenance, and manual publication limits.",
@@ -2096,6 +2118,11 @@ fn side_effects_for_capability(id: &str, mcp_export_policy: &str) -> Vec<String>
             "reads_sqlite",
             "returns_role_safe_story_review_packet",
             "does_not_mutate_artifacts_or_memory",
+        ][..],
+        "studio.story.publish_learning.read" => &[
+            "reads_sqlite",
+            "returns_role_safe_story_publish_learning_brief",
+            "does_not_mutate_analytics_rewards_graph_artifacts_or_memory",
         ][..],
         "studio.artifact_patch.review" => &["reads_sqlite", "returns_bounded_patch_preview"][..],
         "studio.artifact_patch.accept" => &[

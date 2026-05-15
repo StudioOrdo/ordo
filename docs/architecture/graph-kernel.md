@@ -133,6 +133,15 @@ Candidate states:
 proposed -> confirmed | rejected | superseded
 ```
 
+Richer Knowledge Pack review flows should use a longer candidate lifecycle:
+
+```text
+proposed
+-> in_review
+-> consensus_met | disputed | needs_more_evidence | rejected
+-> promoted | held | superseded
+```
+
 Confirmed candidates may create or update graph nodes and edges only through a
 promotion path that records:
 
@@ -179,6 +188,31 @@ Use explicit memory tiers instead of one undifferentiated "memory" bucket:
 
 Promotion between tiers must record evidence refs, actor or job origin, policy
 decision when available, and an event.
+
+## HITL Consensus And Entity Resolution
+
+Knowledge graph curation should use human-in-the-loop review when machine
+evidence cannot safely promote a candidate. Ordo should be able to create
+requests for:
+
+- entity conflict resolution;
+- alias confirmation;
+- source-span review;
+- claim approval or rejection;
+- rights verification;
+- graph promotion approval;
+- more-evidence requests.
+
+Consensus should be configurable by pack and use case. A private exploratory
+pack may accept lower confidence. A paid public education pack, legal/policy
+pack, medical pack, or other high-stakes pack should require stronger source
+quality, reviewer agreement, and explicit approval.
+
+Consensus inputs may include reviewer count, reviewer role or reputation,
+source quality, evidence strength, disagreement history, recency, rights
+status, visibility class, external authority links, and correction history.
+The consensus score is not public truth by itself; it is evidence used by the
+promotion policy.
 
 ## Node Kinds
 
@@ -241,6 +275,17 @@ Initial relationship kinds:
 - `INFLUENCED`
 - `REVISED_BY_FEEDBACK`
 - `PRODUCED_FROM_INPUT`
+- `ALIAS_OF`
+- `REFERS_TO`
+- `TAUGHT_AT`
+- `STUDIED_AT`
+- `MEMBER_OF`
+- `CREATED_BY`
+- `EXHIBITED_AT`
+- `OCCURRED_AT`
+- `PART_OF_COLLECTION`
+- `INFLUENCED_BY`
+- `PUBLISHED_BY`
 
 Each relationship kind must define:
 
@@ -250,6 +295,41 @@ Each relationship kind must define:
 - visibility ceiling rules;
 - whether LLMs may propose it;
 - whether packs may create it.
+
+Knowledge Packs should avoid generic `RELATED_TO` graphs. Wikipedia-style links,
+Wikidata statements, archive metadata, OCR spans, and LLM extraction may seed
+candidate edges, but Ordo should map those links to canonical edge verbs that
+explain why one thing connects to another. The edge verb is part of the
+knowledge product and must carry evidence requirements.
+
+## Graph Import And Export
+
+Future Ordo should import and export Knowledge Packs as graph packages, not
+loose graph dumps. A package should include graph nodes and edges, source
+manifests, artifact manifests, source spans, claims, rights metadata, aliases,
+review decisions, visibility rules, version/hash metadata, and compatibility
+information.
+
+Import rules:
+
+- validate schema, hashes, and signatures when available;
+- inspect rights and visibility before use;
+- map node and edge kinds to the local canonical vocabulary;
+- detect entity, alias, and claim conflicts;
+- create candidates and review requests by default;
+- promote only when source trust, review policy, and evidence requirements are
+  satisfied;
+- preserve import provenance.
+
+Export rules:
+
+- verify actor permission and pack scope;
+- redact private fields and private artifact text;
+- include provenance, citations, review history, rights, and limitations;
+- include package hashes or signatures when available;
+- never export staff routing, prompt internals, provider internals, raw policy
+  internals, secrets, owner-only data, task private payloads, graph certainty
+  claims, or unsupported public claims.
 
 ## Access-Aware Traversal
 

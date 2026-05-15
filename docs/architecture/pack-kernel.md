@@ -27,6 +27,10 @@ Initial internal pack families:
 - Story Pack: founder intake, story profile, scrollytelling homepage, image
   briefs, generated image artifacts, homepage versions, refresh proposals, video
   storyboard.
+- Knowledge Pack: source manifests, rights/provenance records, curated corpora,
+  source spans, claim and entity candidates, alias decisions, graph review,
+  consensus thresholds, import/export bundles, and access-aware knowledge
+  projections.
 - Growth Pack: offers, asks, tracked entry points, trials, feedback, rewards,
   benefit grants, affiliate attribution, outcome evidence.
 - Support Pack: handoff queues, owner escalation, support packets, receipts,
@@ -52,9 +56,13 @@ A pack manifest should declare:
   "variableSchemas": [],
   "jobTemplates": [],
   "artifactKinds": [],
+  "sourceManifestKinds": [],
+  "rightsRules": [],
   "analyticsEvents": [],
   "graphNodeKinds": [],
   "graphEdgeKinds": [],
+  "canonicalEdgeVocabulary": [],
+  "consensusPolicies": [],
   "projectionSurfaces": [],
   "llmMethods": [],
   "providerNeeds": [],
@@ -348,6 +356,23 @@ Systems/Admin Pack:
 - may surface operational state and propose actions;
 - may not wipe, reset, restore, publish, or alter providers without explicit
   approval.
+
+Knowledge Pack:
+
+- may package curated sources, artifacts, claims, aliases, graph candidates,
+  reviewed graph records, and import/export metadata;
+- may propose graph nodes and edges only through declared vocabularies and
+  evidence requirements;
+- may create human review requests for entity conflicts, rights checks, source
+  spans, claim approval, alias confirmation, and graph promotion;
+- may not treat imported graph records, Wikipedia-style links, OCR output, LLM
+  extraction, or source metadata as automatic truth;
+- should use configurable consensus thresholds according to pack use case,
+  visibility, source quality, reviewer weight, and public-risk level.
+
+See [Knowledge Pack Kernel](knowledge-pack-kernel.md) for the future graph-pack
+contract. This direction is downstream of the current NYC pilot work, not a
+replacement for the Story/Growth first-user loop.
 
 ## Validation Expectations
 

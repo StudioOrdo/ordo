@@ -42,6 +42,12 @@ Workflow templates sit between packs and job runs:
 The workflow template is not product truth. It is a reusable plan for creating
 jobs against canonical records, artifacts, graph relationships, and events.
 
+Workflow structure must be deterministic. An LLM may help classify user intent,
+choose among approved workflow templates, summarize workflow state, draft task
+content, or propose missing inputs, but it must not improvise task structure,
+invent dependencies, skip approval gates, or create hidden provider/tool access.
+The compiled DAG is Ordo's work contract.
+
 ## Template Primitives
 
 Every workflow template should define:
@@ -66,6 +72,11 @@ Every workflow template should define:
 Compiled job plans should snapshot the template version, resolved variable
 schema, policy decisions, provider requirements, and task graph. Later template
 edits must not change an already-started run.
+
+Compiled plans should be explainable without asking an LLM to reconstruct the
+workflow. If a task is blocked, skipped, retried, waiting for a person, or ready
+to run, that state should come from job/DAG records and events. The LLM may
+translate the state into plain language; it does not own the state.
 
 ## Variable Rules
 
@@ -179,6 +190,12 @@ tasks:
 The LLM may add color and interpretation. Ordo owns deck structure, claim
 validation, artifact visibility, approval, publication, analytics, and memory
 candidate rules.
+
+In this workflow, AI work should appear as bounded tasks inside the DAG: draft
+language, create image briefs, review against a brief, extract claims, explain
+performance, or summarize a review packet. Ordo still owns task ordering,
+visibility, evidence, approvals, artifact creation, analytics truth, and memory
+candidate/promotion boundaries.
 
 ## Events And Audit
 

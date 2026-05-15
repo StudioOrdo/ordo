@@ -14,6 +14,12 @@ The owner should be able to direct work conversationally, inspect evidence,
 approve outcomes, publish, hand off, remember, and move artifacts across
 governed capabilities without becoming a workflow engineer.
 
+The interface can feel conversational, but the machinery underneath should be
+deterministic. Ordo should use LLMs for intent parsing, drafting, summarizing,
+reviewing, proposing, and explaining. Ordo's code should own access, policy,
+workflow/DAG compilation, task execution, artifact state, events, publication,
+rewards, graph promotion, and memory boundaries.
+
 The durable core is described in [Ordo Core](ordo-core.md). The workflow-driven
 roadmap is described in [Product Roadmap](product-roadmap.md). The workforce
 stance is described in [Workforce Substrate](workforce-substrate.md). The

@@ -23,6 +23,25 @@ outcomes.
 User-facing language should use Process, Job, and Task. Engineering docs may
 refer to the task graph as a DAG.
 
+## Deterministic Work Contract
+
+The task DAG is the work contract. It should make execution inspectable without
+requiring an LLM to remember the plan.
+
+The DAG answers:
+
+- what work is allowed;
+- what task can run now;
+- what is blocked;
+- what requires a person;
+- what evidence was produced;
+- what can be retried, skipped, paused, canceled, or resumed;
+- what artifacts or requests should surface next.
+
+LLMs may help parse intent, draft task content, review outputs, or summarize
+state. The operation kernel owns task state, dependencies, leases, retries,
+requests, artifacts, and events.
+
 ## Job Shape
 
 Jobs store the exact task plan copied from the template at run start. Later
@@ -73,6 +92,12 @@ Future V2 task execution should add:
 
 A task is ready when all required dependencies have succeeded or been skipped
 by an explicit policy.
+
+Human requests are DAG gates, not ad hoc interruptions. A workflow should create
+a request when it needs approval, consent, missing information, QA, rights
+verification, entity resolution, artifact review, or publication judgment. The
+request decision should emit events and unblock, redirect, skip, or cancel
+downstream tasks according to policy.
 
 ## Progress
 

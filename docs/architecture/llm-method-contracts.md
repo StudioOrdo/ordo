@@ -34,6 +34,44 @@ Workflow use: Story Pack homepage refresh task
 Generic capability should mean reusable machinery. It must not mean generic
 authority.
 
+## LLM Role Boundary
+
+The LLM is a bounded participant in a deterministic operating system. It should
+not be treated as the system of record or the scheduler.
+
+LLMs may:
+
+- parse user intent;
+- classify requests;
+- choose among approved methods or workflow templates when policy allows;
+- draft text or briefs;
+- summarize evidence;
+- explain state;
+- review artifacts against a brief;
+- interpret ambiguity;
+- propose claims, entities, aliases, edges, or next actions.
+
+Deterministic Ordo code owns:
+
+- actor identity and Access;
+- policy decisions;
+- typed variable resolution;
+- workflow and DAG compilation;
+- capability dispatch;
+- provider gateway selection and approval;
+- task leases, retries, pause, resume, skip, cancel, and completion;
+- artifacts, versions, visibility, and publication state;
+- events, audit, projections, and analytics truth;
+- requests and approval gates;
+- reward qualification and benefit grants;
+- graph confirmation and memory promotion.
+
+```text
+The model can say "this sounds like a Story Pack homepage refresh."
+Ordo decides whether that workflow is allowed, what variables resolve, what
+tasks exist, what can run now, and what must wait for approval.
+```
+
 ## Method Shape
 
 Each method contract must define:

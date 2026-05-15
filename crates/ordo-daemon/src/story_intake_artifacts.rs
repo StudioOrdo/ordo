@@ -238,7 +238,9 @@ fn story_founder_intake_packet(recorded: StoryFounderIntakeArtifact) -> StoryFou
         artifact_ref: format!("artifact:{}", recorded.artifact.id),
         visibility_ceiling: recorded.artifact.visibility_ceiling.clone(),
         artifact: recorded.artifact,
-        version: recorded.version,
+        // Artifact versions persist the owner-scoped source contract for audit.
+        // The readiness packet is a surface envelope, so it returns refs only.
+        version: None,
         public_derivative: recorded.public_derivative,
         readiness,
         mutation_performed,
@@ -919,6 +921,7 @@ mod tests {
         assert_eq!(packet.visibility_ceiling, "owner");
         assert_eq!(packet.readiness.status, "ready_for_narrative_deck");
         assert!(packet.readiness.narrative_deck_ready);
+        assert!(packet.version.is_none());
         assert!(packet.readiness.missing.is_empty());
         assert!(!packet.readiness.live_provider_required);
         assert!(!packet.live_provider_called);
@@ -930,6 +933,32 @@ mod tests {
             .limitations
             .iter()
             .any(|limitation| limitation.contains("does not call live providers")));
+    }
+
+    #[test]
+    fn founder_intake_packet_does_not_expose_private_version_metadata() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let mut input = valid_intake();
+        input.private_notes = vec![
+            "Owner-only source note with sk-live-secret and private artifact text.".to_string(),
+        ];
+
+        let packet = record_story_founder_intake_packet(&connection, input).unwrap();
+        let packet_json = serde_json::to_string(&packet).unwrap();
+
+        assert!(packet.version.is_none());
+        for forbidden in [
+            "Owner-only source note",
+            "sk-live-secret",
+            "private artifact text",
+            "privateNotes",
+        ] {
+            assert!(
+                !packet_json.contains(forbidden),
+                "packet leaked private source metadata {forbidden}: {packet_json}"
+            );
+        }
     }
 
     #[test]

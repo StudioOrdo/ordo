@@ -4555,6 +4555,7 @@ mod tests {
         assert_eq!(packet.intake_id, "story-founder-intake-handler");
         assert_eq!(packet.visibility_ceiling, "owner");
         assert_eq!(packet.approval_state, "needs_review");
+        assert!(packet.version.is_none());
         assert_eq!(packet.readiness.status, "ready_for_narrative_deck");
         assert!(packet.readiness.narrative_deck_ready);
         assert!(packet.mutation_performed);
@@ -4565,6 +4566,9 @@ mod tests {
         assert!(!packet.readiness.automatic_memory_promotion);
         assert!(!packet.readiness.confirmed_graph_promotion);
         assert!(packet.event.is_some());
+        let packet_json = serde_json::to_string(&packet).unwrap();
+        assert!(!packet_json.contains("Internal founder note"));
+        assert!(!packet_json.contains("privateNotes"));
 
         let retry = studio_story_founder_intake_handler(
             ConnectInfo(socket_addr("127.0.0.1:4000")),

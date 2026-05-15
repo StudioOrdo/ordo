@@ -475,6 +475,7 @@ pub fn story_pack_manifest() -> ProductPackManifest {
                 "generated_image_candidate",
                 "story.generated_image_candidate",
             ),
+            artifact_contract("image_review", "story.image_review"),
             artifact_contract(
                 "homepage_publish_approval_package",
                 "story.homepage_publish_approval_package",
@@ -1664,6 +1665,10 @@ mod tests {
         assert!(installed.pack.bindings.iter().any(|binding| {
             binding.binding_kind == "artifact_contract"
                 && binding.artifact_kind.as_deref() == Some("story.image_brief")
+        }));
+        assert!(installed.pack.bindings.iter().any(|binding| {
+            binding.binding_kind == "artifact_contract"
+                && binding.artifact_kind.as_deref() == Some("story.image_review")
         }));
         assert!(installed.pack.bindings.iter().any(|binding| {
             binding.binding_kind == "artifact_contract"

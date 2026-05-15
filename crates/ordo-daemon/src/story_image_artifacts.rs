@@ -15,6 +15,7 @@ pub const STORY_IMAGE_BRIEF_ARTIFACT_KIND: &str = "story.image_brief";
 pub const STORY_IMAGE_PROVIDER_REQUEST_ENVELOPE_ARTIFACT_KIND: &str =
     "story.image_provider_request_envelope";
 pub const STORY_GENERATED_IMAGE_CANDIDATE_ARTIFACT_KIND: &str = "story.generated_image_candidate";
+pub const STORY_IMAGE_REVIEW_ARTIFACT_KIND: &str = "story.image_review";
 const CONTRACT_SCHEMA_VERSION: &str = "ordo.story_image_artifact_contract.v1";
 const DEFAULT_ASPECT_RATIO: &str = "16:9";
 const DEFAULT_IMAGE_SIZE: &str = "1024x576";
@@ -39,6 +40,39 @@ impl GeneratedImageCandidateState {
             Self::Failed => "failed",
             Self::Approved => "approved",
             Self::Rejected => "rejected",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StoryImageReviewState {
+    Approved,
+    NeedsRevision,
+    Rejected,
+}
+
+impl StoryImageReviewState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Approved => "approved",
+            Self::NeedsRevision => "needs_revision",
+            Self::Rejected => "rejected",
+        }
+    }
+
+    fn health_status(&self) -> &'static str {
+        match self {
+            Self::Approved => "review_approved",
+            Self::NeedsRevision => "review_needs_revision",
+            Self::Rejected => "review_rejected",
+        }
+    }
+
+    fn publication_effect(&self) -> &'static str {
+        match self {
+            Self::Approved => "eligible_for_public_derivative",
+            Self::NeedsRevision | Self::Rejected => "not_publishable",
         }
     }
 }
@@ -124,6 +158,27 @@ pub struct StoryImageProviderResponseEnvelope {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct StoryImageReviewContract {
+    pub schema_version: String,
+    pub review_id: String,
+    pub method: String,
+    pub candidate_artifact_id: String,
+    pub brief_artifact_id: String,
+    pub source_candidate_id: String,
+    pub review_state: StoryImageReviewState,
+    pub reviewer_ref: String,
+    pub fixture_id: String,
+    pub visibility: String,
+    pub revision_guidance: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub publication_effect: String,
+    pub memory_effect: String,
+    pub live_provider_called: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StoryImageProviderRequestOutcome {
     pub envelope_artifact: ArtifactView,
     pub request: StoryImageProviderRequestEnvelope,
@@ -144,6 +199,20 @@ pub struct StoryImageProviderRequestInput {
     pub fixture_status: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoryImageReviewInput {
+    pub candidate_artifact_id: String,
+    pub brief_artifact_id: String,
+    pub idempotency_key: String,
+    pub fixture_id: String,
+    pub review_state: StoryImageReviewState,
+    pub reviewer_ref: String,
+    pub evidence_refs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub revision_guidance: Option<String>,
+    pub visibility: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryImageBriefArtifact {
@@ -158,6 +227,14 @@ pub struct GeneratedImageCandidateArtifact {
     pub artifact: ArtifactView,
     pub version: Option<ArtifactVersionView>,
     pub contract: GeneratedImageCandidateContract,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryImageReviewArtifact {
+    pub artifact: ArtifactView,
+    pub version: Option<ArtifactVersionView>,
+    pub contract: StoryImageReviewContract,
 }
 
 #[derive(Debug, Clone)]
@@ -513,6 +590,82 @@ pub fn record_story_image_provider_request_envelope(
     })
 }
 
+pub fn record_story_image_review_artifact(
+    connection: &Connection,
+    input: StoryImageReviewInput,
+) -> Result<StoryImageReviewArtifact> {
+    let contract = story_image_review_contract(connection, input)?;
+    let contract_json = serde_json::to_value(&contract)?;
+    let content_hash = stable_json_hash(&contract_json)?;
+
+    if let Some(existing) =
+        load_existing_image_review_by_idempotency(connection, &contract.review_id)?
+    {
+        if existing.content_hash != content_hash {
+            bail!("image review idempotency key conflicts with a different input");
+        }
+        return Ok(StoryImageReviewArtifact {
+            artifact: existing,
+            version: None,
+            contract,
+        });
+    }
+
+    let (artifact, _) = record_artifact(
+        connection,
+        ArtifactInput {
+            artifact_kind: STORY_IMAGE_REVIEW_ARTIFACT_KIND.to_string(),
+            title: format!("Story image review {}", contract.review_id),
+            status: contract.review_state.as_str().to_string(),
+            visibility_ceiling: contract.visibility.clone(),
+            summary: format!(
+                "Deterministic image review is {} for generated image candidate `{}`.",
+                contract.review_state.as_str(),
+                safe_identifier(&contract.source_candidate_id)
+            ),
+            source_kind: Some("story_image_review".to_string()),
+            source_id: Some(contract.review_id.clone()),
+            evidence_refs: contract.evidence_refs.clone(),
+            provenance: json!({
+                "schemaVersion": CONTRACT_SCHEMA_VERSION,
+                "generatedBy": "image.reviewAgainstBrief.fixture",
+                "contract": contract_json,
+                "candidateArtifactId": contract.candidate_artifact_id,
+                "briefArtifactId": contract.brief_artifact_id,
+                "publicationEffect": contract.publication_effect,
+                "memoryEffect": contract.memory_effect,
+                "liveProviderCalled": false,
+                "automaticPublicDerivative": false,
+                "automaticMemoryTruthPromotion": false,
+            }),
+            content_hash: content_hash.clone(),
+            storage_uri: Some(format!(
+                "ordo://artifacts/story-image-reviews/{}",
+                safe_identifier(&contract.review_id)
+            )),
+            health_status: Some(contract.review_state.health_status().to_string()),
+            created_by_job_id: None,
+        },
+    )?;
+    let version = add_artifact_version(
+        connection,
+        &artifact.id,
+        &content_hash,
+        artifact.storage_uri.as_deref(),
+        json!({
+            "schemaVersion": CONTRACT_SCHEMA_VERSION,
+            "contract": contract,
+            "liveProviderCalled": false,
+        }),
+    )?;
+
+    Ok(StoryImageReviewArtifact {
+        artifact,
+        version: Some(version),
+        contract,
+    })
+}
+
 fn require_story_image_brief_artifact(
     connection: &Connection,
     artifact_id: &str,
@@ -527,6 +680,30 @@ fn require_story_image_brief_artifact(
     Ok(artifact)
 }
 
+fn require_generated_image_candidate_artifact(
+    connection: &Connection,
+    artifact_id: &str,
+) -> Result<GeneratedImageCandidateArtifact> {
+    let artifact = load_artifact(connection, artifact_id).map_err(|_| {
+        anyhow::anyhow!("image review requires a known generated image candidate artifact")
+    })?;
+    ensure!(
+        artifact.artifact_kind == STORY_GENERATED_IMAGE_CANDIDATE_ARTIFACT_KIND,
+        "image review source must be a generated image candidate artifact"
+    );
+    let contract_value = artifact
+        .provenance
+        .get("contract")
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("generated image candidate artifact is missing contract"))?;
+    let contract = serde_json::from_value(contract_value)?;
+    Ok(GeneratedImageCandidateArtifact {
+        artifact,
+        version: None,
+        contract,
+    })
+}
+
 fn story_image_brief_contract_from_artifact(
     artifact: &ArtifactView,
 ) -> Result<StoryImageBriefContract> {
@@ -538,6 +715,146 @@ fn story_image_brief_contract_from_artifact(
             anyhow::anyhow!("story image brief artifact is missing provider contract")
         })?;
     Ok(serde_json::from_value(contract_value)?)
+}
+
+fn story_image_review_contract(
+    connection: &Connection,
+    input: StoryImageReviewInput,
+) -> Result<StoryImageReviewContract> {
+    ensure!(
+        matches!(
+            input.visibility.as_str(),
+            "staff" | "owner" | "authenticated" | "public"
+        ),
+        "image review visibility must be explicit"
+    );
+    let review_id = normalize_review_idempotency_key(&input.idempotency_key)?;
+    ensure!(
+        !input.fixture_id.trim().is_empty(),
+        "image review fixture id is required"
+    );
+    ensure!(
+        input
+            .fixture_id
+            .starts_with("fixture:image.reviewAgainstBrief:"),
+        "image review must use deterministic fixture evidence"
+    );
+    ensure!(
+        !input.reviewer_ref.trim().is_empty(),
+        "image review reviewer ref is required"
+    );
+    ensure!(
+        !input.evidence_refs.is_empty(),
+        "image review evidence refs are required"
+    );
+    let raw_review_inputs = serde_json::to_string(&json!({
+        "reviewerRef": input.reviewer_ref,
+        "fixtureId": input.fixture_id,
+        "revisionGuidance": input.revision_guidance,
+        "limitations": input.limitations,
+        "evidenceRefs": input.evidence_refs,
+    }))?;
+    ensure!(
+        !contains_forbidden_provider_marker(&raw_review_inputs),
+        "image review contains private or unsupported markers"
+    );
+    if input.review_state == StoryImageReviewState::NeedsRevision {
+        ensure!(
+            input
+                .revision_guidance
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty()),
+            "revision image review requires revision guidance"
+        );
+    }
+    if input.review_state != StoryImageReviewState::NeedsRevision {
+        ensure!(
+            input.revision_guidance.is_none(),
+            "only revision image reviews may include revision guidance"
+        );
+    }
+
+    let candidate =
+        require_generated_image_candidate_artifact(connection, &input.candidate_artifact_id)?;
+    let brief_artifact = require_story_image_brief_artifact(connection, &input.brief_artifact_id)?;
+    ensure!(
+        candidate.contract.brief_artifact_id == brief_artifact.id,
+        "image review source brief must match generated candidate brief"
+    );
+    ensure!(
+        matches!(
+            candidate.contract.state,
+            GeneratedImageCandidateState::Generated | GeneratedImageCandidateState::Approved
+        ),
+        "image review requires generated candidate storage evidence"
+    );
+    ensure!(
+        candidate.contract.storage_uri.is_some(),
+        "image review requires generated candidate storage evidence"
+    );
+
+    let reviewer_ref = safe_provider_text(&input.reviewer_ref);
+    let fixture_id = safe_provider_text(&input.fixture_id);
+    let revision_guidance = input
+        .revision_guidance
+        .map(|guidance| safe_provider_text(&guidance))
+        .filter(|guidance| !guidance.trim().is_empty());
+    let input_limitations = input
+        .limitations
+        .into_iter()
+        .map(|limitation| safe_provider_text(&limitation))
+        .collect::<Vec<_>>();
+    let input_refs = input
+        .evidence_refs
+        .into_iter()
+        .map(|reference| safe_identifier(&reference))
+        .collect::<Vec<_>>();
+    let serialized_review_inputs = serde_json::to_string(&json!({
+        "reviewerRef": reviewer_ref,
+        "fixtureId": fixture_id,
+        "revisionGuidance": revision_guidance,
+        "limitations": input_limitations,
+        "evidenceRefs": input_refs,
+    }))?;
+    ensure!(
+        !contains_forbidden_provider_marker(&serialized_review_inputs),
+        "image review contains private or unsupported markers"
+    );
+
+    let mut evidence_refs = vec![
+        candidate.artifact.id.clone(),
+        brief_artifact.id.clone(),
+        fixture_id.clone(),
+    ];
+    evidence_refs.extend(input_refs);
+    evidence_refs.extend(candidate.contract.evidence_refs.clone());
+    let mut limitations = vec![
+        "Image review was recorded from a deterministic fixture; no live provider was called."
+            .to_string(),
+        "Review artifact is evidence for publication preparation only; it does not publish, promote graph truth, or promote memory truth."
+            .to_string(),
+    ];
+    limitations.extend(candidate.contract.limitations.clone());
+    limitations.extend(input_limitations);
+
+    Ok(StoryImageReviewContract {
+        schema_version: CONTRACT_SCHEMA_VERSION.to_string(),
+        review_id,
+        method: "image.reviewAgainstBrief".to_string(),
+        candidate_artifact_id: candidate.artifact.id,
+        brief_artifact_id: brief_artifact.id,
+        source_candidate_id: candidate.contract.candidate_id,
+        review_state: input.review_state.clone(),
+        reviewer_ref,
+        fixture_id,
+        visibility: input.visibility,
+        revision_guidance,
+        evidence_refs: public_safe_values(evidence_refs),
+        limitations: public_safe_values(limitations),
+        publication_effect: input.review_state.publication_effect().to_string(),
+        memory_effect: "review_evidence_only".to_string(),
+        live_provider_called: false,
+    })
 }
 
 fn story_image_provider_request_envelope(
@@ -642,6 +959,16 @@ fn normalize_idempotency_key(idempotency_key: &str) -> Result<String> {
     Ok(safe_identifier(key))
 }
 
+fn normalize_review_idempotency_key(idempotency_key: &str) -> Result<String> {
+    let key = idempotency_key.trim();
+    ensure!(
+        !key.is_empty(),
+        "image review idempotency key cannot be blank"
+    );
+    ensure!(key.len() <= 200, "image review idempotency key is too long");
+    Ok(safe_identifier(key))
+}
+
 fn normalize_image_size(size: &str) -> (String, Vec<String>) {
     match size.trim() {
         DEFAULT_IMAGE_SIZE | "" => (DEFAULT_IMAGE_SIZE.to_string(), Vec::new()),
@@ -733,6 +1060,27 @@ fn load_existing_provider_request_by_idempotency(
                 STORY_IMAGE_PROVIDER_REQUEST_ENVELOPE_ARTIFACT_KIND,
                 idempotency_key
             ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    artifact_id
+        .map(|id| load_artifact(connection, &id))
+        .transpose()
+}
+
+fn load_existing_image_review_by_idempotency(
+    connection: &Connection,
+    review_id: &str,
+) -> Result<Option<ArtifactView>> {
+    let artifact_id = connection
+        .query_row(
+            "SELECT id FROM artifacts
+             WHERE artifact_kind = ?1
+               AND source_kind = 'story_image_review'
+               AND source_id = ?2
+             ORDER BY created_at ASC
+             LIMIT 1",
+            params![STORY_IMAGE_REVIEW_ARTIFACT_KIND, review_id],
             |row| row.get::<_, String>(0),
         )
         .optional()?;
@@ -1578,6 +1926,254 @@ mod tests {
             .contains("idempotency key conflicts"));
     }
 
+    #[test]
+    fn image_review_records_approved_candidate_without_live_provider() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let (_brief, candidate) = generated_candidate(&connection, "hero-image-review");
+
+        let first = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id.clone(),
+                brief_artifact_id: candidate.contract.brief_artifact_id.clone(),
+                idempotency_key: "hero-image-review-approved".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Approved,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec!["Deterministic fixture review only.".to_string()],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        )
+        .unwrap();
+        let repeated = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id.clone(),
+                brief_artifact_id: candidate.contract.brief_artifact_id.clone(),
+                idempotency_key: "hero-image-review-approved".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Approved,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec!["Deterministic fixture review only.".to_string()],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(first.artifact.id, repeated.artifact.id);
+        assert_eq!(
+            first.artifact.artifact_kind,
+            STORY_IMAGE_REVIEW_ARTIFACT_KIND
+        );
+        assert_eq!(first.artifact.status, "approved");
+        assert_eq!(
+            first.artifact.health_status.as_deref(),
+            Some("review_approved")
+        );
+        assert_eq!(first.contract.method, "image.reviewAgainstBrief");
+        assert_eq!(first.contract.review_state, StoryImageReviewState::Approved);
+        assert_eq!(
+            first.contract.publication_effect,
+            "eligible_for_public_derivative"
+        );
+        assert_eq!(first.contract.memory_effect, "review_evidence_only");
+        assert!(!first.contract.live_provider_called);
+        assert!(first
+            .contract
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == &candidate.artifact.id));
+
+        let serialized = serde_json::to_string(&first).unwrap();
+        assert!(!serialized.contains("liveProviderSucceeded"));
+        assert!(!serialized.contains("providerSecret"));
+        assert!(!serialized.contains("promptInternal"));
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE artifact_kind = ?1",
+                [STORY_IMAGE_REVIEW_ARTIFACT_KIND],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn image_review_rejects_unknown_mismatched_and_unsafe_inputs() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let (brief, candidate) = generated_candidate(&connection, "hero-image-review-negative");
+        let other_brief = prepare_story_image_brief_artifacts(
+            &connection,
+            &deck_with_slide("proof", "Proof", "A second public proof scene."),
+        )
+        .unwrap()
+        .remove(0);
+
+        let unknown = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: "missing_candidate".to_string(),
+                brief_artifact_id: brief.artifact.id.clone(),
+                idempotency_key: "unknown-review".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Approved,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec![],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        );
+        assert!(unknown
+            .unwrap_err()
+            .to_string()
+            .contains("known generated image candidate artifact"));
+
+        let mismatch = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id.clone(),
+                brief_artifact_id: other_brief.artifact.id,
+                idempotency_key: "mismatched-review".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Approved,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec![],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        );
+        assert!(mismatch
+            .unwrap_err()
+            .to_string()
+            .contains("source brief must match"));
+
+        let unsafe_review = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id,
+                brief_artifact_id: brief.artifact.id,
+                idempotency_key: "unsafe-review".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Approved,
+                reviewer_ref: "providerSecret".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec!["liveProviderSucceeded".to_string()],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        );
+        assert!(unsafe_review
+            .unwrap_err()
+            .to_string()
+            .contains("private or unsupported markers"));
+    }
+
+    #[test]
+    fn image_review_revision_and_rejection_do_not_mark_publishable() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let (_brief, candidate) = generated_candidate(&connection, "hero-image-review-revise");
+
+        let revision = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id.clone(),
+                brief_artifact_id: candidate.contract.brief_artifact_id.clone(),
+                idempotency_key: "hero-image-review-revision".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:revision".to_string(),
+                review_state: StoryImageReviewState::NeedsRevision,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:revision".to_string()],
+                limitations: vec![],
+                revision_guidance: Some("Use a calmer public-safe composition.".to_string()),
+                visibility: "staff".to_string(),
+            },
+        )
+        .unwrap();
+        assert_eq!(revision.artifact.status, "needs_revision");
+        assert_eq!(revision.contract.publication_effect, "not_publishable");
+        assert_eq!(
+            revision.contract.revision_guidance.as_deref(),
+            Some("Use a calmer public-safe composition.")
+        );
+
+        let rejected = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id,
+                brief_artifact_id: candidate.contract.brief_artifact_id,
+                idempotency_key: "hero-image-review-rejected".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:rejected".to_string(),
+                review_state: StoryImageReviewState::Rejected,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:rejected".to_string()],
+                limitations: vec!["Candidate does not match brief.".to_string()],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        )
+        .unwrap();
+        assert_eq!(rejected.artifact.status, "rejected");
+        assert_eq!(rejected.contract.publication_effect, "not_publishable");
+        assert!(rejected
+            .contract
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("does not match")));
+    }
+
+    #[test]
+    fn image_review_idempotency_rejects_conflicting_input() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let (_brief, candidate) = generated_candidate(&connection, "hero-image-review-conflict");
+
+        record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id.clone(),
+                brief_artifact_id: candidate.contract.brief_artifact_id.clone(),
+                idempotency_key: "hero-image-review-conflict".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Approved,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec![],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        )
+        .unwrap();
+        let conflict = record_story_image_review_artifact(
+            &connection,
+            StoryImageReviewInput {
+                candidate_artifact_id: candidate.artifact.id,
+                brief_artifact_id: candidate.contract.brief_artifact_id,
+                idempotency_key: "hero-image-review-conflict".to_string(),
+                fixture_id: "fixture:image.reviewAgainstBrief:approved".to_string(),
+                review_state: StoryImageReviewState::Rejected,
+                reviewer_ref: "fixture:image-reviewer".to_string(),
+                evidence_refs: vec!["review_fixture:approved".to_string()],
+                limitations: vec![],
+                revision_guidance: None,
+                visibility: "staff".to_string(),
+            },
+        );
+        assert!(conflict
+            .unwrap_err()
+            .to_string()
+            .contains("idempotency key conflicts"));
+    }
+
     fn deck_with_slide(slide_id: &str, title: &str, body: &str) -> HomepageStoryDeckResponse {
         HomepageStoryDeckResponse {
             profile: HomepageStoryProfile {
@@ -1622,5 +2218,31 @@ mod tests {
                 limitations: vec![],
             },
         }
+    }
+
+    fn generated_candidate(
+        connection: &Connection,
+        idempotency_key: &str,
+    ) -> (StoryImageBriefArtifact, GeneratedImageCandidateArtifact) {
+        let deck = deck_with_slide("hero", "Studio Ordo", "A public proof scene.");
+        let brief = prepare_story_image_brief_artifacts(connection, &deck)
+            .unwrap()
+            .remove(0);
+        let outcome = record_story_image_provider_request_envelope(
+            connection,
+            StoryImageProviderRequestInput {
+                brief_artifact_id: brief.artifact.id.clone(),
+                idempotency_key: idempotency_key.to_string(),
+                provider_name: "openai".to_string(),
+                model_hint: "gpt-image-2".to_string(),
+                provider_mode: "deterministic_fixture".to_string(),
+                requested_size: "1024x576".to_string(),
+                requested_aspect_ratio: "16:9".to_string(),
+                requested_count: 1,
+                fixture_status: "generated".to_string(),
+            },
+        )
+        .unwrap();
+        (brief, outcome.candidates.into_iter().next().unwrap())
     }
 }

@@ -74,6 +74,9 @@ creating or executing implementation issues:
 - [Workflow Template Kernel](workflow-template-kernel.md) for typed variables,
   bounded fanout, governed tool composition, task bindings, approval gates, and
   deterministic provider mocks.
+- [Knowledge Pack Kernel](knowledge-pack-kernel.md) for future provenance-backed
+  graph packages, HITL consensus, entity resolution requests, canonical edge
+  vocabularies, and graph import/export.
 
 Issue batches should explicitly call out whether a slice touches graph records,
 LLM methods, pack registration, or process completion gates. If it does, the
@@ -266,6 +269,38 @@ Remaining doc cleanup:
       feedback, and memory candidate updates.
     - This is future/needed, not shipped behavior.
 
+20. **Knowledge Pack Kernel**
+    - Corpus/retrieval, artifacts, graph candidates, and generated-content
+      memory foundations exist separately.
+    - Missing versioned Knowledge Pack manifests with source manifests, rights
+      metadata, artifact refs, source spans, claims, entity aliases, canonical
+      edge vocabularies, review decisions, consensus thresholds, and
+      import/export compatibility.
+    - This is future direction after the NYC pilot foundations, not shipped
+      behavior.
+
+21. **HITL Consensus Racetrack**
+    - Requests, reviews, graph candidates, and artifacts exist separately.
+    - Missing a reusable human-in-the-loop consensus mechanism for entity
+      conflicts, alias decisions, rights checks, claim approval, source-span
+      review, and graph promotion thresholds.
+    - This is future/needed, not shipped behavior.
+
+22. **Graph Package Import/Export**
+    - Backup/restore and pack foundations exist, but not graph package exchange.
+    - Missing candidate-first import, schema/hash/signature validation,
+      rights/visibility inspection, edge vocabulary mapping, conflict detection,
+      review request creation, export redaction, and package integrity.
+    - This is future/needed, not shipped behavior.
+
+23. **Trusted Source Acquisition Connectors**
+    - Source/corpus foundations exist, and executor lab references exist outside
+      this repo, but Ordo does not yet have governed source acquisition
+      connectors.
+    - Missing protocol-first connectors such as IIIF, OAI-PMH, CKAN, and
+      MediaWiki/Wikibase plus source-specific adapters for trusted archives.
+    - This is future/needed, not shipped behavior.
+
 ## Frontend Gap Map
 
 ### Strong Foundations Already Present
@@ -429,3 +464,10 @@ Remaining doc cleanup:
    - Declare the Story Pack workflow from founder intake through narrative
      deck, image briefs, generated image variants, review, scrollytelling draft,
      QA, publish approval, analytics, and memory candidates.
+
+18. **Knowledge Pack Kernel Slice**
+   - Add the docs and later implementation contracts for provenance-backed
+     graph packages without displacing the NYC pilot path.
+   - Define candidate-first imports, source manifests, rights metadata, entity
+     conflicts, aliases, canonical edge verbs, HITL consensus thresholds,
+     review requests, and export redaction.

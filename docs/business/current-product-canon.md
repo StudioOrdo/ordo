@@ -106,6 +106,13 @@ Knowledge owns corpus sources, content packs, provenance, source licensing,
 retrieval readiness, generated knowledge artifacts, and access-aware RAG
 boundaries. Knowledge feeds chat, Studio jobs, offers, requests, and briefs.
 
+Longer term, Knowledge should manage curated knowledgebases as provenance-backed
+graph packs, not loose document folders. A Knowledge Pack should preserve source
+manifests, rights metadata, artifacts, source spans, claims, entity aliases,
+graph candidates, review decisions, and promoted relationships. This future
+direction supports paid or reusable knowledge assets, but the current 0.1.9
+pilot remains focused on the solopreneur NYC Story/Growth loop.
+
 ### Growth
 
 The business-value surface.
@@ -196,6 +203,12 @@ governed operating context:
 A request is something waiting on a person. Requests include approvals,
 feedback, consent, scheduling, QA follow-up, artifact review, missing
 information, or confirmation.
+
+Future Knowledge requests should also cover graph curation work such as entity
+conflict resolution, alias confirmation, rights verification, claim approval,
+source-span review, and graph promotion decisions. These requests should carry
+evidence packets and produce auditable decisions rather than silently changing
+memory.
 
 Product packs should install repeatable workforces, not arbitrary code. A pack
 may include capability bindings, content scopes, prompt templates, variables,

@@ -8,6 +8,7 @@ These docs turn the product thesis into system shape.
 - [Appliance Operating Discipline](appliance-operating-discipline.md)
 - [Target Architecture Plan](target-architecture-plan.md)
 - [Graph Kernel](graph-kernel.md)
+- [Knowledge Pack Kernel](knowledge-pack-kernel.md)
 - [LLM Method Contracts](llm-method-contracts.md)
 - [Pack Kernel](pack-kernel.md)
 - [Workflow Template Kernel](workflow-template-kernel.md)

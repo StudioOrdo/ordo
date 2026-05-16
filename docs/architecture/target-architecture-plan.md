@@ -38,6 +38,35 @@ conversation intent
 Chat is the control surface, not the product spine. Jobs, tasks, requests,
 artifacts, events, read models, access, and outcomes are the product spine.
 
+## DAG As Operating Spine
+
+The DAG is the operating spine for work. The graph explains relationships and
+memory; the DAG changes the world through bounded tasks, gates, retries, and
+artifacts.
+
+```text
+LLM parses intent or proposes a next step
+-> Ordo validates access and policy
+-> Ordo resolves typed variables
+-> Ordo compiles a deterministic DAG
+-> tasks run through registered capabilities
+-> human requests pause or unblock gated work
+-> artifacts, events, graph candidates, and projections record what happened
+```
+
+LLMs should help with language-shaped work: intent parsing, classification,
+drafting, summarization, explanation, review, ambiguity handling, and candidate
+proposals. Deterministic Ordo code owns plan compilation, DAG structure,
+policy, access, capability dispatch, retries, artifact state, event emission,
+publication, rewards, and graph or memory promotion.
+
+The practical rule is:
+
+```text
+The LLM may suggest what work this is.
+Ordo decides what work is allowed and how it runs.
+```
+
 ## Layers
 
 Use a Clean Architecture direction:

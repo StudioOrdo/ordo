@@ -14,6 +14,12 @@ The owner should be able to direct work conversationally, inspect evidence,
 approve outcomes, publish, hand off, remember, and move artifacts across
 governed capabilities without becoming a workflow engineer.
 
+The interface can feel conversational, but the machinery underneath should be
+deterministic. Ordo should use LLMs for intent parsing, drafting, summarizing,
+reviewing, proposing, and explaining. Ordo's code should own access, policy,
+workflow/DAG compilation, task execution, artifact state, events, publication,
+rewards, graph promotion, and memory boundaries.
+
 The durable core is described in [Ordo Core](ordo-core.md). The workflow-driven
 roadmap is described in [Product Roadmap](product-roadmap.md). The workforce
 stance is described in [Workforce Substrate](workforce-substrate.md). The
@@ -99,6 +105,19 @@ decision work.
 Knowledge is the grounded memory surface. It owns corpus sources, provenance,
 content packs, retrieval readiness, generated knowledge artifacts, and
 access-aware RAG boundaries.
+
+Future Knowledge should manage curated knowledgebases as provenance-backed
+graph packs. The distinction matters:
+
+```text
+RAG pile = documents plus retrieval.
+Knowledge Pack = sources, rights, spans, claims, aliases, graph, review,
+confidence, visibility, and workflow use.
+```
+
+This is future direction after the NYC pilot foundations. The near-term pilot
+should still focus on Story, Growth, onboarding, content analytics, and memory
+review for the solopreneur loop.
 
 ### Growth
 
@@ -280,6 +299,25 @@ material and generated artifacts, then load those packs into another Ordo.
 
 This is not implemented yet. The near-term prerequisite is access-aware
 knowledge/RAG with clear corpus provenance.
+
+The long-term Knowledge Pack shape is stronger than importable documents.
+Knowledge Packs should be versioned graph packages with source manifests,
+rights metadata, artifact refs, source spans, claim candidates, entity aliases,
+canonical edge vocabularies, human review decisions, consensus thresholds, and
+promoted graph records.
+
+Human-in-the-loop review is part of the product value. Ordo should be able to
+create requests for entity conflicts, alias decisions, rights verification,
+claim approval, and graph promotion. Different packs should be able to require
+different confidence thresholds: exploratory private research can be looser,
+while public education, legal, medical, policy, or paid packs require stronger
+review and evidence.
+
+The commercial thesis is that AI-generated content is cheap, while
+human-approved provenance-backed knowledge is reusable value. Ordo should
+eventually support paid or shared Knowledge Packs, but that marketplace-like
+direction must wait until the local pack, request, graph, Access, Growth, and
+audit foundations are solid.
 
 In product language, offers unlock Access. Access may include content,
 capabilities, templates, request types, artifact types, usage limits,

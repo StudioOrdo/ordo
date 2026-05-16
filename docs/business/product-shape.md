@@ -68,23 +68,24 @@ evidence.
 The current product stance is surface-first:
 
 ```text
-Member View
+Member
 Studio
 Support
 Knowledge
 Growth
-Systems
+System
 ```
 
 Roles are permission context and projection policy. Roles are not the primary
 navigation model.
 
-### Member View
+### Member
 
-Member View is the customer-safe participation surface. The member talks to
-Ordo, sees Activity, accepts Offers, uses Access, responds to Requests, and
-participates in Referrals. Members should not see staff routing, provider
-mechanics, raw policy state, or unrelated customer data.
+Member is the personal cockpit for any person in the system: owner, staff,
+customer, support person, trial user, affiliate, or network member. The member
+talks to Ordo, sees Activity, accepts Offers, uses Access, responds to
+Requests, and participates in Referrals. Members should not see staff routing,
+provider mechanics, raw policy state, or unrelated customer data.
 
 ### Studio
 
@@ -125,11 +126,30 @@ Growth is the business-value surface. It owns offers, asks, QR paths,
 campaigns, attribution, referrals, content performance, value events, rewards,
 benefit grants, and business learning.
 
-### Systems
+### System
 
-Systems is the appliance operation surface. It owns runtime health, providers,
+System is the appliance operation surface. It owns runtime health, providers,
 local install state, hosted instances, backups, restores, logs, events, policy,
 access/RBAC, diagnostics, audit, and low-level runtime operations.
+
+## Product Object Reconciliation
+
+Use these product objects consistently:
+
+- `Offer`: grants access to capabilities, packs, support, reports, services,
+  workflows, trials, or network membership.
+- `Capability`: determines what a member can do and which requests they can
+  receive.
+- `Request`: public/member-friendly object for an ask, approval, review,
+  handoff, repair, or decision.
+- `DecisionQueueItem` / `WorkItem`: internal routing object behind requests.
+- `Pack`: declares workflows, knowledge, policy, assurance, graph boundaries,
+  and request templates.
+
+For the NYC demo, Request can remain a projection over source-specific
+mechanisms such as support handoffs, feedback asks, artifact reviews, memory
+decisions, workflow approvals, and system issues. A fully canonical stored
+Request kernel should be a later slice unless a demo issue truly requires it.
 
 ### Public Story
 

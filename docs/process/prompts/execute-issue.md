@@ -18,6 +18,8 @@ Process docs to follow:
 - docs/process/definition-of-done.md
 - docs/process/implementation-issue-template.md
 - docs/process/test-plan-template.md
+- docs/process/nyc-demo-product-shell-lane.md when working in milestone
+  `0.1.9 OrdoStudio NYC Pilot Foundations`
 
 Before selecting work:
 1. Refresh git and GitHub state.
@@ -45,8 +47,11 @@ Required reading:
 Architecture gates:
 - preserve canonical/event/graph/projection/access/artifact/job/DAG/pack/workflow
   boundaries;
+- stay in the StudioOrdo/ordo product shell lane for NYC demo work;
 - do not fake providers, analytics, rewards, publishing, graph certainty, task
   execution, AI capability, hosted capacity, or pack execution;
+- do not merge or import Executor, add a new database/vector store, build full
+  pack assurance, or rewrite the Request kernel during NYC demo slices;
 - do not leak staff routing, provider internals, prompt internals, secrets, raw
   policy internals, owner-only data, private artifact text, compiled-plan
   inputs, task private payloads, graph certainty, or unsupported claims.

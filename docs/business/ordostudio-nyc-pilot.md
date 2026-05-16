@@ -28,6 +28,37 @@ This is not just a marketing campaign. It is the first compact proof of the
 full product shape: Growth, Offers, Access, Systems, Support, Studio, Knowledge,
 and Member View all participate in one bounded loop.
 
+## Current Demo Delivery Lane
+
+The current 0.1.9 demo chain is narrower than the full pilot loop. It should
+prove the product shell and appliance trust boundary before broader rewards,
+Executor import, pack assurance, or SUMO reporting work.
+
+Execute in this order unless the owner changes demo priority:
+
+1. Story Intake evidence links to workflow compilation evidence.
+2. Studio Preview shows governed workflow state.
+3. A tracked public entry creates or returns a first-user relationship handoff.
+4. Approved generated-content memory candidates produce a read-only promotion
+   readiness packet.
+
+This chain should prove:
+
+- public story path;
+- Studio workflow state;
+- support handoff path;
+- memory readiness without automatic promotion;
+- evidence-safe UI;
+- local appliance trust boundary.
+
+The tracked-entry handoff path is demo-critical for NYC. It should come before
+memory readiness when choosing between #419 and #417.
+
+Do not broaden this lane into Executor import, graph import/export, live
+provider calls, publishing automation, vector databases, generalized HITL,
+canonical Request storage rewrites, full pack assurance, operational reviewer
+personas, or consensus review.
+
 ## Offer Shape
 
 The default offer:

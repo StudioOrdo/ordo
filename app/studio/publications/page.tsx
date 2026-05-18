@@ -221,6 +221,7 @@ function MemoryReviewPanel({ packets, role }: { packets: StudioMemoryReviewPacke
           {packets.map((packet) => (
             <li key={packet.artifactId}>
               {packet.artifactId}: {packet.candidateCount} candidate(s), {packet.evidenceRefCount} safe local ref(s).
+              {" "}{packet.promotionReadyCount} readiness packet(s) ready; {packet.readinessBlockerCount} blocker(s).
               {packet.confirmedGraphPromotion ? " Graph promotion confirmed." : " Graph promotion not confirmed."}
               {packet.liveProviderCalled ? " Live provider evidence present." : " Live provider not called."}
             </li>
@@ -242,14 +243,33 @@ function MemoryReviewRow({ item, role }: { item: StudioMemoryReviewItemView; rol
       <td>
         <span className={statusClass(item.canApprove || item.canReject ? "warn" : "ready")}>{studioPublicationStatusLabel(item.state)}</span>
         <span className="table-subtle">{item.confidencePercent}% confidence</span>
+        <span className="table-subtle">
+          Promotion readiness:{" "}
+          <span className={statusClass(item.promotionReady ? "ready" : "warn")}>
+            {item.promotionReady ? "ready" : "blocked"}
+          </span>
+        </span>
+        <span className="table-subtle">Allowed next action: {item.readinessAllowedNextAction}</span>
+        {item.readinessBlockers.length > 0 ? <span className="table-subtle">{item.readinessBlockers.join(", ")}</span> : null}
       </td>
-      <td>{item.evidenceRefCount} safe local ref(s)</td>
+      <td>
+        {item.evidenceRefCount} safe local ref(s)
+        <span className="table-subtle">
+          Readiness refs: {item.readinessEvidenceRefCount} evidence, {item.readinessDecisionRefCount} decision
+        </span>
+      </td>
       <td>
         {item.canApprove || item.canReject ? (
           <StudioMemoryDecisionActions candidateId={item.candidateId} evidenceRefs={item.evidenceRefs} disabled={false} role={role} />
         ) : (
           <span className={statusClass("ready")}>Decision recorded</span>
         )}
+        <span className="table-subtle">
+          {item.memoryPromotionPerformed ? "Memory promotion performed." : "Memory promotion not performed."}
+          {" "}{item.confirmedGraphPromotion ? "Graph promotion confirmed." : "Graph promotion not confirmed."}
+          {" "}{item.vectorMutationPerformed ? "Vector mutation performed." : "Vector mutation not performed."}
+          {" "}{item.packStateMutationPerformed ? "Pack state changed." : "Pack state unchanged."}
+        </span>
       </td>
     </tr>
   );

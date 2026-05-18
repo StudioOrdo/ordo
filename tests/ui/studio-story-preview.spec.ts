@@ -160,7 +160,7 @@ test("Studio Story Preview renders protected deck and publication readiness", as
     expect(daemon.state.requests.some((request) => request.startsWith("GET /studio/story-production-review?"))).toBe(true);
     expect(daemon.state.requests.some((request) => request.startsWith("GET /studio/story-publish-learning?"))).toBe(true);
     expect(daemon.state.requests.some((request) => request === "POST /studio/story-founder-intake")).toBe(true);
-    expect(JSON.stringify(daemon.state.bodies[0])).toContain("studio_story_preview");
+    expect(JSON.stringify(daemon.state.bodies[0])).toContain("studio_story_intake_workbench");
   } finally {
     await daemon.close();
   }

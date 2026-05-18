@@ -12,6 +12,8 @@ const DEFAULT_AVAILABILITY_SCHEDULE_ID: &str = "availability_schedule_default";
 const DEFAULT_OPERATOR_PRESENCE_ID: &str = "operator_presence_default";
 const STRATEGY_SESSION_DESTINATION_KIND: &str = "support";
 const STRATEGY_SESSION_DESTINATION_ID: &str = "strategy_session";
+const FIRST_USER_RELATIONSHIP_DESTINATION_ID: &str = "first_user_relationship";
+const SUPPORT_ACCEPT_HANDOFF_CAPABILITY: &str = "support.accept_handoff";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -265,6 +267,16 @@ pub enum StrategySessionStatusState {
     Declined,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PublicRelationshipHandoffState {
+    Waiting,
+    ScreeningRequired,
+    Claimed,
+    Completed,
+    Declined,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailabilityWindow {
@@ -398,6 +410,27 @@ pub struct StrategySessionStatusView {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicRelationshipHandoffResponse {
+    pub status: PublicRelationshipHandoffStatusView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicRelationshipHandoffStatusView {
+    pub request_id: String,
+    pub state: PublicRelationshipHandoffState,
+    pub summary: String,
+    pub next_step: String,
+    pub source_kind: String,
+    pub source_id: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub allowed_actions: Vec<String>,
+    pub limitations: Vec<String>,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailabilityScheduleWriteRequest {
@@ -486,6 +519,15 @@ pub struct StrategySessionHandoffRequest {
     pub urgency: Option<String>,
     pub connection_trust: Option<ConnectionTrustLevel>,
     pub evaluated_at: Option<String>,
+    pub evidence_refs: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicRelationshipHandoffRequest {
+    pub visitor_session_id: String,
+    pub location_label: Option<String>,
+    pub location_kind: Option<String>,
     pub evidence_refs: Option<Vec<String>>,
 }
 
@@ -1293,6 +1335,133 @@ pub fn request_strategy_session_handoff(
     ))
 }
 
+pub fn request_public_relationship_handoff(
+    db_path: &Path,
+    entry_point_slug: &str,
+    request: PublicRelationshipHandoffRequest,
+) -> Result<(PublicRelationshipHandoffResponse, RealtimeEvent)> {
+    let entry_point_slug = require_identifier(entry_point_slug, "Entry point slug")?;
+    let visitor_session_id = require_identifier(&request.visitor_session_id, "Visitor session id")?;
+    let location_label =
+        normalize_optional_text_with_limit(request.location_label, "Location label", 240)?;
+    let location_kind =
+        normalize_optional_text_with_limit(request.location_kind, "Location kind", 120)?;
+    let mut evidence_refs = normalize_evidence_refs(request.evidence_refs)?;
+
+    let connection = Connection::open(db_path)?;
+    let (entry_point_id, entry_label, entry_status, destination_surface, destination_id) =
+        connection
+            .query_row(
+                "SELECT id, label, status, destination_surface, destination_id
+                 FROM tracked_entry_points
+                 WHERE slug = ?1",
+                [&entry_point_slug],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Tracked entry point was not found: {entry_point_slug}")
+            })?;
+    if entry_status != "active" {
+        bail!("Tracked entry point is not active.");
+    }
+
+    let (session_entry_point_id, session_entry_point_slug, session_status) = connection
+        .query_row(
+            "SELECT entry_point_id, entry_point_slug, status
+             FROM visitor_sessions
+             WHERE id = ?1",
+            [&visitor_session_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("Visitor session was not found: {visitor_session_id}"))?;
+    if session_status != "active" {
+        bail!("Visitor session is not active.");
+    }
+    if session_entry_point_id != entry_point_id || session_entry_point_slug != entry_point_slug {
+        bail!("Visitor session does not belong to this entry point.");
+    }
+    drop(connection);
+
+    push_strategy_evidence_ref(
+        &mut evidence_refs,
+        "tracked_entry_point",
+        Some(entry_point_slug.as_str()),
+    );
+    push_strategy_evidence_ref(
+        &mut evidence_refs,
+        "visitor_session",
+        Some(visitor_session_id.as_str()),
+    );
+    evidence_refs = merge_unique_evidence_refs(Vec::new(), evidence_refs);
+
+    let (item, event) = create_handoff_inbox_item(
+        db_path,
+        HandoffInboxCreateRequest {
+            source_kind: "visitor_session".to_string(),
+            source_id: Some(visitor_session_id.clone()),
+            destination_kind: STRATEGY_SESSION_DESTINATION_KIND.to_string(),
+            destination_id: Some(FIRST_USER_RELATIONSHIP_DESTINATION_ID.to_string()),
+            reason: Some("First-user relationship handoff requested".to_string()),
+            requested_action: Some("Claim first-user relationship handoff".to_string()),
+            urgency: Some("normal".to_string()),
+            assignee_actor_id: None,
+            due_at: None,
+            next_action_hint: Some(format!(
+                "Any member with {SUPPORT_ACCEPT_HANDOFF_CAPABILITY} can claim this handoff. First valid claim wins."
+            )),
+            evidence_refs: Some(evidence_refs),
+            visibility: Some("staff".to_string()),
+            request: Some(json!({
+                "kind": "first_user_relationship_handoff",
+                "entryPointSlug": entry_point_slug,
+                "visitorSessionId": visitor_session_id,
+                "requiredCapability": SUPPORT_ACCEPT_HANDOFF_CAPABILITY,
+            })),
+            evidence: Some(json!({
+                "relationshipLanding": {
+                    "kind": "tracked_entry_first_user_relationship",
+                    "entryPointSlug": entry_point_slug,
+                    "entryPointLabel": entry_label,
+                    "destinationSurface": destination_surface,
+                    "destinationIdPresent": destination_id.is_some(),
+                    "visitorSessionId": visitor_session_id,
+                    "location": {
+                        "label": location_label,
+                        "kind": location_kind,
+                    },
+                    "requiredCapability": SUPPORT_ACCEPT_HANDOFF_CAPABILITY,
+                    "publicSafe": true,
+                }
+            })),
+            approval_requirement: Some(ApprovalRequirement::OwnerApprovalRequired),
+        },
+        None,
+    )?;
+
+    Ok((
+        PublicRelationshipHandoffResponse {
+            status: public_relationship_status_from_handoff_item(&item),
+        },
+        event,
+    ))
+}
+
 pub fn read_strategy_session_status(
     db_path: &Path,
     item_id: &str,
@@ -2019,6 +2188,59 @@ fn strategy_status_from_handoff_item(item: &HandoffInboxItemView) -> StrategySes
     }
 }
 
+fn public_relationship_status_from_handoff_item(
+    item: &HandoffInboxItemView,
+) -> PublicRelationshipHandoffStatusView {
+    let (state, summary, next_step) = match item.delivery_state {
+        DeliveryState::PendingOwnerApproval | DeliveryState::Queued => (
+            PublicRelationshipHandoffState::Waiting,
+            "Your relationship handoff is queued for Support review.",
+            "A support-capable member can claim this request when available.",
+        ),
+        DeliveryState::Assigned => (
+            PublicRelationshipHandoffState::Claimed,
+            "Your relationship handoff has been claimed.",
+            "Support will continue from the safe handoff context.",
+        ),
+        DeliveryState::ContinueScreening => (
+            PublicRelationshipHandoffState::ScreeningRequired,
+            "Your relationship handoff needs one more safe context step.",
+            "Continue with Ordo before Support reviews this request.",
+        ),
+        DeliveryState::ApprovedLocalOnly => (
+            PublicRelationshipHandoffState::Completed,
+            "Your relationship handoff has been reviewed.",
+            "Support will follow up from the approved local context.",
+        ),
+        DeliveryState::Declined => (
+            PublicRelationshipHandoffState::Declined,
+            "Your relationship handoff is not available right now.",
+            "Continue with Ordo for the next safe step.",
+        ),
+    };
+
+    PublicRelationshipHandoffStatusView {
+        request_id: item.id.clone(),
+        state,
+        summary: summary.to_string(),
+        next_step: next_step.to_string(),
+        source_kind: item.source_kind.clone(),
+        source_id: item.source_id.clone(),
+        evidence_refs: item.evidence_refs.clone(),
+        allowed_actions: vec!["view_public_status".to_string()],
+        limitations: vec![
+            "Staff routing stays hidden from public status.".to_string(),
+            "Private conversation context stays out of the landing response.".to_string(),
+            "No external success, publication, durable memory change, or graph truth is claimed."
+                .to_string(),
+            format!(
+                "Support claim eligibility is governed by {SUPPORT_ACCEPT_HANDOFF_CAPABILITY}."
+            ),
+        ],
+        updated_at: item.updated_at.clone(),
+    }
+}
+
 impl StrategySessionTrialContext {
     fn into_json(self) -> Value {
         json!({
@@ -2472,6 +2694,142 @@ mod tests {
         .unwrap();
         assert_eq!(items.items.len(), 1);
         assert_eq!(items.items[0].id, first.id);
+    }
+
+    #[test]
+    fn public_entry_relationship_handoff_is_idempotent_safe_and_projected_to_support() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        seed_tracked_entry_and_visitor_session(&db_path);
+
+        let request = PublicRelationshipHandoffRequest {
+            visitor_session_id: "visitor_session_nyc".to_string(),
+            location_label: Some("NYC Founder Table".to_string()),
+            location_kind: Some("event_booth".to_string()),
+            evidence_refs: Some(vec![
+                "tracked_entry_point:nyc-founder-table".to_string(),
+                "visitor_session:visitor_session_nyc".to_string(),
+            ]),
+        };
+        let (first, first_event) =
+            request_public_relationship_handoff(&db_path, "nyc-founder-table", request.clone())
+                .unwrap();
+        let (second, second_event) =
+            request_public_relationship_handoff(&db_path, "nyc-founder-table", request).unwrap();
+
+        assert_eq!(first_event.event_type, "handoff.inbox.created");
+        assert_eq!(second_event.event_type, "handoff.inbox.grouped");
+        assert_eq!(second.status.request_id, first.status.request_id);
+        assert_eq!(second.status.state, PublicRelationshipHandoffState::Waiting);
+        assert_eq!(second.status.source_kind, "visitor_session");
+        assert_eq!(
+            second.status.source_id.as_deref(),
+            Some("visitor_session_nyc")
+        );
+        assert!(second
+            .status
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains(SUPPORT_ACCEPT_HANDOFF_CAPABILITY)));
+
+        let serialized = serde_json::to_string(&second).unwrap();
+        for forbidden in [
+            "actor_keith",
+            "assigneeActorId",
+            "destinationId",
+            "staff_routing",
+            "private conversation",
+            "rawPrompt",
+            "provider",
+            "policy",
+            "graph certainty",
+            "memory promotion",
+            "ownerOnlyLeadScore",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "public status leaked {forbidden}: {serialized}"
+            );
+        }
+
+        let inbox = list_handoff_inbox_with_query(
+            &db_path,
+            HandoffInboxListQuery {
+                source_kind: Some("visitor_session".to_string()),
+                source_id: Some("visitor_session_nyc".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(inbox.items.len(), 1);
+        let item = &inbox.items[0];
+        assert_eq!(item.destination_kind, "support");
+        assert_eq!(
+            item.destination_id.as_deref(),
+            Some(FIRST_USER_RELATIONSHIP_DESTINATION_ID)
+        );
+        assert_eq!(item.request["kind"], "first_user_relationship_handoff");
+        assert_eq!(
+            item.request["requiredCapability"],
+            SUPPORT_ACCEPT_HANDOFF_CAPABILITY
+        );
+        assert_eq!(item.visibility, "staff");
+
+        let work_items = list_surface_work_items(
+            &db_path,
+            SurfaceWorkItemQuery {
+                viewer: SurfaceWorkItemViewer::Staff,
+                surface_kind: Some("support".to_string()),
+                room_kind: Some("handoffs".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(work_items.items.len(), 1);
+        assert_eq!(work_items.items[0].object_id, item.id);
+        assert_eq!(work_items.items[0].status, "pending_owner_approval");
+
+        let (claimed, claim_event) = update_handoff_inbox_item(
+            &db_path,
+            item.id.as_str(),
+            HandoffInboxUpdateRequest {
+                assignee_actor_id: Some("actor_support_1".to_string()),
+                delivery_state: Some(DeliveryState::Assigned),
+                evidence: Some(json!({
+                    "claimedByCapability": SUPPORT_ACCEPT_HANDOFF_CAPABILITY,
+                })),
+                ..Default::default()
+            },
+            Some("actor_support_1"),
+        )
+        .unwrap();
+        assert_eq!(claimed.delivery_state, DeliveryState::Assigned);
+        assert_eq!(claim_event.event_type, "handoff.inbox.assigned");
+    }
+
+    #[test]
+    fn public_entry_relationship_handoff_rejects_mismatched_visitor_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        seed_tracked_entry_and_visitor_session(&db_path);
+        seed_second_tracked_entry(&db_path);
+
+        let result = request_public_relationship_handoff(
+            &db_path,
+            "other-entry",
+            PublicRelationshipHandoffRequest {
+                visitor_session_id: "visitor_session_nyc".to_string(),
+                location_label: None,
+                location_kind: None,
+                evidence_refs: None,
+            },
+        );
+
+        assert!(result.is_err());
+        let inbox = list_handoff_inbox(&db_path).unwrap();
+        assert_eq!(inbox.items.len(), 0);
     }
 
     #[test]
@@ -3015,6 +3373,60 @@ mod tests {
                     'resource_grant_trial', 'trial', 'trial_1', 'use',
                     'actor', 'actor_member_1', 'allow', '2026-05-13T10:00:00Z',
                     '2026-06-12T10:00:00Z', '{}'
+                 )",
+                [],
+            )
+            .unwrap();
+    }
+
+    fn seed_tracked_entry_and_visitor_session(db_path: &Path) {
+        let connection = Connection::open(db_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO tracked_entry_points (
+                    id, slug, label, status, source_kind, source_label, destination_surface,
+                    destination_id, public_path, qr_payload_json, attribution_json, metadata_json,
+                    created_by_actor_id, created_at, updated_at, archived_at
+                 ) VALUES (
+                    'entry_nyc', 'nyc-founder-table', 'NYC Founder Table', 'active',
+                    'event_qr', 'NYC Founder Table', 'about', NULL,
+                    '/public/e/nyc-founder-table', '{}', '{\"campaign\":\"nyc\"}',
+                    '{\"ownerOnlyLeadScore\":\"hot\"}', NULL,
+                    '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z', NULL
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO visitor_sessions (
+                    id, entry_point_id, entry_point_slug, status, destination_surface,
+                    destination_id, attribution_json, user_agent_hash, created_at,
+                    updated_at, last_seen_at, ended_at
+                 ) VALUES (
+                    'visitor_session_nyc', 'entry_nyc', 'nyc-founder-table', 'active',
+                    'about', NULL, '{\"source\":\"public_entry_landing\"}',
+                    'sha256:test', '2026-05-13T10:01:00Z',
+                    '2026-05-13T10:01:00Z', '2026-05-13T10:01:00Z', NULL
+                 )",
+                [],
+            )
+            .unwrap();
+    }
+
+    fn seed_second_tracked_entry(db_path: &Path) {
+        let connection = Connection::open(db_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO tracked_entry_points (
+                    id, slug, label, status, source_kind, source_label, destination_surface,
+                    destination_id, public_path, qr_payload_json, attribution_json, metadata_json,
+                    created_by_actor_id, created_at, updated_at, archived_at
+                 ) VALUES (
+                    'entry_other', 'other-entry', 'Other Entry', 'active',
+                    'event_qr', 'Other Table', 'about', NULL,
+                    '/public/e/other-entry', '{}', '{}', '{}', NULL,
+                    '2026-05-13T10:00:00Z', '2026-05-13T10:00:00Z', NULL
                  )",
                 [],
             )

@@ -174,6 +174,11 @@ pub const DAEMON_ROUTE_CONTRACTS: &[DaemonRouteContract] = &[
     public(HttpMethod::Get, "/public/e/:slug", "/public/e/smoke"),
     public(
         HttpMethod::Post,
+        "/public/e/:slug/relationship-handoff",
+        "/public/e/smoke/relationship-handoff",
+    ),
+    public(
+        HttpMethod::Post,
         "/public/visitor-sessions",
         "/public/visitor-sessions",
     ),

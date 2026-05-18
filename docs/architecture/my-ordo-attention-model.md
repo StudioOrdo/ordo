@@ -6,6 +6,10 @@ My Ordo is the member operating surface. It should make Ordo understandable to
 a busy non-technical person who needs to know what is safe, what needs a human,
 and what happens next.
 
+Use [Product Language](product-language.md) as the copy rule for this surface.
+Architecture terms may exist behind details, but the first screen should use
+ordinary words.
+
 ## Product Role
 
 My Ordo is not a generic inbox and not a chat-only page. It is the personal
@@ -25,22 +29,28 @@ The default question is:
 What needs me now?
 ```
 
-## Recommended Rooms
+## Recommended Member Rooms
 
 Use one term per concept in member UI.
 
 ```text
-Activity
+For you
 Offers
 Requests
-Capabilities
+People
 Chat
+What Ordo can do
 ```
+
+These are product-room labels for normal people. Internally, `For you` may be
+an activity projection, `What Ordo can do` may be capability grants, and
+`People` may include support handoffs. The UI should not make the member learn
+those internal terms.
 
 Migration aliases may exist, but member-facing copy should converge:
 
 - `asks` -> `requests`;
-- `access` and `packs` -> capability/access facets;
+- `access` and `packs` -> `What Ordo can do` details;
 - `handoffs`, `reviews`, `approvals`, and `repairs` -> Request types.
 
 ## Activity
@@ -64,7 +74,7 @@ Request is the member-friendly word for work or decisions routed to a person.
 Examples:
 
 - approve a draft;
-- review a memory readiness packet;
+- review something Ordo may remember later;
 - claim a support handoff;
 - answer a missing workflow input;
 - accept or decline a relationship request;
@@ -90,18 +100,19 @@ Offers are governed entry points. Accepting an offer may grant access to:
 Offer acceptance should create auditable state and route follow-up requests
 rather than behaving like a plain message.
 
-## Capabilities
+## What Ordo Can Do
 
-Capabilities explain what the member can currently do.
+This room explains what the member can currently do with Ordo.
 
-The UI should use plain labels. The daemon should still authorize against
-stable capability ids such as `support.accept_handoff`.
+The UI should use plain labels such as "You can help visitors" or "You can
+review drafts." The daemon should still authorize against stable internal
+capability ids such as `support.accept_handoff`.
 
 ## Chat
 
 Chat is a relationship interface, not the product spine. Chat can help the
-member ask questions, respond to requests, or understand receipts, but durable
-work still moves through Requests, Offers, Capabilities, Jobs, Artifacts,
+member ask questions, respond to requests, or understand receipts. Durable work
+still moves through internal Requests, Offers, Capabilities, Jobs, Artifacts,
 Events, and policy.
 
 ## Attention Classification
@@ -188,6 +199,10 @@ For non-technical members, every item should answer:
 
 Avoid member-facing words such as:
 
+- capability;
+- pack;
+- workflow compilation;
+- evidence refs;
 - DAG;
 - provider internals;
 - prompt;

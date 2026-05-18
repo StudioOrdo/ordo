@@ -6,6 +6,9 @@ This document records the product shape that should guide Ordo work after the
 NYC product-shell batch. Current code remains the source of truth for shipped
 behavior. This model explains how the shipped pieces should converge.
 
+This is an architecture document. Member-facing UI must translate these terms
+into plain language using [Product Language](product-language.md).
+
 ## Product Thesis
 
 Ordo is a local-first operating system for governed work.
@@ -54,9 +57,9 @@ What has evidence?
 What happens next?
 ```
 
-My Ordo owns member-facing Activity, Requests, Offers, Capabilities, receipts,
-and the relationship conversation with Ordo. Chat belongs here as one way to
-act, not as a separate product.
+My Ordo owns member-facing "For you" activity, Requests, Offers, what Ordo can
+do, receipts, and the relationship conversation with Ordo. Chat belongs here as
+one way to act, not as a separate product.
 
 ### Support
 
@@ -111,6 +114,12 @@ and migration safety.
 System should be quiet for normal members and explicit for operators.
 
 ## Canonical Objects
+
+The object names below are internal product architecture. They are useful for
+schemas, code, issues, and implementation planning. They are not automatically
+good UI labels. For example, a member should usually see "People waiting for
+help" instead of "handoff queue projection" and "Ready for review" instead of
+"memory promotion readiness packet."
 
 ### Offer
 

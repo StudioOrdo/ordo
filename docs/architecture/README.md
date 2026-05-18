@@ -5,6 +5,7 @@ These docs turn the product thesis into system shape.
 - [Current System Overview](../system-overview.md)
 - [Product Canon Gap Map](product-canon-gap-map.md)
 - [Product Operating Model](product-operating-model.md)
+- [Product Language](product-language.md)
 - [My Ordo Attention Model](my-ordo-attention-model.md)
 - [Executor Bridge Contract](executor-bridge-contract.md)
 - [System Architecture](system-architecture.md)

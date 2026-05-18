@@ -14,6 +14,15 @@ The owner should be able to direct work conversationally, inspect evidence,
 approve outcomes, publish, hand off, remember, and move artifacts across
 governed capabilities without becoming a workflow engineer.
 
+The canonical operating model is described in
+[Product Operating Model](../architecture/product-operating-model.md). The
+member attention surface is described in
+[My Ordo Attention Model](../architecture/my-ordo-attention-model.md). The
+member-facing language rule is described in
+[Product Language](../architecture/product-language.md). The
+Executor donor boundary is described in
+[Executor Bridge Contract](../architecture/executor-bridge-contract.md).
+
 The interface can feel conversational, but the machinery underneath should be
 deterministic. Ordo should use LLMs for intent parsing, drafting, summarizing,
 reviewing, proposing, and explaining. Ordo's code should own access, policy,

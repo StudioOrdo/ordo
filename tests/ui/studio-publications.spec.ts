@@ -82,7 +82,7 @@ test.describe("Studio Publications view model", () => {
     expect(view.metricCount).toBe(0);
     expect(view.publishEvidenceCount).toBe(0);
     expect(view.summaryLines).toEqual([
-      "No daemon-backed Story production review components are available yet.",
+      "No Story production review items are available yet.",
       "No Story publish learning metrics are available yet.",
       "Missing or deferred publication evidence remains explicit.",
     ]);
@@ -142,10 +142,10 @@ test("Studio Publications renders Story review and learning evidence from protec
     await page.goto(productContentUrl("/studio/publications?role=studio", testInfo));
 
     await expect(page.locator("main").getByRole("heading", { name: "Publications" })).toBeVisible();
-    await expect(page.locator("main")).toContainText("Story Publication Readiness");
+    await expect(page.locator("main")).toContainText("Publication Review");
     await expect(page.locator("main")).toContainText("Narrative deck review package");
     await expect(page.locator("main")).toContainText("Homepage publish approval");
-    await expect(page.locator("main")).toContainText("Story Publish Learning");
+    await expect(page.locator("main")).toContainText("What Happened After Publishing");
     await expect(page.locator("main")).toContainText("Manual publish evidence");
     await expect(page.locator("main")).toContainText("External analytics missing");
     await expect(page.locator("main")).toContainText("External publishing not claimed");
@@ -170,7 +170,7 @@ test("Studio Publications refuses member role before daemon reads", async ({ pag
   try {
     await page.goto("/studio/publications?role=member");
 
-    await expect(page.locator("body")).not.toContainText("Story Publication Readiness");
+    await expect(page.locator("body")).not.toContainText("Publication Review");
     await expect(page.locator("body")).not.toContainText("Narrative deck review package");
     expect(daemon.state.requests).toEqual([]);
   } finally {
@@ -182,8 +182,8 @@ test("Studio Publications keeps daemon-degraded state explicit", async ({ page }
   await page.goto(productContentUrl("/studio/publications?role=studio", testInfo));
 
   await expect(page.locator("main").getByRole("heading", { name: "Publications" })).toBeVisible();
-  await expect(page.locator("main")).toContainText("degraded");
-  await expect(page.locator("main")).toContainText("Studio Publications evidence is degraded because daemon Story routes are unavailable.");
+  await expect(page.locator("main")).toContainText("needs attention");
+  await expect(page.locator("main")).toContainText("Ordo cannot read the local publication review right now.");
   await expect(page.locator("main")).toContainText("/studio/story-production-review");
   await expect(page.locator("main")).toContainText("/studio/story-publish-learning");
 });

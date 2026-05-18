@@ -30,7 +30,7 @@ export default async function StudioStoryPreviewPage({ searchParams }: { searchP
 
   const params = searchParams ? await searchParams : {};
   const railMode = await railModeFromSearchParams(searchParams);
-  const mobileStep = await mobileStepFromSearchParams(searchParams);
+  const mobileStep = await mobileStepFromSearchParams(searchParams, "content");
   const storyIntakeRequest = storyIntakeRequestFromParams(params);
   const snapshot = await getStudioStoryPreviewSnapshot(viewer, {
     deckId: firstParam(params.deckId),
@@ -45,15 +45,15 @@ export default async function StudioStoryPreviewPage({ searchParams }: { searchP
       <PageTitle
         eyebrow="Studio"
         title="Story Preview"
-        description="Protected owner/staff homepage story preview assembled from public-safe deck and publication readiness evidence."
+        description="Review the public story before anything is published, sent to providers, or treated as truth."
       />
 
       <section className="brief-panel">
         <div className="meta-row">
           <span>Deck {view.deckId}</span>
-          <span className={statusClass(degraded ? "error" : studioPublicationStatusTone(view.status))}>{degraded ? "degraded" : view.status}</span>
+          <span className={statusClass(degraded ? "error" : studioPublicationStatusTone(view.status))}>{degraded ? "needs attention" : view.status}</span>
         </div>
-        <h3 className="panel-title">Homepage Story Preview</h3>
+        <h3 className="panel-title">Story Preview Check</h3>
         <ul className="brief-list">
           {view.summaryLines.map((line) => (
             <li key={line}>{line}</li>
@@ -63,9 +63,12 @@ export default async function StudioStoryPreviewPage({ searchParams }: { searchP
 
       {snapshot.degradedReason ? (
         <section className="plain-panel">
-          <h3 className="panel-title">State</h3>
-          <p className="brief-body">Studio Story preview evidence is degraded because daemon Story routes are unavailable.</p>
-          <p className="table-subtle">{snapshot.degradedReason}</p>
+          <h3 className="panel-title">Needs Attention</h3>
+          <p className="brief-body">Ordo cannot read all local Story Preview evidence right now. Nothing was published, sent to a provider, or promoted to memory.</p>
+          <details>
+            <summary>Technical detail</summary>
+            <p className="table-subtle">{snapshot.degradedReason}</p>
+          </details>
         </section>
       ) : null}
 
@@ -87,24 +90,24 @@ function WorkflowStatePanel({ view }: { view: StudioStoryPreviewView }) {
         <span>{view.workflowCompilation?.templateLabel ?? "studio.story.scrollytelling_homepage"}</span>
         <span className={statusClass(workflowToneClass(view.workflowState))}>{view.workflowState.label}</span>
       </div>
-      <h3 className="panel-title">Workflow State</h3>
+      <h3 className="panel-title">Production Plan Status</h3>
       <p className="brief-body">{view.workflowState.detail}</p>
       {view.workflowCompilation ? (
         <>
           <div className="data-row">
-            <span className="label">Compilation</span>
+            <span className="label">Plan record</span>
             <span className="value">{view.workflowCompilation.compilationRef}</span>
           </div>
           <div className="data-row">
-            <span className="label">Evidence</span>
+            <span className="label">Safe evidence</span>
             <span className="value">{view.workflowCompilation.safeEvidenceRefCount} safe local ref(s)</span>
           </div>
           <div className="data-row">
-            <span className="label">Task bindings</span>
+            <span className="label">Planned steps</span>
             <span className="value">{view.workflowCompilation.taskCount}</span>
           </div>
           <div className="data-row">
-            <span className="label">Approval gates</span>
+            <span className="label">Approvals needed</span>
             <span className="value">
               {view.workflowCompilation.approvalGates.length > 0
                 ? view.workflowCompilation.approvalGates.join(", ")
@@ -121,7 +124,7 @@ function WorkflowStatePanel({ view }: { view: StudioStoryPreviewView }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Task</th>
+                <th>Planned step</th>
                 <th>Method</th>
                 <th>Artifact</th>
               </tr>
@@ -130,7 +133,7 @@ function WorkflowStatePanel({ view }: { view: StudioStoryPreviewView }) {
               {view.workflowCompilation.taskBindings.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="table-empty">
-                    No task bindings are exposed while compilation is blocked.
+                    No planned steps are shown while the plan is blocked.
                   </td>
                 </tr>
               ) : (
@@ -146,7 +149,7 @@ function WorkflowStatePanel({ view }: { view: StudioStoryPreviewView }) {
           </table>
         </>
       ) : (
-        <p className="brief-body">Protected Story Intake workflow compilation evidence is not available for this Preview request.</p>
+        <p className="brief-body">Story Intake has not provided a safe production plan for this Preview request.</p>
       )}
       <table className="data-table">
         <thead>
@@ -178,7 +181,7 @@ function workflowToneClass(state: StudioStoryWorkflowStateView): "ok" | "warn" |
 function PreviewStatePanel({ view }: { view: StudioStoryPreviewView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Preview Evidence</h3>
+      <h3 className="panel-title">Preview Status</h3>
       <div className="data-row">
         <span className="label">Readiness</span>
         <span className="value">{view.readinessLabel}</span>
@@ -188,11 +191,11 @@ function PreviewStatePanel({ view }: { view: StudioStoryPreviewView }) {
         <span className="value">{view.slideCount}</span>
       </div>
       <div className="data-row">
-        <span className="label">Publication evidence</span>
+        <span className="label">Publication review evidence</span>
         <span className="value">{view.publicationEvidenceCount}</span>
       </div>
       <div className="data-row">
-        <span className="label">Safe local refs</span>
+        <span className="label">Safe local references</span>
         <span className="value">{view.safeEvidenceRefCount} safe local ref(s)</span>
       </div>
     </section>
@@ -216,7 +219,7 @@ function SlidePreviewPanel({ slides }: { slides: StudioStoryPreviewSlideView[] }
           {slides.length === 0 ? (
             <tr>
               <td colSpan={4} className="table-empty">
-                No protected preview slides are available.
+                    No safe preview slides are available.
               </td>
             </tr>
           ) : (
@@ -247,7 +250,7 @@ function SlidePreviewRow({ slide }: { slide: StudioStoryPreviewSlideView }) {
 function PublicationReadinessPanel({ view }: { view: StudioStoryPreviewView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Story Publication Readiness</h3>
+      <h3 className="panel-title">Approval And Publishing Status</h3>
       {view.publication ? (
         <>
           <div className="data-row">
@@ -264,7 +267,7 @@ function PublicationReadinessPanel({ view }: { view: StudioStoryPreviewView }) {
           </div>
         </>
       ) : (
-        <p className="brief-body">Missing or degraded publication evidence remains explicit.</p>
+        <p className="brief-body">Approval evidence is missing or unavailable. Ordo is not publishing anything.</p>
       )}
     </section>
   );
@@ -273,7 +276,7 @@ function PublicationReadinessPanel({ view }: { view: StudioStoryPreviewView }) {
 function DeferredStatesPanel({ view }: { view: StudioStoryPreviewView }) {
   return (
     <section className="plain-panel table-shell">
-      <h3 className="panel-title">Deferred State</h3>
+      <h3 className="panel-title">Not Done Yet</h3>
       <table className="data-table">
         <thead>
           <tr>
@@ -302,7 +305,7 @@ function DeferredStatesPanel({ view }: { view: StudioStoryPreviewView }) {
 function LimitationsPanel({ view }: { view: StudioStoryPreviewView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Limitations</h3>
+      <h3 className="panel-title">Known Limits</h3>
       <ul className="brief-list">
         {view.limitations.length === 0 ? <li>No limitations reported.</li> : null}
         {view.limitations.map((item) => (
@@ -316,7 +319,7 @@ function LimitationsPanel({ view }: { view: StudioStoryPreviewView }) {
 function NextActionsPanel({ view }: { view: StudioStoryPreviewView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Next Actions</h3>
+      <h3 className="panel-title">What To Do Next</h3>
       <ul className="brief-list">
         {view.nextActions.length === 0 ? <li>Review preview evidence.</li> : null}
         {view.nextActions.map((item) => (

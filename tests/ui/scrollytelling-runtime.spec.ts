@@ -116,14 +116,14 @@ test.describe("scrollytelling runtime mapping", () => {
     expect(JSON.stringify(slides)).not.toContain("private artifact");
   });
 
-  test("fallback deck is explicit about missing daemon readiness", () => {
+  test("fallback deck is explicit about missing live story readiness", () => {
     const fallback = fallbackHomepageStoryDeck("daemon_unavailable");
     const slides = homepageStoryDeckToSlides(fallback);
 
     expect(fallback.readiness.ready).toBe(false);
-    expect(fallback.readiness.missing).toContain("daemon-backed public homepage story deck");
+    expect(fallback.readiness.missing).toContain("live public story content");
     expect(slides[0].title).toBe("Studio Ordo");
-    expect(slides[0].limitations.join(" ")).toContain("daemon-backed");
+    expect(slides[0].limitations.join(" ")).toContain("live public story content");
     expect(JSON.stringify(fallback)).not.toContain("analytics claim");
   });
 });

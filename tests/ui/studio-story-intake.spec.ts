@@ -22,15 +22,15 @@ test.describe("Studio Story intake view model", () => {
     expect(view.workflowCompilation?.status).toBe("compiled");
     expect(view.workflowCompilation?.taskCount).toBe(3);
     expect(view.workflowCompilation?.approvalGates).toContain("Publish required");
-    expect(view.readinessLabel).toBe("Ready for narrative deck");
+    expect(view.readinessLabel).toBe("Ready for story planning");
     expect(view.narrativeDeckReady).toBe(true);
     expect(view.safeEvidenceRefCount).toBe(2);
     expect(view.summaryLines).toEqual([
-      "Founder intake has stored workflow compilation evidence.",
-      "3 task binding(s) and 3 workflow evidence ref(s) are ready for Studio Preview.",
-      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+      "Story Intake has a saved production plan for Studio Preview.",
+      "3 planned step(s) and 3 safe evidence ref(s) are ready to review.",
+      "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
     ]);
-    expect(view.nextActions).toContain("Review workflow compilation evidence");
+    expect(view.nextActions).toContain("Review the story production plan");
     expect(view.limitations).toContain("Owner review required before public derivative use");
     expect(JSON.stringify(view)).not.toContain("Internal founder note");
     expect(JSON.stringify(view)).not.toContain("provider internal");
@@ -80,9 +80,9 @@ test.describe("Studio Story intake view model", () => {
     expect(view.narrativeDeckReady).toBe(false);
     expect(view.missingPrerequisites).toEqual(["Evidence backed public story pack claims"]);
     expect(view.summaryLines).toEqual([
-      "Founder intake cannot compile a workflow until missing inputs are resolved.",
-      "1 workflow input blocker(s) remain explicit.",
-      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+      "Story Intake cannot prepare the production plan until missing information is resolved.",
+      "1 required item(s) still need attention.",
+      "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
     ]);
     expect(view.nextActions).toContain("Resolve evidence backed public story pack claims");
   });
@@ -94,21 +94,21 @@ test.afterEach(async ({ page }) => {
   await page.close();
 });
 
-test("Studio Story intake renders daemon-backed readiness evidence", async ({ page }, testInfo) => {
+test("Studio Story intake renders safe readiness evidence", async ({ page }, testInfo) => {
   const daemon = await startMockDaemon("ready");
   try {
     await page.goto(storyIntakeUrl("studio", testInfo));
 
-    await expect(page.locator("main").getByRole("heading", { name: "Story Intake" })).toBeVisible();
-    await expect(page.locator("main")).toContainText("Founder Intake Readiness");
-    await expect(page.locator("main")).toContainText("Workflow Compilation");
+    await expect(page.locator("main").getByRole("heading", { name: "Story Intake", exact: true })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Story Intake Check");
+    await expect(page.locator("main")).toContainText("Production Plan");
     await expect(page.locator("main")).toContainText("compiled");
     await expect(page.locator("main")).toContainText("studio.story.scrollytelling_homepage v1");
     await expect(page.locator("main")).toContainText("workflow_compilation:story_intake_ui");
     await expect(page.locator("main")).toContainText("homepage.createNarrativeDeck");
     await expect(page.locator("main")).toContainText("publish.requestApproval");
     await expect(page.locator("main")).toContainText("2 safe local ref(s)");
-    await expect(page.locator("main")).toContainText("Review workflow compilation evidence");
+    await expect(page.locator("main")).toContainText("Review the story production plan");
     await expect(page.locator("main")).toContainText("Owner review required before public derivative use");
     await expect(page.locator("main")).not.toContainText("Internal founder note");
     await expect(page.locator("main")).not.toContainText("provider internal");
@@ -131,7 +131,7 @@ test("Studio Story intake refuses member role before daemon reads", async ({ pag
   try {
     await page.goto(storyIntakeUrl("member", testInfo));
 
-    await expect(page.locator("body")).not.toContainText("Founder Intake Readiness");
+    await expect(page.locator("body")).not.toContainText("Story Intake Check");
     expect(daemon.state.requests).toEqual([]);
   } finally {
     await daemon.close();
@@ -140,13 +140,13 @@ test("Studio Story intake refuses member role before daemon reads", async ({ pag
 
 test("Studio Story intake keeps empty and daemon-degraded states explicit", async ({ page }, testInfo) => {
   await page.goto(productContentUrl("/studio/story-intake?role=studio", testInfo));
-  await expect(page.locator("main").getByRole("heading", { name: "Story Intake" })).toBeVisible();
-  await expect(page.locator("main")).toContainText("No Story founder intake has been submitted from this workbench yet.");
-  await expect(page.locator("main")).toContainText("Readiness is unknown until protected intake evidence is available.");
+  await expect(page.locator("main").getByRole("heading", { name: "Story Intake", exact: true })).toBeVisible();
+  await expect(page.locator("main")).toContainText("No Story Intake has been submitted from this workbench yet.");
+  await expect(page.locator("main")).toContainText("Ordo will not prepare the story plan until safe intake evidence exists.");
 
   await page.goto(storyIntakeUrl("studio", testInfo));
-  await expect(page.locator("main")).toContainText("degraded");
-  await expect(page.locator("main")).toContainText("Studio Story intake evidence is degraded because the protected daemon route is unavailable.");
+  await expect(page.locator("main")).toContainText("needs attention");
+  await expect(page.locator("main")).toContainText("Ordo cannot read the local Story Intake record right now.");
   await expect(page.locator("main")).toContainText("/studio/story-founder-intake");
 });
 

@@ -36,7 +36,7 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
 
   const params = searchParams ? await searchParams : {};
   const railMode = await railModeFromSearchParams(searchParams);
-  const mobileStep = await mobileStepFromSearchParams(searchParams);
+  const mobileStep = await mobileStepFromSearchParams(searchParams, "content");
   const snapshot = await getStudioPublicationsSnapshot(viewer, {
     deckId: firstParam(params.deckId),
     artifactIds: listParam(params.artifactIds ?? params.artifactId),
@@ -52,17 +52,17 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
       <PageTitle
         eyebrow="Studio"
         title="Publications"
-        description="Owner/staff Story publication readiness and learning evidence from protected local daemon routes."
+        description="Review what is ready, what still needs a person, and what has not been promoted or published."
       />
 
       <section className="brief-panel">
         <div className="meta-row">
           <span>Deck {snapshot.deckId}</span>
           <span className={statusClass(degraded ? "error" : view ? view.status : "empty")}>
-            {degraded ? "degraded" : view ? view.status : "empty"}
+            {degraded ? "needs attention" : view ? view.status : "empty"}
           </span>
         </div>
-        <h3 className="panel-title">Story Publication Readiness</h3>
+        <h3 className="panel-title">Publication Review</h3>
         <ul className="brief-list">
           {summaryLines(view, degraded).map((line) => (
             <li key={line}>{line}</li>
@@ -72,9 +72,12 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
 
       {snapshot.degradedReason ? (
         <section className="plain-panel">
-          <h3 className="panel-title">State</h3>
-          <p className="brief-body">Studio Publications evidence is degraded because daemon Story routes are unavailable.</p>
-          <p className="table-subtle">{snapshot.degradedReason}</p>
+          <h3 className="panel-title">Needs Attention</h3>
+          <p className="brief-body">Ordo cannot read the local publication review right now. Nothing was published, sent to a provider, or promoted to memory.</p>
+          <details>
+            <summary>Technical detail</summary>
+            <p className="table-subtle">{snapshot.degradedReason}</p>
+          </details>
         </section>
       ) : null}
 
@@ -83,7 +86,7 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
           <PublicationStatePanel view={view} />
           <StatusSummaryPanel view={view} />
           <ComponentPanel components={view.components} />
-          <LearningPanel title="Story Publish Learning" metrics={[...view.sourceStatus, ...view.contentMetrics]} />
+          <LearningPanel title="What Happened After Publishing" metrics={[...view.sourceStatus, ...view.contentMetrics]} />
           <MemoryReviewPanel packets={view.memoryReviewPackets} role={role} />
           <PublishEvidencePanel sources={view.publishEvidence} />
           <DeferredStatesPanel states={view.deferredStates} />
@@ -92,8 +95,8 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
         </>
       ) : !degraded ? (
         <section className="plain-panel">
-          <h3 className="panel-title">State</h3>
-          <p className="brief-body">No daemon-backed Story publication evidence is available yet.</p>
+          <h3 className="panel-title">Not Ready Yet</h3>
+          <p className="brief-body">No Story publication review is ready yet. Ordo is not publishing or promoting anything.</p>
         </section>
       ) : null}
     </ProductShell>
@@ -103,25 +106,25 @@ export default async function StudioPublicationsPage({ searchParams }: { searchP
 function PublicationStatePanel({ view }: { view: StudioPublicationsView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Publication Evidence</h3>
+      <h3 className="panel-title">Review Status</h3>
       <div className="data-row">
-        <span className="label">Production review</span>
+        <span className="label">Owner review</span>
         <span className="value">
           <span className={statusClass(view.reviewStatus)}>{studioPublicationStatusLabel(view.reviewStatus)}</span>
         </span>
       </div>
       <div className="data-row">
-        <span className="label">Publish learning</span>
+        <span className="label">After-publish learning</span>
         <span className="value">
           <span className={statusClass(view.learningStatus)}>{studioPublicationStatusLabel(view.learningStatus)}</span>
         </span>
       </div>
       <div className="data-row">
-        <span className="label">Safe local refs</span>
+        <span className="label">Safe local references</span>
         <span className="value">{view.safeEvidenceRefCount}</span>
       </div>
       <div className="data-row">
-        <span className="label">Memory candidates</span>
+        <span className="label">Memory items awaiting review</span>
         <span className="value">{view.memoryCandidateCount}</span>
       </div>
     </section>
@@ -131,7 +134,7 @@ function PublicationStatePanel({ view }: { view: StudioPublicationsView }) {
 function StatusSummaryPanel({ view }: { view: StudioPublicationsView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Source Status</h3>
+      <h3 className="panel-title">Checklist</h3>
       {studioPublicationStatusCounts().map((status) => (
         <div key={status} className="data-row">
           <span className="label">{studioPublicationStatusLabel(status)}</span>
@@ -147,7 +150,7 @@ function StatusSummaryPanel({ view }: { view: StudioPublicationsView }) {
 function ComponentPanel({ components }: { components: StudioPublicationComponentView[] }) {
   return (
     <section className="plain-panel table-shell">
-      <h3 className="panel-title">Review Components</h3>
+      <h3 className="panel-title">Review Checklist</h3>
       <table className="data-table">
         <thead>
           <tr>
@@ -196,9 +199,9 @@ function MemoryReviewPanel({ packets, role }: { packets: StudioMemoryReviewPacke
   const items = packets.flatMap((packet) => packet.items);
   return (
     <section className="plain-panel table-shell">
-      <h3 className="panel-title">Generated-Content Memory Review</h3>
+      <h3 className="panel-title">Memory Review Packet</h3>
       {packets.length === 0 || items.length === 0 ? (
-        <p className="brief-body">No generated-content memory candidates are available for owner/staff review.</p>
+        <p className="brief-body">No generated content is ready for owner/staff memory review.</p>
       ) : (
         <table className="data-table">
           <thead>
@@ -221,7 +224,7 @@ function MemoryReviewPanel({ packets, role }: { packets: StudioMemoryReviewPacke
           {packets.map((packet) => (
             <li key={packet.artifactId}>
               {packet.artifactId}: {packet.candidateCount} candidate(s), {packet.evidenceRefCount} safe local ref(s).
-              {" "}{packet.promotionReadyCount} readiness packet(s) ready; {packet.readinessBlockerCount} blocker(s).
+              {" "}{packet.promotionReadyCount} owner review packet(s) ready; {packet.readinessBlockerCount} blocker(s).
               {packet.confirmedGraphPromotion ? " Graph promotion confirmed." : " Graph promotion not confirmed."}
               {packet.liveProviderCalled ? " Live provider evidence present." : " Live provider not called."}
             </li>
@@ -244,7 +247,7 @@ function MemoryReviewRow({ item, role }: { item: StudioMemoryReviewItemView; rol
         <span className={statusClass(item.canApprove || item.canReject ? "warn" : "ready")}>{studioPublicationStatusLabel(item.state)}</span>
         <span className="table-subtle">{item.confidencePercent}% confidence</span>
         <span className="table-subtle">
-          Promotion readiness:{" "}
+          Owner review packet:{" "}
           <span className={statusClass(item.promotionReady ? "ready" : "warn")}>
             {item.promotionReady ? "ready" : "blocked"}
           </span>
@@ -325,7 +328,7 @@ function MetricRow({ metric }: { metric: StudioPublicationMetricView }) {
 function PublishEvidencePanel({ sources }: { sources: StudioPublicationSourceView[] }) {
   return (
     <section className="plain-panel table-shell">
-      <h3 className="panel-title">Publish Evidence Sources</h3>
+      <h3 className="panel-title">Evidence Sources</h3>
       <table className="data-table">
         <thead>
           <tr>
@@ -371,7 +374,7 @@ function PublishEvidenceRow({ source }: { source: StudioPublicationSourceView })
 function DeferredStatesPanel({ states }: { states: StudioPublicationDeferredState[] }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Deferred Claims</h3>
+      <h3 className="panel-title">Not Done Yet</h3>
       {states.length === 0 ? (
         <p className="brief-body">No deferred publication claims are reported.</p>
       ) : (
@@ -394,7 +397,7 @@ function DeferredStatesPanel({ states }: { states: StudioPublicationDeferredStat
 function LimitationsPanel({ limitations }: { limitations: string[] }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Limitations</h3>
+      <h3 className="panel-title">Known Limits</h3>
       {limitations.length === 0 ? (
         <p className="brief-body">No Story publish learning limitations are reported.</p>
       ) : (
@@ -411,7 +414,7 @@ function LimitationsPanel({ limitations }: { limitations: string[] }) {
 function NextActionsPanel({ actions }: { actions: string[] }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Next Actions</h3>
+      <h3 className="panel-title">What To Do Next</h3>
       {actions.length === 0 ? (
         <p className="brief-body">No next actions are reported.</p>
       ) : (
@@ -428,11 +431,11 @@ function NextActionsPanel({ actions }: { actions: string[] }) {
 function summaryLines(view: StudioPublicationsView | null, degraded: boolean): string[] {
   if (degraded) {
     return [
-      "Studio Publications evidence is degraded because daemon Story routes are unavailable.",
-      "External publishing, provider execution, memory promotion, and graph promotion remain unavailable unless daemon evidence says otherwise.",
+      "Ordo cannot read the local publication review right now.",
+      "Nothing is published, sent to providers, promoted to memory, or written to graph truth unless local evidence proves it.",
     ];
   }
-  return view?.summaryLines ?? ["No daemon-backed Story publication evidence is available yet."];
+  return view?.summaryLines ?? ["No Story publication review is ready yet."];
 }
 
 function firstParam(value: string | string[] | undefined): string | undefined {

@@ -19,6 +19,10 @@ import type {
 } from "@/lib/studio-story-intake";
 import type { HomepageStoryDeckResponse } from "@/lib/scrollytelling-runtime";
 import type { StudioStoryPreviewSnapshot } from "@/lib/studio-story-preview";
+import {
+  buildSupportHandoffQueueView,
+  type SupportHandoffQueueView,
+} from "@/lib/support-handoffs";
 
 export type {
   GrowthPilotEvidenceRef,
@@ -485,6 +489,42 @@ interface SurfaceWorkItemsResponse {
   items: StudioSurfaceWorkItem[];
 }
 
+export interface HandoffInboxItemView {
+  id: string;
+  sourceKind: string;
+  sourceId: string | null;
+  destinationKind: string;
+  destinationId: string | null;
+  reason: string;
+  requestedAction: string;
+  urgency: string;
+  assigneeActorId: string | null;
+  dueAt: string | null;
+  nextActionHint: string | null;
+  evidenceRefs: string[];
+  visibility: string;
+  request: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  approvalRequirement: string;
+  deliveryState: string;
+  ownerDecision: string | null;
+  decisionReason: string | null;
+  createdByActorId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+interface HandoffInboxListResponse {
+  items: HandoffInboxItemView[];
+}
+
+export interface SupportHandoffQueueSnapshot extends SupportHandoffQueueView {
+  daemonUrl: string;
+  createdAt: string;
+  degradedReason: string | null;
+}
+
 interface EventReplayResponse {
   events: RealtimeEventSummary[];
   nextCursor: number | null;
@@ -789,6 +829,20 @@ export async function getStudioArtifactPatchSnapshot(): Promise<StudioArtifactPa
     createdAt,
     proposals: patchResult.data?.proposals ?? [],
     degradedReason: patchResult.error,
+  };
+}
+
+export async function getSupportHandoffQueueSnapshot(): Promise<SupportHandoffQueueSnapshot> {
+  const baseUrl = daemonUrl();
+  const createdAt = new Date().toISOString();
+  const inboxResult = await readEndpoint<HandoffInboxListResponse>(baseUrl, "/handoff/inbox?limit=100");
+  const queueView = buildSupportHandoffQueueView(inboxResult.data?.items ?? []);
+
+  return {
+    ...queueView,
+    daemonUrl: baseUrl,
+    createdAt,
+    degradedReason: inboxResult.error,
   };
 }
 

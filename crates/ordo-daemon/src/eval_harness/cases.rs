@@ -1,9 +1,9 @@
 use super::*;
+use crate::public_surfaces::public_product_surface_contract_connection;
 use anyhow::{ensure, Result};
 use rusqlite::{Connection, OptionalExtension};
-use std::path::{Path, PathBuf};
-use crate::public_surfaces::public_product_surface_contract_connection;
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 
 pub fn run_relationship_conversation_message_eval(
     connection: &Connection,
@@ -866,7 +866,10 @@ pub(crate) fn eval_step_with_metadata(
     Ok(step)
 }
 
-pub(crate) fn run_relationship_conversation_step(connection: &Connection, step: &EvalStep) -> Result<()> {
+pub(crate) fn run_relationship_conversation_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
     match step.id.as_str() {
         "create_canonical_conversation" => {
             find_or_create_canonical_conversation(connection, &visitor_conversation_request())?;
@@ -1242,7 +1245,10 @@ pub(crate) fn run_role_lifecycle_staff_manager_owner_step(
     Ok(())
 }
 
-pub(crate) fn run_role_lifecycle_agent_silence_step(connection: &Connection, step: &EvalStep) -> Result<()> {
+pub(crate) fn run_role_lifecycle_agent_silence_step(
+    connection: &Connection,
+    step: &EvalStep,
+) -> Result<()> {
     match step.id.as_str() {
         "staff_reply_sets_human_led_active" => {
             let conversation = find_or_create_canonical_conversation(
@@ -2006,4 +2012,3 @@ pub(crate) fn conversation_and_assistant(connection: &Connection) -> Result<(Str
     )?;
     Ok((conversation.id, assistant.id))
 }
-

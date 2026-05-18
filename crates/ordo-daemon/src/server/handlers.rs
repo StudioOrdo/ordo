@@ -1,9 +1,9 @@
 use anyhow::Result;
-use axum::Json;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
@@ -11,162 +11,162 @@ use std::path::Path;
 use tokio::sync::broadcast;
 
 use crate::answer_drafts::{
-    AnswerDraftListResponse, AnswerDraftRequest, AnswerDraftResponse, list_answer_drafts,
-    prepare_answer_draft, read_answer_draft,
+    list_answer_drafts, prepare_answer_draft, read_answer_draft, AnswerDraftListResponse,
+    AnswerDraftRequest, AnswerDraftResponse,
 };
 use crate::artifact_patches::{
-    ApplyArtifactPatchProposalInput, ArtifactPatchApplyResponse, ArtifactPatchReviewListResponse,
-    ArtifactPatchReviewResponse, apply_artifact_patch_review_proposal,
-    list_artifact_patch_review_proposals, load_artifact_patch_review_proposal,
+    apply_artifact_patch_review_proposal, list_artifact_patch_review_proposals,
+    load_artifact_patch_review_proposal, ApplyArtifactPatchProposalInput,
+    ArtifactPatchApplyResponse, ArtifactPatchReviewListResponse, ArtifactPatchReviewResponse,
 };
 use crate::availability::{
-    AvailabilityScheduleView, AvailabilityScheduleWriteRequest, AvailabilityStateResponse,
-    HandoffEligibilityRequest, HandoffEligibilityView, HandoffInboxCreateRequest,
-    HandoffInboxItemView, HandoffInboxListQuery, HandoffInboxListResponse,
-    HandoffInboxResolveRequest, HandoffInboxUpdateRequest, HandoffReceiptListResponse,
-    OperatorPresenceView, OperatorPresenceWriteRequest, PublicRelationshipHandoffRequest,
-    PublicRelationshipHandoffResponse, StrategySessionHandoffRequest, StrategySessionHandoffResponse,
-    StrategySessionStatusView, create_handoff_inbox_item, evaluate_handoff_eligibility,
-    list_handoff_inbox_with_query, list_handoff_receipts, read_availability_state,
-    read_handoff_inbox_item, read_strategy_session_status, request_public_relationship_handoff,
+    create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox_with_query,
+    list_handoff_receipts, read_availability_state, read_handoff_inbox_item,
+    read_strategy_session_status, request_public_relationship_handoff,
     request_strategy_session_handoff, resolve_handoff_inbox_item, update_availability_schedule,
-    update_handoff_inbox_item, update_operator_presence,
+    update_handoff_inbox_item, update_operator_presence, AvailabilityScheduleView,
+    AvailabilityScheduleWriteRequest, AvailabilityStateResponse, HandoffEligibilityRequest,
+    HandoffEligibilityView, HandoffInboxCreateRequest, HandoffInboxItemView, HandoffInboxListQuery,
+    HandoffInboxListResponse, HandoffInboxResolveRequest, HandoffInboxUpdateRequest,
+    HandoffReceiptListResponse, OperatorPresenceView, OperatorPresenceWriteRequest,
+    PublicRelationshipHandoffRequest, PublicRelationshipHandoffResponse,
+    StrategySessionHandoffRequest, StrategySessionHandoffResponse, StrategySessionStatusView,
 };
 use crate::backups::{
-    BackupRestoreResponse, RestorePreflightRequest, create_backup, list_backup_restore_jobs,
-    run_restore_preflight,
+    create_backup, list_backup_restore_jobs, run_restore_preflight, BackupRestoreResponse,
+    RestorePreflightRequest,
 };
-use crate::briefs::{LatestBriefResponse, generate_system_brief, latest_system_brief};
+use crate::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
 use crate::business::{
-    BusinessFactListResponse, BusinessFactQuery, BusinessFactView, BusinessFactWriteRequest,
-    create_business_fact, list_business_facts, update_business_fact,
+    create_business_fact, list_business_facts, update_business_fact, BusinessFactListResponse,
+    BusinessFactQuery, BusinessFactView, BusinessFactWriteRequest,
 };
-use crate::capabilities::{CapabilityCatalogResponse, list_capabilities};
-use crate::chat_bootstrap::{ChatBootstrapRequest, ChatBootstrapResponse, bootstrap_local_chat};
+use crate::capabilities::{list_capabilities, CapabilityCatalogResponse};
+use crate::chat_bootstrap::{bootstrap_local_chat, ChatBootstrapRequest, ChatBootstrapResponse};
 use crate::connections::{
-    ConnectionEventListResponse, ConnectionGrantCreateRequest, ConnectionGrantListResponse,
-    ConnectionGrantRevokeRequest, ConnectionGrantView, ConnectionListResponse, ConnectionView,
-    ConnectionWriteRequest, create_connection, create_connection_grant, list_connection_events,
-    list_connection_grants, list_connections, revoke_connection_grant, update_connection,
+    create_connection, create_connection_grant, list_connection_events, list_connection_grants,
+    list_connections, revoke_connection_grant, update_connection, ConnectionEventListResponse,
+    ConnectionGrantCreateRequest, ConnectionGrantListResponse, ConnectionGrantRevokeRequest,
+    ConnectionGrantView, ConnectionListResponse, ConnectionView, ConnectionWriteRequest,
 };
 use crate::content_analytics::{
-    PublicStoryContentAnalyticsRequest, PublicStoryContentAnalyticsResponse,
-    record_public_story_content_analytics,
+    record_public_story_content_analytics, PublicStoryContentAnalyticsRequest,
+    PublicStoryContentAnalyticsResponse,
 };
 use crate::conversation_gateway::handle_conversation_socket;
 use crate::corpus::{
-    CorpusItemListResponse, CorpusItemView, CorpusItemWriteRequest, CorpusRetrievalQuery,
-    CorpusRetrievalResponse, CorpusSourceListResponse, CorpusSourceView, CorpusSourceWriteRequest,
-    CorpusViewer, create_corpus_item, create_corpus_source, list_corpus_items, list_corpus_sources,
+    create_corpus_item, create_corpus_source, list_corpus_items, list_corpus_sources,
     read_corpus_item, read_corpus_source, retrieve_corpus, update_corpus_item,
-    update_corpus_source,
+    update_corpus_source, CorpusItemListResponse, CorpusItemView, CorpusItemWriteRequest,
+    CorpusRetrievalQuery, CorpusRetrievalResponse, CorpusSourceListResponse, CorpusSourceView,
+    CorpusSourceWriteRequest, CorpusViewer,
 };
 use crate::diagnostics::{
-    DiagnosticLogQuery, DiagnosticLogsResponse, NewDiagnosticLogEntry, diagnostic_log,
-    list_diagnostic_logs, record_diagnostic_log,
+    diagnostic_log, list_diagnostic_logs, record_diagnostic_log, DiagnosticLogQuery,
+    DiagnosticLogsResponse, NewDiagnosticLogEntry,
 };
 use crate::entry_points::{
-    EntryPointListResponse, EntryPointWriteRequest, PublicEntryPointView, PublicVisitorSessionView,
-    TrackedEntryPointView, VisitorSessionCreateRequest, VisitorSessionListResponse,
     create_entry_point, create_visitor_session, list_entry_points, list_visitor_sessions,
-    resolve_entry_point, update_entry_point,
+    resolve_entry_point, update_entry_point, EntryPointListResponse, EntryPointWriteRequest,
+    PublicEntryPointView, PublicVisitorSessionView, TrackedEntryPointView,
+    VisitorSessionCreateRequest, VisitorSessionListResponse,
 };
 use crate::errors::{DaemonErrorCode, ErrorResponse};
 use crate::events::{
-    EventReplayResponse, RealtimeEvent, append_system_event, replay_events, system_event,
+    append_system_event, replay_events, system_event, EventReplayResponse, RealtimeEvent,
 };
 use crate::feedback::{
-    FeedbackRequestCreateRequest, FeedbackRequestListResponse, FeedbackRequestQuery,
-    FeedbackRequestRespondRequest, FeedbackRequestReviewRequest, FeedbackRequestView,
     create_feedback_request, list_feedback_requests, respond_to_feedback_request,
-    review_feedback_request,
+    review_feedback_request, FeedbackRequestCreateRequest, FeedbackRequestListResponse,
+    FeedbackRequestQuery, FeedbackRequestRespondRequest, FeedbackRequestReviewRequest,
+    FeedbackRequestView,
 };
 use crate::generated_content_memory::{
+    generated_content_memory_review_packet_for_artifact, record_generated_content_memory_decision,
     GeneratedContentMemoryCandidateView, GeneratedContentMemoryDecisionInput,
     GeneratedContentMemoryReviewAudience, GeneratedContentMemoryReviewPacket,
-    generated_content_memory_review_packet_for_artifact, record_generated_content_memory_decision,
 };
-use crate::growth_report::{GrowthPilotReportResponse, growth_pilot_report};
-use crate::health::{HealthReport, ReadinessReport, build_health_report, build_readiness_report};
+use crate::growth_report::{growth_pilot_report, GrowthPilotReportResponse};
+use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
 use crate::install::{
+    complete_local_install, list_provider_configs, read_install_state, update_provider_config,
     CompleteInstallRequest, InstallStateResponse, ProviderConfigView, ProviderListResponse,
-    ProviderUpdateRequest, complete_local_install, list_provider_configs, read_install_state,
-    update_provider_config,
+    ProviderUpdateRequest,
 };
 use crate::local_sessions::{
-    LocalSessionCreateRequest, LocalSessionResponse, create_or_restore_local_session,
+    create_or_restore_local_session, LocalSessionCreateRequest, LocalSessionResponse,
 };
-use crate::mcp::{McpResponse, handle_mcp_json};
+use crate::mcp::{handle_mcp_json, McpResponse};
 use crate::mcp_packs::{
-    McpPackInstallRequest, McpPackListResponse, McpPackResponse, disable_mcp_pack,
-    install_mcp_pack, list_mcp_packs, read_mcp_pack,
+    disable_mcp_pack, install_mcp_pack, list_mcp_packs, read_mcp_pack, McpPackInstallRequest,
+    McpPackListResponse, McpPackResponse,
 };
 use crate::offers::{
+    accept_public_offer, create_offer, inspect_offer_builder, list_hosted_trial_capacity,
+    list_offer_acceptances, list_offers, list_public_available_offers, list_trials,
+    request_hosted_trial_reset, save_offer_builder_offer, transition_trial, update_offer,
     HostedTrialCapacityResponse, HostedTrialResetPlanView, HostedTrialResetRequest,
     OfferAcceptanceCreateRequest, OfferAcceptanceListResponse, OfferAcceptanceResponse,
     OfferBuilderResponse, OfferBuilderSaveRequest, OfferBuilderSaveResponse, OfferListResponse,
     OfferView, OfferWriteRequest, PublicOfferListResponse, TrialListResponse,
-    TrialTransitionRequest, TrialView, accept_public_offer, create_offer, inspect_offer_builder,
-    list_hosted_trial_capacity, list_offer_acceptances, list_offers, list_public_available_offers,
-    list_trials, request_hosted_trial_reset, save_offer_builder_offer, transition_trial,
-    update_offer,
+    TrialTransitionRequest, TrialView,
 };
 use crate::policy::{
-    ActorContext, PolicyAction, PolicyDecision, PolicyDecisionCorrelation, PolicyOutcome,
-    ProtectedAccessEvidence, ResourceKind, ResourceRef, authorize_protected_daemon_action,
-    record_policy_decision,
+    authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
+    PolicyDecision, PolicyDecisionCorrelation, PolicyOutcome, ProtectedAccessEvidence,
+    ResourceKind, ResourceRef,
 };
 use crate::policy_audit::{
-    PolicyDecisionAuditQuery, PolicyDecisionAuditResponse, list_policy_decisions,
+    list_policy_decisions, PolicyDecisionAuditQuery, PolicyDecisionAuditResponse,
 };
 use crate::product_packs::{
-    ProductPackInstallRequest, ProductPackListResponse, ProductPackResponse, disable_product_pack,
-    install_product_pack, list_product_packs, read_product_pack,
+    disable_product_pack, install_product_pack, list_product_packs, read_product_pack,
+    ProductPackInstallRequest, ProductPackListResponse, ProductPackResponse,
 };
 use crate::public_surfaces::{
+    homepage_story_deck, public_about, public_asks, public_feed, public_offers, public_surfaces,
     AboutReadModel, AsksReadModel, FeedReadModel, HomepageStoryDeckResponse, OffersReadModel,
-    PublicSurfacesResponse, homepage_story_deck, public_about, public_asks, public_feed,
-    public_offers, public_surfaces,
+    PublicSurfacesResponse,
 };
 use crate::reports::{
-    IssueReportDetailResponse, IssueReportExportRequest, IssueReportExportResponse,
-    IssueReportPrepareRequest, IssueReportStatusUpdateRequest, IssueReportsResponse,
-    SupportPacketApprovalRequest, SupportPacketDraftRequest, SupportPacketListResponse,
-    SupportPacketReceiptListResponse, SupportPacketView, approve_support_packet,
-    draft_support_packet, export_issue_report, list_issue_reports, list_support_packet_receipts,
-    list_support_packets, prepare_issue_report, read_issue_report, update_issue_report_status,
+    approve_support_packet, draft_support_packet, export_issue_report, list_issue_reports,
+    list_support_packet_receipts, list_support_packets, prepare_issue_report, read_issue_report,
+    update_issue_report_status, IssueReportDetailResponse, IssueReportExportRequest,
+    IssueReportExportResponse, IssueReportPrepareRequest, IssueReportStatusUpdateRequest,
+    IssueReportsResponse, SupportPacketApprovalRequest, SupportPacketDraftRequest,
+    SupportPacketListResponse, SupportPacketReceiptListResponse, SupportPacketView,
 };
 use crate::rewards::{
+    list_rewards, qualify_feedback_reward, qualify_referral_reward, transition_reward_event,
     RewardEventTransitionRequest, RewardQualificationRequest, RewardQualificationResponse,
-    RewardQuery, RewardSummaryResponse, list_rewards, qualify_feedback_reward,
-    qualify_referral_reward, transition_reward_event,
+    RewardQuery, RewardSummaryResponse,
 };
-use crate::scheduler::{SchedulerOperationsResponse, read_scheduler_operations};
-use crate::secrets::{OrdoSecretString, constant_time_secret_eq};
+use crate::scheduler::{read_scheduler_operations, SchedulerOperationsResponse};
+use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
 use crate::story_intake_artifacts::{
-    StoryFounderIntakeInput, StoryFounderIntakePacket, StoryWorkflowApprovalGateEvidence,
-    StoryWorkflowCompilationEvidence, StoryWorkflowFanoutEvidence,
-    StoryWorkflowProviderRequirementEvidence, StoryWorkflowResolvedVariable,
-    StoryWorkflowTaskBindingEvidence, record_story_founder_intake_packet,
+    record_story_founder_intake_packet, StoryFounderIntakeInput, StoryFounderIntakePacket,
+    StoryWorkflowApprovalGateEvidence, StoryWorkflowCompilationEvidence,
+    StoryWorkflowFanoutEvidence, StoryWorkflowProviderRequirementEvidence,
+    StoryWorkflowResolvedVariable, StoryWorkflowTaskBindingEvidence,
 };
 use crate::story_production_review::{
-    StoryProductionReviewAudience, StoryProductionReviewPacket, StoryProductionReviewPacketRequest,
-    story_production_review_packet,
+    story_production_review_packet, StoryProductionReviewAudience, StoryProductionReviewPacket,
+    StoryProductionReviewPacketRequest,
 };
 use crate::story_publish_learning::{
-    StoryPublishLearningAudience, StoryPublishLearningBrief, StoryPublishLearningBriefRequest,
-    story_publish_learning_brief,
+    story_publish_learning_brief, StoryPublishLearningAudience, StoryPublishLearningBrief,
+    StoryPublishLearningBriefRequest,
 };
 use crate::studio_promos::{
-    PromoVideoPackageRequest, PromoVideoPackageResponse, PromoVideoPackageReviewRequest,
-    PromoVideoPackageReviewResponse, create_promo_video_package, review_promo_video_package,
+    create_promo_video_package, review_promo_video_package, PromoVideoPackageRequest,
+    PromoVideoPackageResponse, PromoVideoPackageReviewRequest, PromoVideoPackageReviewResponse,
 };
 use crate::surface_work_items::{
-    SurfaceWorkItemListResponse, SurfaceWorkItemQuery, list_surface_work_items,
+    list_surface_work_items, SurfaceWorkItemListResponse, SurfaceWorkItemQuery,
 };
 use crate::workflow_templates::{
-    STORY_HOMEPAGE_REFRESH_TEMPLATE_ID, StoryHomepageRefreshCompileOutcome,
-    StoryHomepageRefreshCompileRequest, compile_story_homepage_refresh_workflow,
+    compile_story_homepage_refresh_workflow, StoryHomepageRefreshCompileOutcome,
+    StoryHomepageRefreshCompileRequest, STORY_HOMEPAGE_REFRESH_TEMPLATE_ID,
 };
 
 const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
@@ -3337,17 +3337,16 @@ pub(crate) async fn send_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::artifacts::{ArtifactInput, record_artifact};
+    use crate::artifacts::{record_artifact, ArtifactInput};
     use crate::capabilities::built_in_capabilities;
     use crate::generated_content_memory::{
-        GeneratedContentMemoryIngestionInput, GeneratedContentMemoryItemInput,
-        GeneratedContentMemoryKind, GeneratedContentMemoryState,
-        ingest_generated_content_memory_candidates,
+        ingest_generated_content_memory_candidates, GeneratedContentMemoryIngestionInput,
+        GeneratedContentMemoryItemInput, GeneratedContentMemoryKind, GeneratedContentMemoryState,
     };
-    use crate::route_contracts::{DAEMON_ROUTE_CONTRACTS, HttpMethod, RouteProtection};
+    use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
     use crate::schema::init_database;
     use crate::story_intake_artifacts::{
-        STORY_FOUNDER_INTAKE_ARTIFACT_KIND, StoryFounderIntakeInput, StoryIntakeClaimInput,
+        StoryFounderIntakeInput, StoryIntakeClaimInput, STORY_FOUNDER_INTAKE_ARTIFACT_KIND,
     };
     use crate::story_publish_approvals::STORY_HOMEPAGE_PUBLISH_APPROVAL_PACKAGE_ARTIFACT_KIND;
     use std::collections::BTreeSet;
@@ -4591,11 +4590,9 @@ mod tests {
             .find(|capability| capability.id == "studio.story.founder_intake.write")
             .expect("story founder intake capability");
         assert_eq!(capability.family, "studio");
-        assert!(
-            capability
-                .artifact_kinds
-                .contains(&"story.founder_intake_packet".to_string())
-        );
+        assert!(capability
+            .artifact_kinds
+            .contains(&"story.founder_intake_packet".to_string()));
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
@@ -4772,11 +4769,10 @@ mod tests {
         assert_eq!(packet.live_provider_called, false);
         assert_eq!(packet.external_publishing_claimed, false);
         assert_eq!(packet.deck_id, Some("homepage.story.v1".to_string()));
-        assert!(
-            packet.components.iter().any(
-                |component| component.artifact_ref == Some(format!("artifact:{}", artifact.id))
-            )
-        );
+        assert!(packet
+            .components
+            .iter()
+            .any(|component| component.artifact_ref == Some(format!("artifact:{}", artifact.id))));
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         assert_eq!(table_count(&connection, "artifacts"), artifact_count_before);
@@ -4827,44 +4823,32 @@ mod tests {
             workflow.template_id,
             STORY_HOMEPAGE_REFRESH_TEMPLATE_ID.to_string()
         );
-        assert!(
-            workflow
-                .compilation_ref
-                .as_deref()
-                .unwrap()
-                .starts_with("workflow_compilation:")
-        );
-        assert!(
-            workflow
-                .input_hash
-                .as_deref()
-                .unwrap()
-                .starts_with("sha256:")
-        );
-        assert!(
-            workflow
-                .task_bindings
-                .iter()
-                .any(|task| task.method == "homepage.createNarrativeDeck")
-        );
-        assert!(
-            workflow
-                .task_bindings
-                .iter()
-                .any(|task| task.method == "publish.requestApproval")
-        );
-        assert!(
-            workflow
-                .approval_gates
-                .iter()
-                .any(|gate| gate.action == "publish" && gate.required)
-        );
-        assert!(
-            workflow
-                .provider_requirements
-                .iter()
-                .all(|provider| provider.mode == "deterministic_mock" && provider.egress == "none")
-        );
+        assert!(workflow
+            .compilation_ref
+            .as_deref()
+            .unwrap()
+            .starts_with("workflow_compilation:"));
+        assert!(workflow
+            .input_hash
+            .as_deref()
+            .unwrap()
+            .starts_with("sha256:"));
+        assert!(workflow
+            .task_bindings
+            .iter()
+            .any(|task| task.method == "homepage.createNarrativeDeck"));
+        assert!(workflow
+            .task_bindings
+            .iter()
+            .any(|task| task.method == "publish.requestApproval"));
+        assert!(workflow
+            .approval_gates
+            .iter()
+            .any(|gate| gate.action == "publish" && gate.required));
+        assert!(workflow
+            .provider_requirements
+            .iter()
+            .all(|provider| provider.mode == "deterministic_mock" && provider.egress == "none"));
         assert!(!workflow.live_provider_required);
         assert!(!workflow.task_execution_performed);
         assert!(!workflow.external_publishing_claimed);
@@ -4952,11 +4936,9 @@ mod tests {
         assert_eq!(workflow.status, "blocked");
         assert!(workflow.compilation_ref.is_none());
         assert!(workflow.input_hash.is_none());
-        assert!(
-            workflow
-                .missing_inputs
-                .contains(&"published public homepage profile positioning".to_string())
-        );
+        assert!(workflow
+            .missing_inputs
+            .contains(&"published public homepage profile positioning".to_string()));
         assert!(!workflow.live_provider_required);
         assert!(!workflow.task_execution_performed);
         assert!(!workflow.external_publishing_claimed);
@@ -4976,8 +4958,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn studio_story_intake_story_founder_intake_handler_rejects_conflicting_retry_fail_closed()
-     {
+    async fn studio_story_intake_story_founder_intake_handler_rejects_conflicting_retry_fail_closed(
+    ) {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
         init_database(&db_path).unwrap();
@@ -5004,7 +4986,7 @@ mod tests {
         .expect_err("same intake id with different payload fails closed");
 
         assert_eq!(error.0, StatusCode::BAD_REQUEST);
-        assert!(error.1.0.error.contains("idempotency key conflicts"));
+        assert!(error.1 .0.error.contains("idempotency key conflicts"));
 
         let connection = rusqlite::Connection::open(&db_path).unwrap();
         let artifact_count: i64 = connection
@@ -5081,17 +5063,13 @@ mod tests {
         assert_eq!(brief.memory_promotion_performed, false);
         assert_eq!(brief.live_provider_called, false);
         assert_eq!(brief.external_publishing_claimed, false);
-        assert!(
-            brief
-                .publish_evidence
-                .iter()
-                .any(|source| source.source_id == artifact.id)
-        );
-        assert!(
-            brief
-                .limitations
-                .contains(&"story_publish_learning_brief_is_read_only".to_string())
-        );
+        assert!(brief
+            .publish_evidence
+            .iter()
+            .any(|source| source.source_id == artifact.id));
+        assert!(brief
+            .limitations
+            .contains(&"story_publish_learning_brief_is_read_only".to_string()));
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         assert_eq!(table_count(&connection, "artifacts"), artifact_count_before);
@@ -5252,11 +5230,9 @@ mod tests {
         );
         assert!(!packet.items[0].summary_text.contains("Ordo learns"));
         assert_eq!(packet.items[0].body, json!({}));
-        assert!(
-            packet
-                .limitations
-                .contains(&"member_safe_packet_redacts_candidate_bodies".to_string())
-        );
+        assert!(packet
+            .limitations
+            .contains(&"member_safe_packet_redacts_candidate_bodies".to_string()));
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         assert_eq!(
@@ -5318,13 +5294,11 @@ mod tests {
         assert!(response.event.payload.get("body").is_none());
         assert!(response.event.payload.get("summaryText").is_none());
         assert!(response.event.payload.get("providerPayload").is_none());
-        assert!(
-            response
-                .event
-                .payload
-                .get("confirmedGraphPromotion")
-                .is_none()
-        );
+        assert!(response
+            .event
+            .payload
+            .get("confirmedGraphPromotion")
+            .is_none());
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         let event_count: i64 = connection

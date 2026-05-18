@@ -1,12 +1,12 @@
+use super::registry::*;
+use super::types::*;
+use crate::schema::db::ConnectionExt;
 use anyhow::{bail, Result};
 use chrono::Utc;
-use serde_json::json;
 use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::json;
 use std::collections::BTreeSet;
 use std::path::Path;
-use crate::schema::db::ConnectionExt;
-use super::types::*;
-use super::registry::*;
 
 /// Seeds the database with all built-in capabilities on application startup.
 /// Preserves any previously synced configurations while adding new ones.
@@ -72,12 +72,16 @@ pub fn list_capabilities(db_path: &Path) -> Result<CapabilityCatalogResponse> {
 
 /// Loads the raw list of all capabilities from the active database connection.
 pub fn load_capabilities(connection: &Connection) -> Result<Vec<CapabilityDefinition>> {
-    connection.query_many("SELECT id, label, description, family, input_schema_json, output_contract_json,
+    connection.query_many(
+        "SELECT id, label, description, family, input_schema_json, output_contract_json,
                 roles_allowed_json, execution_target, timeout_seconds, retry_policy_json,
                 artifact_kinds_json, scheduler_eligible, prompt_exposure, mcp_export_policy,
                 side_effects_json, approval_requirement
          FROM capabilities
-         ORDER BY family ASC, id ASC", [], capability_from_row)
+         ORDER BY family ASC, id ASC",
+        [],
+        capability_from_row,
+    )
 }
 
 /// Filters and returns only capabilities that are configured for export
@@ -85,18 +89,21 @@ pub fn load_capabilities(connection: &Connection) -> Result<Vec<CapabilityDefini
 pub fn list_mcp_exported_capabilities(
     connection: &Connection,
 ) -> Result<Vec<CapabilityDefinition>> {
-    connection.query_many("SELECT id, label, description, family, input_schema_json, output_contract_json,
+    connection.query_many(
+        "SELECT id, label, description, family, input_schema_json, output_contract_json,
                 roles_allowed_json, execution_target, timeout_seconds, retry_policy_json,
                 artifact_kinds_json, scheduler_eligible, prompt_exposure, mcp_export_policy,
                 side_effects_json, approval_requirement
          FROM capabilities
          WHERE mcp_export_policy IN (?1, ?2, ?3)
-         ORDER BY family ASC, id ASC", params![
+         ORDER BY family ASC, id ASC",
+        params![
             MCP_EXPORT_POLICY_READ_ONLY,
             MCP_EXPORT_POLICY_LOCAL_MUTATION,
             MCP_EXPORT_POLICY_OPERATOR_CONFIRMED
         ],
-        capability_from_row,)
+        capability_from_row,
+    )
 }
 
 /// Fetches a single capability by its canonical string ID.
@@ -302,4 +309,3 @@ mod tests {
         assert_eq!(restore_execute.approval_requirement, "not_exported");
     }
 }
-

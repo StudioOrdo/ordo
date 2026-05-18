@@ -4,13 +4,13 @@ use crate::feedback::*;
 use crate::llm_gateway::*;
 use crate::policy::*;
 
-pub mod types;
 pub mod cases;
 pub mod core;
+pub mod types;
 
-pub use types::*;
 pub use cases::*;
 pub use core::*;
+pub use types::*;
 
 pub const EVAL_HARNESS_SCHEMA_VERSION: &str = "ordo.eval_harness.v1";
 pub const EVAL_ARTIFACT_PACKET_SCHEMA_VERSION: &str = "ordo.eval_artifact_packet.v1";
@@ -18,8 +18,8 @@ pub const EVAL_ARTIFACT_PACKET_SCHEMA_VERSION: &str = "ordo.eval_artifact_packet
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use serde_json::{json, Value};
+    use std::fs;
 
     #[test]
     fn isolated_eval_store_initializes_current_schema() {

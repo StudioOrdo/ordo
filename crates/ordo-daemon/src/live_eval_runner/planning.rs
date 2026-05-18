@@ -50,7 +50,9 @@ pub(crate) struct LiveJourneyManifestInput {
     request: LiveJourneyPlanRequest,
 }
 
-pub(crate) fn write_live_journey_manifest(input: LiveJourneyManifestInput) -> Result<LiveJourneyRunSummary> {
+pub(crate) fn write_live_journey_manifest(
+    input: LiveJourneyManifestInput,
+) -> Result<LiveJourneyRunSummary> {
     let capped_personas = input
         .selected_personas
         .iter()
@@ -146,7 +148,10 @@ impl LiveJourneyRunManifest {
     }
 }
 
-pub(crate) fn select_personas(personas: &[EvalPersona], selected_ids: &[String]) -> Result<Vec<EvalPersona>> {
+pub(crate) fn select_personas(
+    personas: &[EvalPersona],
+    selected_ids: &[String],
+) -> Result<Vec<EvalPersona>> {
     if selected_ids.is_empty() {
         return Ok(personas.to_vec());
     }
@@ -423,7 +428,9 @@ pub(crate) fn run_live_openai_compatible_smoke_step<T: OpenAiCompatibleTransport
     Ok(())
 }
 
-pub(crate) fn live_eval_conversation_and_assistant(connection: &Connection) -> Result<(String, String)> {
+pub(crate) fn live_eval_conversation_and_assistant(
+    connection: &Connection,
+) -> Result<(String, String)> {
     let conversation = find_or_create_canonical_conversation(
         connection,
         &CanonicalConversationRequest {
@@ -450,7 +457,10 @@ pub(crate) fn live_eval_conversation_and_assistant(connection: &Connection) -> R
     Ok((conversation.id, assistant.id))
 }
 
-pub(crate) fn token_usage_for_invocation(connection: &Connection, invocation_id: &str) -> Result<(i64, i64)> {
+pub(crate) fn token_usage_for_invocation(
+    connection: &Connection,
+    invocation_id: &str,
+) -> Result<(i64, i64)> {
     let input_tokens = token_usage_for_kind(connection, invocation_id, "provider_input")?;
     let output_tokens = token_usage_for_kind(connection, invocation_id, "provider_output")?;
     Ok((input_tokens, output_tokens))
@@ -469,4 +479,3 @@ pub(crate) fn token_usage_for_kind(
         |row| row.get(0),
     )?)
 }
-

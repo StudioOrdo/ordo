@@ -1,12 +1,12 @@
-use anyhow::{Result, ensure};
-use rusqlite::{Connection, OptionalExtension, params};
+use anyhow::{ensure, Result};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::artifacts::{
-    ArtifactInput, ArtifactVersionView, ArtifactView, add_artifact_version, load_artifact,
-    record_artifact,
+    add_artifact_version, load_artifact, record_artifact, ArtifactInput, ArtifactVersionView,
+    ArtifactView,
 };
 use crate::events::RealtimeEvent;
 use crate::security::redaction;
@@ -792,12 +792,10 @@ mod tests {
         assert!(recorded.version.is_some());
         assert!(recorded.event.is_some());
         assert_eq!(recorded.public_derivative.memory_effect, "candidate_only");
-        assert!(
-            recorded
-                .public_derivative
-                .summary
-                .contains("local-first operating appliance")
-        );
+        assert!(recorded
+            .public_derivative
+            .summary
+            .contains("local-first operating appliance"));
         assert_eq!(
             recorded.public_derivative.claims[0].review_state,
             "evidence_backed"
@@ -858,13 +856,11 @@ mod tests {
             recorded.public_derivative.claims[0].review_state,
             "needs_review"
         );
-        assert!(
-            recorded
-                .public_derivative
-                .limitations
-                .iter()
-                .any(|value| value.contains("need review"))
-        );
+        assert!(recorded
+            .public_derivative
+            .limitations
+            .iter()
+            .any(|value| value.contains("need review")));
     }
 
     #[test]
@@ -883,12 +879,10 @@ mod tests {
             recorded.public_derivative.claims[0].review_state,
             "needs_review"
         );
-        assert!(
-            recorded.public_derivative.claims[0]
-                .limitations
-                .iter()
-                .any(|limitation| limitation.contains("needs evidence"))
-        );
+        assert!(recorded.public_derivative.claims[0]
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("needs evidence")));
         assert_eq!(recorded.public_derivative.memory_effect, "candidate_only");
     }
 
@@ -1010,13 +1004,11 @@ mod tests {
         assert!(!packet.external_publishing_claimed);
         assert!(!packet.memory_promotion_performed);
         assert!(!packet.confirmed_graph_promotion);
-        assert!(
-            packet
-                .readiness
-                .limitations
-                .iter()
-                .any(|limitation| limitation.contains("does not call live providers"))
-        );
+        assert!(packet
+            .readiness
+            .limitations
+            .iter()
+            .any(|limitation| limitation.contains("does not call live providers")));
     }
 
     #[test]
@@ -1059,12 +1051,10 @@ mod tests {
 
         assert_eq!(packet.readiness.status, "blocked");
         assert!(!packet.readiness.narrative_deck_ready);
-        assert!(
-            packet
-                .readiness
-                .missing
-                .contains(&"evidence-backed public Story Pack claims".to_string())
-        );
+        assert!(packet
+            .readiness
+            .missing
+            .contains(&"evidence-backed public Story Pack claims".to_string()));
         assert!(!packet.readiness.automatic_memory_promotion);
         assert!(!packet.readiness.confirmed_graph_promotion);
     }

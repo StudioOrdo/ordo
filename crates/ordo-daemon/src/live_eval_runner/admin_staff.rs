@@ -753,4 +753,3 @@ pub(crate) fn handoff_status_label(status: HandoffStatus) -> &'static str {
         HandoffStatus::Closed => "closed",
     }
 }
-

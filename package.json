@@ -13,6 +13,7 @@
     "ordo:status": "node scripts/ordo-dev.mjs status",
     "dev-daemon-live": "node scripts/dev-daemon-live.mjs",
     "dev:daemon:live": "node scripts/dev-daemon-live.mjs",
+    "demo:seed:memory-readiness": "cargo run -p ordo-daemon -- seed-demo-memory-readiness-json --db-path ${ORDO_DB_PATH:-.data/dev-appliance/local.db}",
     "live:llm:smoke": "node scripts/live-llm-smoke.mjs",
     "build": "next build",
     "start": "next start",

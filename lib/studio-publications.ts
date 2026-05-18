@@ -103,6 +103,42 @@ export interface GeneratedContentMemoryReviewItem {
   confirmedGraphPromotion: boolean;
 }
 
+export interface GeneratedContentMemoryPromotionReadinessOrigin {
+  artifactRef: string;
+  artifactVersionRef?: string | null;
+  workflowTemplateRef?: string | null;
+  workflowCompilationRef?: string | null;
+  jobRef?: string | null;
+  actorRef?: string | null;
+}
+
+export interface GeneratedContentMemoryPromotionReadinessPacket {
+  schemaVersion: string;
+  candidateId: string;
+  artifactId: string;
+  artifactVersionId?: string | null;
+  sourceArtifactKind: string;
+  audience: string;
+  readOnly: boolean;
+  promotionReady: boolean;
+  currentCandidateState: string;
+  memoryKind: string;
+  memoryTier: string;
+  visibilityClass: string;
+  memoryEffect: string;
+  origin: GeneratedContentMemoryPromotionReadinessOrigin;
+  evidenceRefs: string[];
+  decisionRefs: string[];
+  blockers: string[];
+  allowedNextAction: string;
+  limitations: string[];
+  memoryPromotionPerformed: boolean;
+  confirmedGraphPromotion: boolean;
+  vectorMutationPerformed: boolean;
+  packStateMutationPerformed: boolean;
+  liveProviderCalled: boolean;
+}
+
 export interface GeneratedContentMemoryReviewPacket {
   schemaVersion: string;
   artifactId: string;
@@ -114,6 +150,7 @@ export interface GeneratedContentMemoryReviewPacket {
   evidenceRefs: string[];
   limitations: string[];
   items: GeneratedContentMemoryReviewItem[];
+  promotionReadinessPackets?: GeneratedContentMemoryPromotionReadinessPacket[];
   extensionPoints: string[];
   confirmedGraphPromotion: boolean;
   liveProviderCalled: boolean;
@@ -207,6 +244,18 @@ export interface StudioMemoryReviewItemView {
   limitations: string[];
   memoryEffect: string;
   recommendedReviewAction: string;
+  promotionReady: boolean;
+  readinessState: "ready" | "blocked";
+  readinessBlockers: string[];
+  readinessAllowedNextAction: string;
+  readinessEvidenceRefs: string[];
+  readinessDecisionRefs: string[];
+  readinessEvidenceRefCount: number;
+  readinessDecisionRefCount: number;
+  visibilityClass: string;
+  memoryPromotionPerformed: boolean;
+  vectorMutationPerformed: boolean;
+  packStateMutationPerformed: boolean;
   canApprove: boolean;
   canReject: boolean;
   confirmedGraphPromotion: boolean;
@@ -219,6 +268,8 @@ export interface StudioMemoryReviewPacketView {
   candidateCount: number;
   evidenceRefs: string[];
   evidenceRefCount: number;
+  promotionReadyCount: number;
+  readinessBlockerCount: number;
   limitations: string[];
   extensionPoints: string[];
   confirmedGraphPromotion: boolean;
@@ -299,6 +350,8 @@ export function buildStudioPublicationsView(
     ...learning.rewardSummary.evidenceRefs,
     ...memoryReviewPackets.flatMap((packet) => packet.evidenceRefs),
     ...memoryReviewPackets.flatMap((packet) => packet.items.flatMap((item) => item.evidenceRefs)),
+    ...memoryReviewPackets.flatMap((packet) => packet.items.flatMap((item) => item.readinessEvidenceRefs)),
+    ...memoryReviewPackets.flatMap((packet) => packet.items.flatMap((item) => item.readinessDecisionRefs)),
   ]);
   const deferredStates = buildDeferredStates(review, learning);
   const nextActions = safeList([...review.recommendedNextActions, ...learning.recommendedNextActions]).map(humanizeIdentifier);
@@ -405,7 +458,11 @@ function sourceView(source: StoryPublishLearningSource): StudioPublicationSource
 }
 
 function memoryReviewPacketView(packet: GeneratedContentMemoryReviewPacket): StudioMemoryReviewPacketView {
-  const items = packet.items.map(memoryReviewItemView);
+  const readinessPackets = Array.isArray(packet.promotionReadinessPackets) ? packet.promotionReadinessPackets : [];
+  const readinessByCandidate = new Map(readinessPackets.map((readiness) => [safeIdentifier(readiness.candidateId), readiness]));
+  const items = packet.items.map((item) => memoryReviewItemView(item, readinessByCandidate.get(safeIdentifier(item.candidateId))));
+  const promotionReadyCount = readinessPackets.filter((readiness) => readiness.promotionReady === true).length;
+  const readinessBlockerCount = readinessPackets.reduce((total, readiness) => total + safeList(readiness.blockers).length, 0);
   return {
     artifactId: safeText(packet.artifactId, "Unknown artifact"),
     sourceArtifactKind: safeIdentifier(packet.sourceArtifactKind),
@@ -413,6 +470,8 @@ function memoryReviewPacketView(packet: GeneratedContentMemoryReviewPacket): Stu
     candidateCount: Number.isSafeInteger(packet.candidateCount) ? Math.max(0, packet.candidateCount) : items.length,
     evidenceRefs: safeEvidenceRefs(packet.evidenceRefs),
     evidenceRefCount: safeEvidenceRefCount(packet.evidenceRefs),
+    promotionReadyCount,
+    readinessBlockerCount,
     limitations: safeList(packet.limitations),
     extensionPoints: safeList(packet.extensionPoints).map(humanizeIdentifier),
     confirmedGraphPromotion: packet.confirmedGraphPromotion === true,
@@ -421,10 +480,16 @@ function memoryReviewPacketView(packet: GeneratedContentMemoryReviewPacket): Stu
   };
 }
 
-function memoryReviewItemView(item: GeneratedContentMemoryReviewItem): StudioMemoryReviewItemView {
+function memoryReviewItemView(
+  item: GeneratedContentMemoryReviewItem,
+  readiness?: GeneratedContentMemoryPromotionReadinessPacket,
+): StudioMemoryReviewItemView {
   const candidateId = safeIdentifier(item.candidateId);
   const evidenceRefs = safeEvidenceRefs(item.evidenceRefs);
   const state = safeIdentifier(item.candidateState);
+  const readinessBlockers = safeList(readiness?.blockers ?? []);
+  const readinessEvidenceRefs = safeEvidenceRefs(readiness?.evidenceRefs ?? []);
+  const readinessDecisionRefs = safeEvidenceRefs(readiness?.decisionRefs ?? []);
   return {
     candidateId,
     label: humanizeIdentifier(candidateId),
@@ -438,9 +503,21 @@ function memoryReviewItemView(item: GeneratedContentMemoryReviewItem): StudioMem
     limitations: safeList(item.limitations),
     memoryEffect: safeIdentifier(item.memoryEffect),
     recommendedReviewAction: humanizeIdentifier(item.recommendedReviewAction),
+    promotionReady: readiness?.promotionReady === true,
+    readinessState: readiness?.promotionReady === true ? "ready" : "blocked",
+    readinessBlockers,
+    readinessAllowedNextAction: humanizeIdentifier(readiness?.allowedNextAction ?? "readiness_packet_unavailable"),
+    readinessEvidenceRefs,
+    readinessDecisionRefs,
+    readinessEvidenceRefCount: readinessEvidenceRefs.length,
+    readinessDecisionRefCount: readinessDecisionRefs.length,
+    visibilityClass: safeIdentifier(readiness?.visibilityClass ?? "unknown"),
+    memoryPromotionPerformed: readiness?.memoryPromotionPerformed === true,
+    vectorMutationPerformed: readiness?.vectorMutationPerformed === true,
+    packStateMutationPerformed: readiness?.packStateMutationPerformed === true,
     canApprove: state === "proposed",
     canReject: state === "proposed",
-    confirmedGraphPromotion: item.confirmedGraphPromotion === true,
+    confirmedGraphPromotion: item.confirmedGraphPromotion === true || readiness?.confirmedGraphPromotion === true,
   };
 }
 
@@ -536,7 +613,7 @@ function safeEvidenceRefs(refs: readonly string[]): string[] {
 
 function safeArtifactRef(value: string | null | undefined): string | null {
   if (!value || isUnsafeText(value)) return null;
-  if (/^(artifact|content_analytics|content_event|memory_candidate|business_fact|job|event|surface|tracked_entry_point):[A-Za-z0-9_.:-]+$/.test(value)) {
+  if (/^(artifact|artifact_version|artifact_review|approval|content_analytics|content_event|feedback|memory_candidate|business_fact|job|event|outcome|publication|surface|tracked_entry_point|workflow_compilation|workflow_template):[A-Za-z0-9_.:-]+$/.test(value)) {
     return value;
   }
   return null;

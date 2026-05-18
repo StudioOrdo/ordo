@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import {
   buildStudioPublicationsView,
   studioPublicationStatusTone,
+  type GeneratedContentMemoryReviewPacket,
   type StudioProductionReviewPacket,
   type StoryPublishLearningBrief,
 } from "@/lib/studio-publications";
@@ -98,6 +99,34 @@ test.describe("Studio Publications view model", () => {
     expect(studioPublicationStatusTone("deferred")).toBe("warn");
     expect(studioPublicationStatusTone("fixture")).toBe("warn");
     expect(studioPublicationStatusTone("unknown")).toBe("error");
+  });
+
+  test("projects memory promotion readiness without promotion or unsafe text", () => {
+    const view = buildStudioPublicationsView(storyReviewFixture(), storyLearningFixture(), [
+      generatedMemoryReviewPacketFixture(),
+    ]);
+
+    const packet = view.memoryReviewPackets[0];
+    expect(packet?.promotionReadyCount).toBe(1);
+    expect(packet?.readinessBlockerCount).toBe(1);
+    expect(packet?.confirmedGraphPromotion).toBe(false);
+    expect(packet?.liveProviderCalled).toBe(false);
+    const ready = packet?.items.find((item) => item.promotionReady);
+    expect(ready?.readinessState).toBe("ready");
+    expect(ready?.readinessAllowedNextAction).toBe("Prepare owner memory promotion review");
+    expect(ready?.readinessEvidenceRefCount).toBeGreaterThan(0);
+    expect(ready?.readinessDecisionRefCount).toBeGreaterThan(0);
+    expect(ready?.memoryPromotionPerformed).toBe(false);
+    expect(ready?.confirmedGraphPromotion).toBe(false);
+    expect(ready?.vectorMutationPerformed).toBe(false);
+    expect(ready?.packStateMutationPerformed).toBe(false);
+    const blocked = packet?.items.find((item) => item.readinessState === "blocked");
+    expect(blocked?.readinessBlockers).toContain("Candidate state proposed blocks promotion readiness");
+    expect(JSON.stringify(view)).not.toContain("provider internal");
+    expect(JSON.stringify(view)).not.toContain("prompt internal");
+    expect(JSON.stringify(view)).not.toContain("private artifact text");
+    expect(JSON.stringify(view)).not.toContain("task private payload");
+    expect(JSON.stringify(view)).not.toContain("graph certainty");
   });
 });
 
@@ -195,21 +224,7 @@ function handleRequest(request: IncomingMessage, response: ServerResponse, state
   }
 
   if (method === "GET" && path.startsWith("/studio/generated-content-memory/")) {
-    return jsonResponse(response, {
-      schemaVersion: "ordo.generated_content_memory_review_packet.v1",
-      artifactId: path.split("/studio/generated-content-memory/")[1]?.split("/review")[0] ?? "unknown",
-      sourceArtifactKind: "story_publication_artifact",
-      audience: "staff",
-      candidateCount: 0,
-      sourceArtifactRefs: [],
-      workflowRefs: [],
-      evidenceRefs: [],
-      limitations: ["no_generated_content_memory_candidates"],
-      items: [],
-      extensionPoints: ["manual_owner_review"],
-      confirmedGraphPromotion: false,
-      liveProviderCalled: false,
-    });
+    return jsonResponse(response, generatedMemoryReviewPacketFixture(path.split("/studio/generated-content-memory/")[1]?.split("/review")[0] ?? "unknown"));
   }
 
   response.writeHead(404, { "content-type": "application/json" });
@@ -364,5 +379,147 @@ function storyLearningFixture(): StoryPublishLearningBrief {
       evidenceRefs: ["content_event:viewed"],
     },
     memoryReviewPackets: [],
+  };
+}
+
+function generatedMemoryReviewPacketFixture(artifactId = "story_artifact"): GeneratedContentMemoryReviewPacket {
+  return {
+    schemaVersion: "generated_content_memory.v1",
+    artifactId,
+    sourceArtifactKind: "story.homepage_draft",
+    audience: "staff",
+    candidateCount: 2,
+    sourceArtifactRefs: [`artifact:${artifactId}`],
+    workflowRefs: [
+      "workflow_template:studio.story.scrollytelling_homepage",
+      "workflow_compilation:workflow_compilation_story_1",
+      "job:job_story_1",
+    ],
+    evidenceRefs: [`artifact:${artifactId}`, "memory_candidate:ready", "approval:owner_1"],
+    limitations: [
+      "generated_content_memory_promotion_readiness_is_read_only",
+      "memory_promotion_not_performed",
+    ],
+    items: [
+      {
+        candidateId: "generated_content_memory_candidate_ready",
+        memoryKind: "candidate_claim",
+        memoryTier: "candidate_memory",
+        candidateState: "approved",
+        confidence: 0.82,
+        summaryText: "Owner approved public positioning.",
+        bodyRedacted: false,
+        sourceArtifactRefs: [`artifact:${artifactId}`],
+        workflowRefs: ["workflow_template:studio.story.scrollytelling_homepage"],
+        evidenceRefs: [`artifact:${artifactId}`, "memory_candidate:ready"],
+        limitations: ["generated_content_memory_candidate_only"],
+        approvalEvidenceRefs: ["approval:owner_1"],
+        publicationEvidenceRefs: [],
+        feedbackEvidenceRefs: [],
+        outcomeEvidenceRefs: [],
+        rejectionEvidenceRefs: [],
+        memoryEffect: "candidate_stronger_evidence",
+        recommendedReviewAction: "consider_publication_or_memory_review",
+        confirmedGraphPromotion: false,
+      },
+      {
+        candidateId: "generated_content_memory_candidate_blocked",
+        memoryKind: "candidate_claim",
+        memoryTier: "candidate_memory",
+        candidateState: "proposed",
+        confidence: 0.61,
+        summaryText: "Proposed positioning still needs review.",
+        bodyRedacted: false,
+        sourceArtifactRefs: [`artifact:${artifactId}`],
+        workflowRefs: ["workflow_template:studio.story.scrollytelling_homepage"],
+        evidenceRefs: [`artifact:${artifactId}`, "memory_candidate:blocked"],
+        limitations: ["generated_content_memory_candidate_only"],
+        approvalEvidenceRefs: [],
+        publicationEvidenceRefs: [],
+        feedbackEvidenceRefs: [],
+        outcomeEvidenceRefs: [],
+        rejectionEvidenceRefs: [],
+        memoryEffect: "candidate_only",
+        recommendedReviewAction: "review_candidate",
+        confirmedGraphPromotion: false,
+      },
+    ],
+    promotionReadinessPackets: [
+      {
+        schemaVersion: "generated_content_memory_promotion_readiness.v1",
+        candidateId: "generated_content_memory_candidate_ready",
+        artifactId,
+        sourceArtifactKind: "story.homepage_draft",
+        audience: "staff",
+        readOnly: true,
+        promotionReady: true,
+        currentCandidateState: "approved",
+        memoryKind: "candidate_claim",
+        memoryTier: "candidate_memory",
+        visibilityClass: "public",
+        memoryEffect: "candidate_stronger_evidence",
+        origin: {
+          artifactRef: `artifact:${artifactId}`,
+          workflowTemplateRef: "workflow_template:studio.story.scrollytelling_homepage",
+          workflowCompilationRef: "workflow_compilation:workflow_compilation_story_1",
+          jobRef: "job:job_story_1",
+          actorRef: null,
+        },
+        evidenceRefs: [`artifact:${artifactId}`, "memory_candidate:ready", "workflow_template:studio.story.scrollytelling_homepage"],
+        decisionRefs: ["approval:owner_1"],
+        blockers: [],
+        allowedNextAction: "prepare_owner_memory_promotion_review",
+        limitations: [
+          "memory_promotion_readiness_packet_is_read_only",
+          "memory_promotion_not_performed",
+          "canonical_memory_not_mutated",
+          "confirmed_graph_promotion_not_performed",
+          "vector_index_not_mutated",
+          "pack_state_not_mutated",
+        ],
+        memoryPromotionPerformed: false,
+        confirmedGraphPromotion: false,
+        vectorMutationPerformed: false,
+        packStateMutationPerformed: false,
+        liveProviderCalled: false,
+      },
+      {
+        schemaVersion: "generated_content_memory_promotion_readiness.v1",
+        candidateId: "generated_content_memory_candidate_blocked",
+        artifactId,
+        sourceArtifactKind: "story.homepage_draft",
+        audience: "staff",
+        readOnly: true,
+        promotionReady: false,
+        currentCandidateState: "proposed",
+        memoryKind: "candidate_claim",
+        memoryTier: "candidate_memory",
+        visibilityClass: "public",
+        memoryEffect: "candidate_only",
+        origin: {
+          artifactRef: `artifact:${artifactId}`,
+          workflowTemplateRef: "workflow_template:studio.story.scrollytelling_homepage",
+          workflowCompilationRef: "workflow_compilation:workflow_compilation_story_1",
+          jobRef: "job:job_story_1",
+          actorRef: null,
+        },
+        evidenceRefs: [`artifact:${artifactId}`, "memory_candidate:blocked"],
+        decisionRefs: [],
+        blockers: ["candidate_state_proposed_blocks_promotion_readiness"],
+        allowedNextAction: "resolve_memory_readiness_blockers",
+        limitations: [
+          "memory_promotion_readiness_packet_is_read_only",
+          "memory_promotion_not_performed",
+        ],
+        memoryPromotionPerformed: false,
+        confirmedGraphPromotion: false,
+        vectorMutationPerformed: false,
+        packStateMutationPerformed: false,
+        liveProviderCalled: false,
+      },
+    ],
+    extensionPoints: ["owner_review_ui", "authorized_graph_memory_promotion"],
+    confirmedGraphPromotion: false,
+    liveProviderCalled: false,
   };
 }

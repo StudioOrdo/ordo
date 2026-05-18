@@ -168,9 +168,50 @@ pub struct GeneratedContentMemoryReviewPacket {
     pub evidence_refs: Vec<String>,
     pub limitations: Vec<String>,
     pub items: Vec<GeneratedContentMemoryReviewItem>,
+    pub promotion_readiness_packets: Vec<GeneratedContentMemoryPromotionReadinessPacket>,
     pub extension_points: Vec<String>,
     pub confirmed_graph_promotion: bool,
     pub live_provider_called: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedContentMemoryPromotionReadinessPacket {
+    pub schema_version: String,
+    pub candidate_id: String,
+    pub artifact_id: String,
+    pub artifact_version_id: Option<String>,
+    pub source_artifact_kind: String,
+    pub audience: String,
+    pub read_only: bool,
+    pub promotion_ready: bool,
+    pub current_candidate_state: String,
+    pub memory_kind: String,
+    pub memory_tier: String,
+    pub visibility_class: String,
+    pub memory_effect: String,
+    pub origin: GeneratedContentMemoryPromotionReadinessOrigin,
+    pub evidence_refs: Vec<String>,
+    pub decision_refs: Vec<String>,
+    pub blockers: Vec<String>,
+    pub allowed_next_action: String,
+    pub limitations: Vec<String>,
+    pub memory_promotion_performed: bool,
+    pub confirmed_graph_promotion: bool,
+    pub vector_mutation_performed: bool,
+    pub pack_state_mutation_performed: bool,
+    pub live_provider_called: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedContentMemoryPromotionReadinessOrigin {
+    pub artifact_ref: String,
+    pub artifact_version_ref: Option<String>,
+    pub workflow_template_ref: Option<String>,
+    pub workflow_compilation_ref: Option<String>,
+    pub job_ref: Option<String>,
+    pub actor_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -362,6 +403,11 @@ pub fn generated_content_memory_review_packet_for_artifact(
         .filter(|candidate| is_story_memory_candidate(candidate))
         .map(|candidate| generated_content_memory_review_item(candidate, audience))
         .collect::<Vec<_>>();
+    let promotion_readiness_packets = candidates
+        .iter()
+        .filter(|candidate| is_story_memory_candidate(candidate))
+        .map(|candidate| generated_content_memory_promotion_readiness_packet(candidate, audience))
+        .collect::<Vec<_>>();
 
     let mut source_artifact_refs = vec![format!("artifact:{}", artifact.id)];
     let mut workflow_refs = artifact.evidence_refs.clone();
@@ -378,10 +424,17 @@ pub fn generated_content_memory_review_packet_for_artifact(
         append_unique(&mut evidence_refs, &item.outcome_evidence_refs);
         append_unique(&mut evidence_refs, &item.rejection_evidence_refs);
     }
+    for packet in &promotion_readiness_packets {
+        append_unique(&mut evidence_refs, &packet.evidence_refs);
+        append_unique(&mut evidence_refs, &packet.decision_refs);
+        append_unique(&mut limitations, &packet.limitations);
+    }
     append_unique(
         &mut limitations,
         &[
             "generated_content_memory_review_is_read_only".to_string(),
+            "generated_content_memory_promotion_readiness_is_read_only".to_string(),
+            "generated_content_memory_promotion_not_performed".to_string(),
             "generated_content_memory_candidates_do_not_confirm_graph_truth".to_string(),
             "future_owner_review_ui_and_graph_promotion_are_extension_points".to_string(),
         ],
@@ -407,6 +460,7 @@ pub fn generated_content_memory_review_packet_for_artifact(
         evidence_refs: sorted_unique(evidence_refs),
         limitations: sorted_unique(limitations),
         items,
+        promotion_readiness_packets,
         extension_points: vec![
             "owner_review_ui".to_string(),
             "authorized_graph_memory_promotion".to_string(),
@@ -502,6 +556,144 @@ fn generated_content_memory_review_item(
         memory_effect: candidate.memory_effect.clone(),
         recommended_review_action: recommended_review_action(candidate).to_string(),
         confirmed_graph_promotion: false,
+    }
+}
+
+fn generated_content_memory_promotion_readiness_packet(
+    candidate: &GeneratedContentMemoryCandidateView,
+    audience: GeneratedContentMemoryReviewAudience,
+) -> GeneratedContentMemoryPromotionReadinessPacket {
+    let mut evidence_refs = audience_safe_refs(audience, &candidate.evidence_refs);
+    let mut decision_refs = Vec::new();
+    append_unique(
+        &mut decision_refs,
+        &audience_safe_refs(audience, &candidate.approval_evidence_refs),
+    );
+    append_unique(
+        &mut decision_refs,
+        &audience_safe_refs(audience, &candidate.publication_evidence_refs),
+    );
+    append_unique(
+        &mut decision_refs,
+        &audience_safe_refs(audience, &candidate.feedback_evidence_refs),
+    );
+    append_unique(
+        &mut decision_refs,
+        &audience_safe_refs(audience, &candidate.outcome_evidence_refs),
+    );
+    append_unique(
+        &mut decision_refs,
+        &audience_safe_refs(audience, &candidate.rejection_evidence_refs),
+    );
+    append_unique(&mut evidence_refs, &workflow_refs_for_candidate(candidate));
+
+    let blockers = promotion_readiness_blockers(candidate);
+    let promotion_ready = blockers.is_empty();
+    let mut limitations = vec![
+        "memory_promotion_readiness_packet_is_read_only".to_string(),
+        "memory_promotion_not_performed".to_string(),
+        "canonical_memory_not_mutated".to_string(),
+        "confirmed_graph_promotion_not_performed".to_string(),
+        "vector_index_not_mutated".to_string(),
+        "pack_state_not_mutated".to_string(),
+        "live_provider_not_called".to_string(),
+    ];
+    if audience.can_read_private_memory() {
+        append_unique(&mut limitations, &candidate.limitations);
+    } else {
+        append_unique(
+            &mut limitations,
+            &[
+                "member_safe_packet_redacts_candidate_bodies".to_string(),
+                "member_safe_packet_omits_private_review_evidence".to_string(),
+            ],
+        );
+    }
+
+    GeneratedContentMemoryPromotionReadinessPacket {
+        schema_version: "generated_content_memory_promotion_readiness.v1".to_string(),
+        candidate_id: candidate.id.clone(),
+        artifact_id: candidate.artifact_id.clone(),
+        artifact_version_id: candidate.artifact_version_id.clone(),
+        source_artifact_kind: candidate.source_artifact_kind.clone(),
+        audience: audience.as_str().to_string(),
+        read_only: true,
+        promotion_ready,
+        current_candidate_state: candidate.candidate_state.clone(),
+        memory_kind: candidate.memory_kind.clone(),
+        memory_tier: candidate.memory_tier.clone(),
+        visibility_class: visibility_class(&candidate.visibility).to_string(),
+        memory_effect: candidate.memory_effect.clone(),
+        origin: GeneratedContentMemoryPromotionReadinessOrigin {
+            artifact_ref: format!("artifact:{}", candidate.artifact_id),
+            artifact_version_ref: candidate
+                .artifact_version_id
+                .as_deref()
+                .map(|value| format!("artifact_version:{}", safe_identifier(value))),
+            workflow_template_ref: candidate
+                .workflow_template_id
+                .as_deref()
+                .map(|value| format!("workflow_template:{}", safe_identifier(value))),
+            workflow_compilation_ref: candidate
+                .workflow_compilation_id
+                .as_deref()
+                .map(|value| format!("workflow_compilation:{}", safe_identifier(value))),
+            job_ref: candidate
+                .job_id
+                .as_deref()
+                .map(|value| format!("job:{}", safe_identifier(value))),
+            actor_ref: None,
+        },
+        evidence_refs: sorted_unique(evidence_refs),
+        decision_refs: sorted_unique(decision_refs),
+        blockers,
+        allowed_next_action: if promotion_ready {
+            "prepare_owner_memory_promotion_review".to_string()
+        } else {
+            "resolve_memory_readiness_blockers".to_string()
+        },
+        limitations: sorted_unique(limitations),
+        memory_promotion_performed: false,
+        confirmed_graph_promotion: false,
+        vector_mutation_performed: false,
+        pack_state_mutation_performed: false,
+        live_provider_called: false,
+    }
+}
+
+fn promotion_readiness_blockers(candidate: &GeneratedContentMemoryCandidateView) -> Vec<String> {
+    let mut blockers = Vec::new();
+    if candidate.candidate_state != "approved" {
+        blockers.push(format!(
+            "candidate_state_{}_blocks_promotion_readiness",
+            safe_identifier(&candidate.candidate_state)
+        ));
+    }
+    if candidate.approval_evidence_refs.is_empty() {
+        blockers.push("approval_evidence_required".to_string());
+    }
+    if !matches!(
+        candidate.memory_kind.as_str(),
+        "candidate_claim" | "preference_memory"
+    ) {
+        blockers.push("unsupported_memory_kind_blocks_promotion_readiness".to_string());
+    }
+    if matches!(
+        visibility_class(&candidate.visibility),
+        "staff" | "owner" | "private"
+    ) {
+        blockers.push("private_visibility_blocks_promotion_readiness".to_string());
+    }
+    sorted_unique(blockers)
+}
+
+fn visibility_class(visibility: &str) -> &'static str {
+    match visibility {
+        "public" => "public",
+        "authenticated" | "member" => "member",
+        "staff" | "staff_private" => "staff",
+        "owner" | "owner_private" => "owner",
+        _ => "private",
     }
 }
 
@@ -1476,6 +1668,224 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
             .unwrap();
         assert_eq!(graph_node_count, 0);
+    }
+
+    #[test]
+    fn approved_candidate_exposes_read_only_promotion_readiness_packet_without_mutation() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact =
+            generated_artifact(&connection, "sha256:generated-story-promotion-readiness");
+        let version = add_artifact_version(
+            &connection,
+            &artifact.id,
+            "sha256:generated-story-promotion-readiness-version",
+            artifact.storage_uri.as_deref(),
+            json!({"fixture": "story"}),
+        )
+        .unwrap();
+        let mut approved = claim_item("Owner approved homepage positioning for readiness review.");
+        approved.candidate_state = Some(GeneratedContentMemoryState::Approved);
+        approved.visibility = "public".to_string();
+        approved.approval_evidence_refs = vec!["approval:owner_1".to_string()];
+
+        let (candidates, _) = ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id.clone(),
+                artifact_version_id: Some(version.id.clone()),
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_readiness_1".to_string()),
+                job_id: Some("job_story_readiness_1".to_string()),
+                extraction_fixture_id: "fixture.story.promotion_readiness.v1".to_string(),
+                items: vec![approved],
+            },
+        )
+        .unwrap();
+        let candidate_id = candidates[0].id.clone();
+        let candidate_count_before: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let graph_node_count_before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
+            .unwrap();
+        let graph_edge_count_before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| row.get(0))
+            .unwrap();
+        let pack_count_before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM product_packs", [], |row| row.get(0))
+            .unwrap();
+        let vector_table_count_before: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND lower(name) LIKE '%vector%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let packet = generated_content_memory_review_packet_for_artifact(
+            &connection,
+            &artifact.id,
+            GeneratedContentMemoryReviewAudience::Staff,
+        )
+        .unwrap();
+
+        assert_eq!(packet.promotion_readiness_packets.len(), 1);
+        let readiness = &packet.promotion_readiness_packets[0];
+        assert_eq!(readiness.candidate_id, candidate_id);
+        assert_eq!(readiness.current_candidate_state, "approved");
+        assert_eq!(readiness.visibility_class, "public");
+        assert!(readiness.read_only);
+        assert!(readiness.promotion_ready);
+        assert!(readiness.blockers.is_empty());
+        assert_eq!(
+            readiness.allowed_next_action,
+            "prepare_owner_memory_promotion_review"
+        );
+        assert!(readiness
+            .evidence_refs
+            .contains(&format!("artifact:{}", artifact.id)));
+        assert!(readiness
+            .decision_refs
+            .contains(&"approval:owner_1".to_string()));
+        assert_eq!(
+            readiness.origin.workflow_template_ref.as_deref(),
+            Some("workflow_template:studio.story.scrollytelling_homepage")
+        );
+        assert_eq!(
+            readiness.origin.workflow_compilation_ref.as_deref(),
+            Some("workflow_compilation:workflow_compilation_readiness_1")
+        );
+        assert_eq!(
+            readiness.origin.job_ref.as_deref(),
+            Some("job:job_story_readiness_1")
+        );
+        assert!(!readiness.memory_promotion_performed);
+        assert!(!readiness.confirmed_graph_promotion);
+        assert!(!readiness.vector_mutation_performed);
+        assert!(!readiness.pack_state_mutation_performed);
+        assert!(!readiness.live_provider_called);
+        assert!(readiness
+            .limitations
+            .contains(&"memory_promotion_not_performed".to_string()));
+
+        let reloaded = load_generated_content_memory_candidate(&connection, &candidate_id).unwrap();
+        assert_eq!(reloaded.candidate_state, "approved");
+        assert_eq!(
+            candidate_count_before,
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+        );
+        assert_eq!(
+            graph_node_count_before,
+            connection
+                .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            graph_edge_count_before,
+            connection
+                .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            pack_count_before,
+            connection
+                .query_row("SELECT COUNT(*) FROM product_packs", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            vector_table_count_before,
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND lower(name) LIKE '%vector%'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn readiness_packet_blocks_unapproved_rejected_and_private_candidates() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+        let artifact = generated_artifact(&connection, "sha256:generated-story-readiness-blocked");
+        let mut proposed = claim_item("Proposed story claim still requires owner review.");
+        proposed.visibility = "public".to_string();
+        let mut private_approved =
+            claim_item("Owner approved private story detail for staff review only.");
+        private_approved.candidate_state = Some(GeneratedContentMemoryState::Approved);
+        private_approved.approval_evidence_refs = vec!["approval:owner_private".to_string()];
+        private_approved.visibility = "staff".to_string();
+        let mut rejected = claim_item("Rejected story claim should stay blocked.");
+        rejected.candidate_state = Some(GeneratedContentMemoryState::Rejected);
+        rejected.rejection_evidence_refs = vec!["artifact_review:rejected".to_string()];
+        rejected.visibility = "public".to_string();
+
+        ingest_generated_content_memory_candidates(
+            &connection,
+            GeneratedContentMemoryIngestionInput {
+                artifact_id: artifact.id.clone(),
+                artifact_version_id: None,
+                workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+                workflow_compilation_id: Some("workflow_compilation_readiness_blocked".to_string()),
+                job_id: Some("job_story_readiness_blocked".to_string()),
+                extraction_fixture_id: "fixture.story.promotion_readiness_blocked.v1".to_string(),
+                items: vec![proposed, private_approved, rejected],
+            },
+        )
+        .unwrap();
+
+        let packet = generated_content_memory_review_packet_for_artifact(
+            &connection,
+            &artifact.id,
+            GeneratedContentMemoryReviewAudience::Staff,
+        )
+        .unwrap();
+
+        assert_eq!(packet.promotion_readiness_packets.len(), 3);
+        assert!(packet
+            .promotion_readiness_packets
+            .iter()
+            .all(|readiness| !readiness.promotion_ready));
+        assert!(packet.promotion_readiness_packets.iter().any(|readiness| {
+            readiness
+                .blockers
+                .contains(&"candidate_state_proposed_blocks_promotion_readiness".to_string())
+        }));
+        assert!(packet.promotion_readiness_packets.iter().any(|readiness| {
+            readiness
+                .blockers
+                .contains(&"private_visibility_blocks_promotion_readiness".to_string())
+        }));
+        assert!(packet.promotion_readiness_packets.iter().any(|readiness| {
+            readiness
+                .blockers
+                .contains(&"candidate_state_rejected_blocks_promotion_readiness".to_string())
+        }));
+        assert!(packet.promotion_readiness_packets.iter().all(|readiness| {
+            readiness.allowed_next_action == "resolve_memory_readiness_blockers"
+                && !readiness.memory_promotion_performed
+                && !readiness.confirmed_graph_promotion
+                && !readiness.vector_mutation_performed
+                && !readiness.pack_state_mutation_performed
+        }));
     }
 
     #[test]

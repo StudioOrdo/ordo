@@ -11,6 +11,11 @@ import {
   type StudioPublicationSourceStatus,
   type StudioPublicationsView,
 } from "@/lib/studio-publications";
+import {
+  buildStudioStoryIntakeView,
+  type StoryFounderIntakePacket,
+  type StudioStoryWorkflowCompilationView,
+} from "@/lib/studio-story-intake";
 
 export interface StudioStoryPreviewSnapshot {
   daemonUrl: string;
@@ -20,6 +25,7 @@ export interface StudioStoryPreviewSnapshot {
   deck: HomepageStoryDeckResponse | null;
   review: StudioProductionReviewPacket | null;
   learning: StoryPublishLearningBrief | null;
+  intakePacket: StoryFounderIntakePacket | null;
   degradedReason: string | null;
 }
 
@@ -27,7 +33,26 @@ export interface StudioStoryPreviewInput {
   deck: HomepageStoryDeckResponse | null;
   review: StudioProductionReviewPacket | null;
   learning: StoryPublishLearningBrief | null;
+  intakePacket?: StoryFounderIntakePacket | null;
   degradedReason: string | null;
+}
+
+export type StudioStoryWorkflowStateKey =
+  | "compiled"
+  | "blocked"
+  | "missing_input"
+  | "awaiting_approval"
+  | "ready"
+  | "degraded";
+
+export type StudioStoryWorkflowStateTone = "ok" | "warn" | "error" | "muted";
+
+export interface StudioStoryWorkflowStateView {
+  key: StudioStoryWorkflowStateKey;
+  label: string;
+  detail: string;
+  tone: StudioStoryWorkflowStateTone;
+  active: boolean;
 }
 
 export interface StudioStoryPreviewSlideView {
@@ -46,6 +71,9 @@ export interface StudioStoryPreviewSlideView {
 export interface StudioStoryPreviewView {
   status: StudioPublicationSourceStatus | "degraded";
   deckId: string;
+  workflowState: StudioStoryWorkflowStateView;
+  workflowStates: StudioStoryWorkflowStateView[];
+  workflowCompilation: StudioStoryWorkflowCompilationView | null;
   readinessLabel: string;
   slideCount: number;
   publicationEvidenceCount: number;
@@ -63,6 +91,8 @@ const noMutationLine =
 
 export function buildStudioStoryPreviewView(input: StudioStoryPreviewInput): StudioStoryPreviewView {
   const publication = input.review && input.learning ? buildStudioPublicationsView(input.review, input.learning) : null;
+  const intakeView = input.intakePacket ? buildStudioStoryIntakeView(input.intakePacket) : null;
+  const workflowCompilation = intakeView?.workflowCompilation ?? null;
   const deckReady = Boolean(input.deck?.readiness.ready);
   const sourceSlides = input.deck && deckReady ? homepageStoryDeckToSlides(input.deck) : [];
   const slides = sourceSlides.map(previewSlideView);
@@ -73,19 +103,26 @@ export function buildStudioStoryPreviewView(input: StudioStoryPreviewInput): Stu
     ...(input.deck?.deck.evidenceRefs ?? []),
     ...(input.review?.evidenceRefs ?? []),
     ...(input.learning?.evidenceRefs ?? []),
+    ...(input.intakePacket?.workflowCompilation?.evidenceRefs ?? []),
   ]);
   const degraded = Boolean(input.degradedReason);
   const missing = !degraded && (slides.length === 0 || !publication);
   const status = degraded ? "degraded" : missing ? "missing" : publication?.status ?? "manual";
+  const workflowState = currentWorkflowState(workflowCompilation, Boolean(publication), slides.length, degraded);
+  const workflowStates = workflowStateRows(workflowCompilation, Boolean(publication), slides.length, degraded);
   const limitations = stableSafeList([
     ...(input.deck?.deck.limitations ?? []),
     ...(input.deck?.profile.limitations ?? []),
     ...(input.deck?.refresh.limitations ?? []),
+    ...(workflowCompilation?.limitations ?? []),
     ...(publication?.limitations ?? []),
     ...(input.degradedReason ? [input.degradedReason] : []),
   ]);
   const nextActions = stableSafeList([
+    ...(workflowCompilation?.nextActions ?? []),
     ...(publication?.nextActions ?? []),
+    ...(!workflowCompilation ? ["Submit protected Story Intake evidence for workflow state"] : []),
+    ...(workflowCompilation?.status === "missing_input" ? workflowCompilation.missingInputs.map((item) => `Resolve ${item}`) : []),
     ...(slides.length === 0 ? ["Resolve daemon-backed homepage story deck"] : []),
     ...(!publication ? ["Resolve Story publication readiness evidence"] : []),
   ]);
@@ -93,11 +130,14 @@ export function buildStudioStoryPreviewView(input: StudioStoryPreviewInput): Stu
   return {
     status,
     deckId: safeIdentifier(input.deck?.deck.deckId ?? input.review?.deckId ?? input.learning?.deckId ?? "homepage.story.v1"),
+    workflowState,
+    workflowStates,
+    workflowCompilation,
     readinessLabel: deckReady ? "Preview deck ready" : "Preview evidence missing",
     slideCount: slides.length,
     publicationEvidenceCount,
     safeEvidenceRefCount,
-    summaryLines: summaryLines(slides.length, publicationEvidenceCount, degraded, missing),
+    summaryLines: summaryLines(slides.length, publicationEvidenceCount, degraded, missing, workflowState),
     slides,
     publication,
     limitations,
@@ -128,10 +168,116 @@ function isWithheldText(value: string): boolean {
   return value === "Public-safe content withheld pending review.";
 }
 
-function summaryLines(slideCount: number, publicationEvidenceCount: number, degraded: boolean, missing: boolean): string[] {
+function currentWorkflowState(
+  workflow: StudioStoryWorkflowCompilationView | null,
+  hasPublication: boolean,
+  slideCount: number,
+  degraded: boolean,
+): StudioStoryWorkflowStateView {
+  return workflowStateRows(workflow, hasPublication, slideCount, degraded).find((state) => state.active) ?? workflowState("blocked", true);
+}
+
+function workflowStateRows(
+  workflow: StudioStoryWorkflowCompilationView | null,
+  hasPublication: boolean,
+  slideCount: number,
+  degraded: boolean,
+): StudioStoryWorkflowStateView[] {
+  const compiled = workflow?.status === "compiled";
+  const missingInput = workflow?.status === "missing_input";
+  const blocked = !degraded && (!workflow || workflow.status === "blocked");
+  const awaitingApproval = compiled && workflow.approvalGates.length > 0;
+  const ready = compiled && !awaitingApproval && slideCount > 0 && hasPublication;
+
+  return [
+    workflowState("degraded", degraded, degraded ? "Daemon evidence is incomplete; Preview keeps this explicit." : undefined),
+    workflowState(
+      "missing_input",
+      !degraded && missingInput,
+      missingInput
+        ? `${workflow.missingInputs.length} required workflow input blocker(s) remain.`
+        : "No missing workflow inputs are active.",
+    ),
+    workflowState(
+      "blocked",
+      blocked,
+      blocked
+        ? "Workflow state is blocked until protected Story Intake compilation evidence is available."
+        : "No closed blocker is active.",
+    ),
+    workflowState(
+      "compiled",
+      !degraded && compiled && !awaitingApproval && !ready,
+      compiled
+        ? `${workflow.taskCount} task binding(s) are compiled as evidence only.`
+        : "No workflow compilation evidence is available.",
+    ),
+    workflowState(
+      "awaiting_approval",
+      !degraded && awaitingApproval,
+      awaitingApproval
+        ? `${workflow.approvalGates.length} approval gate(s) remain before publishing or external egress.`
+        : "No approval gate is active.",
+    ),
+    workflowState(
+      "ready",
+      !degraded && ready,
+      ready
+        ? "Preview evidence is ready for owner/staff review; this does not claim task execution or publication."
+        : "Preview is not ready until compilation, slides, and publication evidence are present.",
+    ),
+  ];
+}
+
+function workflowState(
+  key: StudioStoryWorkflowStateKey,
+  active: boolean,
+  detail?: string,
+): StudioStoryWorkflowStateView {
+  const labels: Record<StudioStoryWorkflowStateKey, string> = {
+    compiled: "compiled",
+    blocked: "blocked",
+    missing_input: "missing input",
+    awaiting_approval: "awaiting approval",
+    ready: "ready",
+    degraded: "degraded",
+  };
+  const defaultDetails: Record<StudioStoryWorkflowStateKey, string> = {
+    compiled: "Workflow compilation evidence is durable and read-only.",
+    blocked: "Workflow state is blocked until source evidence is available.",
+    missing_input: "Required workflow inputs are missing.",
+    awaiting_approval: "Human approval gates remain explicit.",
+    ready: "Preview is ready for owner/staff review.",
+    degraded: "Daemon evidence is degraded.",
+  };
+  const tone: StudioStoryWorkflowStateTone =
+    key === "ready" || key === "compiled"
+      ? "ok"
+      : key === "degraded"
+        ? "error"
+        : key === "blocked" || key === "missing_input" || key === "awaiting_approval"
+          ? "warn"
+          : "muted";
+  return {
+    key,
+    label: labels[key],
+    detail: detail ?? defaultDetails[key],
+    tone: active ? tone : "muted",
+    active,
+  };
+}
+
+function summaryLines(
+  slideCount: number,
+  publicationEvidenceCount: number,
+  degraded: boolean,
+  missing: boolean,
+  workflowState: StudioStoryWorkflowStateView,
+): string[] {
   if (missing) {
     return [
       "No protected preview slides are available from daemon-backed homepage story evidence.",
+      `Workflow state is ${workflowState.label}.`,
       "Missing or degraded publication evidence remains explicit.",
       noMutationLine,
     ];
@@ -139,12 +285,14 @@ function summaryLines(slideCount: number, publicationEvidenceCount: number, degr
   if (degraded) {
     return [
       `${slideCount} protected preview slide(s) are assembled from daemon-backed homepage story evidence.`,
+      `Workflow state is ${workflowState.label}.`,
       "Some Story publication evidence is degraded or unavailable.",
       noMutationLine,
     ];
   }
   return [
     `${slideCount} protected preview slide(s) are assembled from daemon-backed homepage story evidence.`,
+    `Workflow state is ${workflowState.label}.`,
     `${publicationEvidenceCount} Story publication evidence component(s) are available for owner/staff review.`,
     noMutationLine,
   ];
@@ -185,7 +333,7 @@ function safeEvidenceRefCountFor(refs: readonly string[]): number {
 
 function safeEvidenceRef(value: string | null | undefined): string | null {
   if (!value || isUnsafeText(value)) return null;
-  if (/^(artifact|business_fact|content_analytics|content_event|memory_candidate|event|surface|tracked_entry_point|cta|offer):[A-Za-z0-9_.:-]+$/.test(value)) {
+  if (/^(artifact|business_fact|content_analytics|content_event|memory_candidate|workflow_compilation|event|surface|tracked_entry_point|cta|offer):[A-Za-z0-9_.:-]+$/.test(value)) {
     return value;
   }
   return null;

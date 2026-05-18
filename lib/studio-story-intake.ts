@@ -76,6 +76,7 @@ export interface StoryFounderIntakePacket {
   version: unknown | null;
   publicDerivative: StoryFounderIntakePublicDerivative;
   readiness: StoryFounderIntakeReadiness;
+  workflowCompilation?: StoryWorkflowCompilationEvidence | null;
   mutationPerformed: boolean;
   approvalState: string;
   visibilityCeiling: string;
@@ -84,6 +85,67 @@ export interface StoryFounderIntakePacket {
   memoryPromotionPerformed: boolean;
   confirmedGraphPromotion: boolean;
   event: unknown | null;
+}
+
+export interface StoryWorkflowCompilationEvidence {
+  status: string;
+  templateId: string;
+  templateVersion: number;
+  idempotencyKey: string;
+  compilationRef: string | null;
+  inputHash: string | null;
+  evidenceRefs: string[];
+  missingInputs: string[];
+  limitations: string[];
+  safeNextActions: string[];
+  resolvedVariables: StoryWorkflowResolvedVariable[];
+  taskBindings: StoryWorkflowTaskBindingEvidence[];
+  fanoutGroups: StoryWorkflowFanoutEvidence[];
+  approvalGates: StoryWorkflowApprovalGateEvidence[];
+  providerRequirements: StoryWorkflowProviderRequirementEvidence[];
+  liveProviderRequired: boolean;
+  taskExecutionPerformed: boolean;
+  externalPublishingClaimed: boolean;
+  memoryPromotionPerformed: boolean;
+  confirmedGraphPromotion: boolean;
+}
+
+export interface StoryWorkflowResolvedVariable {
+  key: string;
+  sourceKind: string;
+  visibility: string;
+  evidenceRefCount: number;
+  valueExposed: boolean;
+}
+
+export interface StoryWorkflowTaskBindingEvidence {
+  key: string;
+  method: string;
+  dependsOn: string[];
+  visibility: string;
+  fanout: string | null;
+  providerRequirement: string | null;
+  outputArtifactKind: string | null;
+}
+
+export interface StoryWorkflowFanoutEvidence {
+  key: string;
+  itemCount: number;
+  maxItems: number;
+}
+
+export interface StoryWorkflowApprovalGateEvidence {
+  key: string;
+  action: string;
+  required: boolean;
+}
+
+export interface StoryWorkflowProviderRequirementEvidence {
+  key: string;
+  capability: string;
+  mode: string;
+  egress: string;
+  visibility: string;
 }
 
 export interface StudioStoryIntakeView {
@@ -101,9 +163,34 @@ export interface StudioStoryIntakeView {
   missingPrerequisites: string[];
   limitations: string[];
   claims: StudioStoryIntakeClaimView[];
+  workflowCompilation: StudioStoryWorkflowCompilationView | null;
   nextActions: string[];
   summaryLines: string[];
   deferredStates: StudioStoryIntakeDeferredState[];
+}
+
+export interface StudioStoryWorkflowCompilationView {
+  status: "compiled" | "blocked" | "missing_input";
+  templateLabel: string;
+  templateVersion: number;
+  compilationRef: string;
+  safeEvidenceRefCount: number;
+  missingInputs: string[];
+  limitations: string[];
+  nextActions: string[];
+  variableCount: number;
+  taskCount: number;
+  fanoutSummary: string;
+  approvalGates: string[];
+  providerRequirements: string[];
+  taskBindings: StudioStoryWorkflowTaskBindingView[];
+}
+
+export interface StudioStoryWorkflowTaskBindingView {
+  key: string;
+  method: string;
+  outputArtifactKind: string;
+  visibility: string;
 }
 
 export interface StudioStoryIntakeClaimView {
@@ -153,7 +240,8 @@ export function buildStudioStoryIntakeView(packet: StoryFounderIntakePacket): St
   const narrativeDeckReady = Boolean(packet.readiness.narrativeDeckReady);
   const status: StudioStoryIntakeStatus = narrativeDeckReady ? "ready" : "blocked";
   const deferredStates = buildDeferredStates(packet);
-  const nextActions = nextActionsFor(status, missingPrerequisites);
+  const workflowCompilation = workflowCompilationView(packet.workflowCompilation ?? null);
+  const nextActions = nextActionsFor(status, missingPrerequisites, workflowCompilation);
 
   return {
     status,
@@ -170,8 +258,9 @@ export function buildStudioStoryIntakeView(packet: StoryFounderIntakePacket): St
     missingPrerequisites,
     limitations,
     claims,
+    workflowCompilation,
     nextActions,
-    summaryLines: summaryLines(status, safeEvidenceRefCount, missingPrerequisites.length),
+    summaryLines: summaryLines(status, safeEvidenceRefCount, missingPrerequisites.length, workflowCompilation),
     deferredStates,
   };
 }
@@ -192,6 +281,7 @@ export function emptyStudioStoryIntakeView(): StudioStoryIntakeView {
     missingPrerequisites: ["Protected founder intake evidence"],
     limitations: ["Readiness is unknown until protected intake evidence is available."],
     claims: [],
+    workflowCompilation: null,
     nextActions: ["Submit protected founder intake evidence"],
     summaryLines: [
       "No Story founder intake has been submitted from this workbench yet.",
@@ -211,15 +301,85 @@ function claimView(claim: StoryIntakeClaim): StudioStoryIntakeClaimView {
   };
 }
 
-function nextActionsFor(status: StudioStoryIntakeStatus, missingPrerequisites: readonly string[]): string[] {
+function workflowCompilationView(compilation: StoryWorkflowCompilationEvidence | null): StudioStoryWorkflowCompilationView | null {
+  if (!compilation) return null;
+  const status = compilation.status === "compiled" ? "compiled" : compilation.missingInputs.length > 0 ? "missing_input" : "blocked";
+  const taskBindings = compilation.taskBindings.map((task) => ({
+    key: safeIdentifier(task.key),
+    method: safeIdentifier(task.method),
+    outputArtifactKind: safeIdentifier(task.outputArtifactKind ?? "none"),
+    visibility: safeIdentifier(task.visibility),
+  }));
+  const fanoutSummary = compilation.fanoutGroups.length
+    ? compilation.fanoutGroups
+        .map((fanout) => `${safeIdentifier(fanout.key)}: ${fanout.itemCount}/${fanout.maxItems}`)
+        .join(", ")
+    : "No fanout groups";
+  const approvalGates = safeList(compilation.approvalGates.map((gate) => `${gate.action}${gate.required ? " required" : " optional"}`));
+  const providerRequirements = safeList(
+    compilation.providerRequirements.map((provider) => `${provider.capability} via ${provider.mode}, egress ${provider.egress}`),
+  );
+
+  return {
+    status,
+    templateLabel: `${safeIdentifier(compilation.templateId)} v${compilation.templateVersion}`,
+    templateVersion: compilation.templateVersion,
+    compilationRef: safeArtifactRef(compilation.compilationRef) ?? "workflow_compilation:withheld",
+    safeEvidenceRefCount: safeEvidenceRefCountFor(compilation.evidenceRefs),
+    missingInputs: safeList(compilation.missingInputs).map(humanizeIdentifier),
+    limitations: safeList(compilation.limitations).map(humanizeIdentifier),
+    nextActions: safeList(compilation.safeNextActions),
+    variableCount: compilation.resolvedVariables.length,
+    taskCount: taskBindings.length,
+    fanoutSummary,
+    approvalGates,
+    providerRequirements,
+    taskBindings,
+  };
+}
+
+function nextActionsFor(
+  status: StudioStoryIntakeStatus,
+  missingPrerequisites: readonly string[],
+  workflowCompilation: StudioStoryWorkflowCompilationView | null,
+): string[] {
+  if (workflowCompilation?.status === "compiled") {
+    return [
+      "Review workflow compilation evidence",
+      "Open Studio Preview workflow state",
+      "Keep provider execution and publication approval gated",
+    ];
+  }
+  if (workflowCompilation?.status === "missing_input") {
+    return [...workflowCompilation.missingInputs.map((item) => `Resolve ${item.toLowerCase()}`), "Keep compilation blocked until inputs are safe"];
+  }
   if (status === "ready") {
-    return ["Create narrative deck", "Review public derivative", "Prepare Story Pack production review"];
+    return ["Request workflow compilation evidence", "Review public derivative", "Prepare Story Pack production review"];
   }
   const missingActions = missingPrerequisites.map((item) => `Add ${item.toLowerCase()}`);
   return [...missingActions, "Keep readiness blocked until evidence is safe"];
 }
 
-function summaryLines(status: StudioStoryIntakeStatus, safeEvidenceRefCount: number, missingCount: number): string[] {
+function summaryLines(
+  status: StudioStoryIntakeStatus,
+  safeEvidenceRefCount: number,
+  missingCount: number,
+  workflowCompilation: StudioStoryWorkflowCompilationView | null,
+): string[] {
+  if (workflowCompilation?.status === "compiled") {
+    return [
+      "Founder intake has stored workflow compilation evidence.",
+      `${workflowCompilation.taskCount} task binding(s) and ${workflowCompilation.safeEvidenceRefCount} workflow evidence ref(s) are ready for Studio Preview.`,
+      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+    ];
+  }
+  if (workflowCompilation?.status === "missing_input") {
+    return [
+      "Founder intake cannot compile a workflow until missing inputs are resolved.",
+      `${workflowCompilation.missingInputs.length} workflow input blocker(s) remain explicit.`,
+      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+    ];
+  }
   if (status === "ready") {
     return [
       "Founder intake is ready for narrative deck assembly.",
@@ -272,7 +432,7 @@ function safeEvidenceRefCountFor(refs: readonly string[]): number {
 
 function safeArtifactRef(value: string | null | undefined): string | null {
   if (!value || isUnsafeText(value)) return null;
-  if (/^(artifact|business_fact|content_analytics|content_event|memory_candidate|job|event|surface|tracked_entry_point|cta|offer):[A-Za-z0-9_.:-]+$/.test(value)) {
+  if (/^(artifact|business_fact|content_analytics|content_event|memory_candidate|workflow_compilation|job|event|surface|tracked_entry_point|cta|offer):[A-Za-z0-9_.:-]+$/.test(value)) {
     return value;
   }
   return null;

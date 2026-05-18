@@ -1,12 +1,12 @@
-use anyhow::{ensure, Result};
-use rusqlite::{params, Connection, OptionalExtension};
+use anyhow::{Result, ensure};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::artifacts::{
-    add_artifact_version, load_artifact, record_artifact, ArtifactInput, ArtifactVersionView,
-    ArtifactView,
+    ArtifactInput, ArtifactVersionView, ArtifactView, add_artifact_version, load_artifact,
+    record_artifact,
 };
 use crate::events::RealtimeEvent;
 use crate::security::redaction;
@@ -133,6 +133,8 @@ pub struct StoryFounderIntakePacket {
     pub version: Option<ArtifactVersionView>,
     pub public_derivative: StoryFounderIntakePublicDerivative,
     pub readiness: StoryFounderIntakeReadiness,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_compilation: Option<StoryWorkflowCompilationEvidence>,
     pub mutation_performed: bool,
     pub approval_state: String,
     pub visibility_ceiling: String,
@@ -141,6 +143,79 @@ pub struct StoryFounderIntakePacket {
     pub memory_promotion_performed: bool,
     pub confirmed_graph_promotion: bool,
     pub event: Option<RealtimeEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryWorkflowCompilationEvidence {
+    pub status: String,
+    pub template_id: String,
+    pub template_version: i64,
+    pub idempotency_key: String,
+    pub compilation_ref: Option<String>,
+    pub input_hash: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub missing_inputs: Vec<String>,
+    pub limitations: Vec<String>,
+    pub safe_next_actions: Vec<String>,
+    pub resolved_variables: Vec<StoryWorkflowResolvedVariable>,
+    pub task_bindings: Vec<StoryWorkflowTaskBindingEvidence>,
+    pub fanout_groups: Vec<StoryWorkflowFanoutEvidence>,
+    pub approval_gates: Vec<StoryWorkflowApprovalGateEvidence>,
+    pub provider_requirements: Vec<StoryWorkflowProviderRequirementEvidence>,
+    pub live_provider_required: bool,
+    pub task_execution_performed: bool,
+    pub external_publishing_claimed: bool,
+    pub memory_promotion_performed: bool,
+    pub confirmed_graph_promotion: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryWorkflowResolvedVariable {
+    pub key: String,
+    pub source_kind: String,
+    pub visibility: String,
+    pub evidence_ref_count: usize,
+    pub value_exposed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryWorkflowTaskBindingEvidence {
+    pub key: String,
+    pub method: String,
+    pub depends_on: Vec<String>,
+    pub visibility: String,
+    pub fanout: Option<String>,
+    pub provider_requirement: Option<String>,
+    pub output_artifact_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryWorkflowFanoutEvidence {
+    pub key: String,
+    pub item_count: usize,
+    pub max_items: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryWorkflowApprovalGateEvidence {
+    pub key: String,
+    pub action: String,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryWorkflowProviderRequirementEvidence {
+    pub key: String,
+    pub capability: String,
+    pub mode: String,
+    pub egress: String,
+    pub visibility: String,
 }
 
 pub fn record_story_founder_intake_packet(
@@ -243,6 +318,7 @@ fn story_founder_intake_packet(recorded: StoryFounderIntakeArtifact) -> StoryFou
         version: None,
         public_derivative: recorded.public_derivative,
         readiness,
+        workflow_compilation: None,
         mutation_performed,
         approval_state: "needs_review".to_string(),
         live_provider_called: false,
@@ -716,10 +792,12 @@ mod tests {
         assert!(recorded.version.is_some());
         assert!(recorded.event.is_some());
         assert_eq!(recorded.public_derivative.memory_effect, "candidate_only");
-        assert!(recorded
-            .public_derivative
-            .summary
-            .contains("local-first operating appliance"));
+        assert!(
+            recorded
+                .public_derivative
+                .summary
+                .contains("local-first operating appliance")
+        );
         assert_eq!(
             recorded.public_derivative.claims[0].review_state,
             "evidence_backed"
@@ -780,11 +858,13 @@ mod tests {
             recorded.public_derivative.claims[0].review_state,
             "needs_review"
         );
-        assert!(recorded
-            .public_derivative
-            .limitations
-            .iter()
-            .any(|value| value.contains("need review")));
+        assert!(
+            recorded
+                .public_derivative
+                .limitations
+                .iter()
+                .any(|value| value.contains("need review"))
+        );
     }
 
     #[test]
@@ -803,10 +883,12 @@ mod tests {
             recorded.public_derivative.claims[0].review_state,
             "needs_review"
         );
-        assert!(recorded.public_derivative.claims[0]
-            .limitations
-            .iter()
-            .any(|limitation| limitation.contains("needs evidence")));
+        assert!(
+            recorded.public_derivative.claims[0]
+                .limitations
+                .iter()
+                .any(|limitation| limitation.contains("needs evidence"))
+        );
         assert_eq!(recorded.public_derivative.memory_effect, "candidate_only");
     }
 
@@ -928,11 +1010,13 @@ mod tests {
         assert!(!packet.external_publishing_claimed);
         assert!(!packet.memory_promotion_performed);
         assert!(!packet.confirmed_graph_promotion);
-        assert!(packet
-            .readiness
-            .limitations
-            .iter()
-            .any(|limitation| limitation.contains("does not call live providers")));
+        assert!(
+            packet
+                .readiness
+                .limitations
+                .iter()
+                .any(|limitation| limitation.contains("does not call live providers"))
+        );
     }
 
     #[test]
@@ -975,10 +1059,12 @@ mod tests {
 
         assert_eq!(packet.readiness.status, "blocked");
         assert!(!packet.readiness.narrative_deck_ready);
-        assert!(packet
-            .readiness
-            .missing
-            .contains(&"evidence-backed public Story Pack claims".to_string()));
+        assert!(
+            packet
+                .readiness
+                .missing
+                .contains(&"evidence-backed public Story Pack claims".to_string())
+        );
         assert!(!packet.readiness.automatic_memory_promotion);
         assert!(!packet.readiness.confirmed_graph_promotion);
     }

@@ -881,8 +881,9 @@ export async function getStudioStoryIntakeSnapshot(
     founderStory: request.founderStory,
     businessStance: request.businessStance,
     audience: request.audience,
-    evidenceRefs: request.evidenceRefs,
-    source: "studio_story_intake_workbench",
+    proofEvidenceRefs: request.evidenceRefs,
+    sourceKind: "studio_story_intake_workbench",
+    sourceId: request.intakeId,
   });
 
   return {

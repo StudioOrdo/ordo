@@ -6,6 +6,7 @@ Ordo builds in public through small, evidence-backed work units.
 - [Implementation Issue Template](implementation-issue-template.md)
 - [Test Plan Issue Template](test-plan-template.md)
 - [Agent Execution Protocol](agent-execution-protocol.md)
+- [NYC Demo Product Shell Lane](nyc-demo-product-shell-lane.md)
 - [Reusable Prompts](prompts/)
 - [Ordo Process](ordo_process.md)
 - [Software Manufacturing Loop](software_manufacturing_loop.md)

@@ -7,6 +7,7 @@ use ordo_daemon::backups::{
 };
 use ordo_daemon::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
 use ordo_daemon::capabilities::list_capabilities;
+use ordo_daemon::generated_content_memory::seed_demo_generated_content_memory_readiness;
 use ordo_daemon::health::{build_health_report, build_readiness_report};
 use ordo_daemon::live_eval_runner::run_live_openai_eval_from_env;
 use ordo_daemon::mcp::{handle_mcp_request, McpRequest};
@@ -89,6 +90,11 @@ enum Commands {
         output_dir: PathBuf,
         #[arg(long, env = "ORDO_SOURCE_COMMIT", default_value = "local")]
         source_commit: String,
+    },
+    #[command(name = "seed-demo-memory-readiness-json")]
+    SeedDemoMemoryReadinessJson {
+        #[arg(long, env = "ORDO_DB_PATH", default_value = ".data/local.db")]
+        db_path: PathBuf,
     },
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
@@ -216,6 +222,16 @@ async fn main() -> Result<()> {
                     &connection,
                     output_dir,
                     source_commit,
+                )?)?
+            );
+        }
+        Commands::SeedDemoMemoryReadinessJson { db_path } => {
+            init_database(&db_path)?;
+            let connection = rusqlite::Connection::open(&db_path)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&seed_demo_generated_content_memory_readiness(
+                    &connection
                 )?)?
             );
         }

@@ -11,6 +11,9 @@ use crate::schema::db::ConnectionExt;
 use crate::security::redaction;
 
 pub const GENERATED_CONTENT_MEMORY_SCHEMA_VERSION: &str = "generated_content_memory.v1";
+pub const DEMO_MEMORY_READINESS_ARTIFACT_ID: &str = "artifact_demo_homepage_story_memory_readiness";
+const DEMO_MEMORY_READINESS_VERSION_ID: &str = "artifact_version_demo_homepage_story_memory_v1";
+const DEMO_MEMORY_READINESS_CONTENT_HASH: &str = "sha256:demo-homepage-story-memory-readiness-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -237,6 +240,23 @@ pub struct GeneratedContentMemoryReviewItem {
     pub memory_effect: String,
     pub recommended_review_action: String,
     pub confirmed_graph_promotion: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DemoGeneratedContentMemoryReadinessSeed {
+    pub artifact_id: String,
+    pub artifact_version_id: String,
+    pub candidate_id: String,
+    pub promotion_ready: bool,
+    pub route_hint: String,
+    pub read_only: bool,
+    pub memory_promotion_performed: bool,
+    pub confirmed_graph_promotion: bool,
+    pub vector_mutation_performed: bool,
+    pub pack_state_mutation_performed: bool,
+    pub live_provider_called: bool,
+    pub review_packet: GeneratedContentMemoryReviewPacket,
 }
 
 pub fn ingest_generated_content_memory_candidates(
@@ -468,6 +488,149 @@ pub fn generated_content_memory_review_packet_for_artifact(
         confirmed_graph_promotion: false,
         live_provider_called: false,
     })
+}
+
+pub fn seed_demo_generated_content_memory_readiness(
+    connection: &Connection,
+) -> Result<DemoGeneratedContentMemoryReadinessSeed> {
+    let artifact = upsert_demo_memory_readiness_artifact(connection)?;
+    let version_id = upsert_demo_memory_readiness_artifact_version(connection, &artifact.id)?;
+    let (candidates, _) = ingest_generated_content_memory_candidates(
+        connection,
+        GeneratedContentMemoryIngestionInput {
+            artifact_id: artifact.id.clone(),
+            artifact_version_id: Some(version_id.clone()),
+            workflow_template_id: Some("studio.story.scrollytelling_homepage".to_string()),
+            workflow_compilation_id: Some("workflow_compilation_demo_memory_readiness".to_string()),
+            job_id: Some("job_demo_memory_readiness".to_string()),
+            extraction_fixture_id: "fixture.story.demo.memory_readiness.v1".to_string(),
+            items: vec![GeneratedContentMemoryItemInput {
+                memory_kind: GeneratedContentMemoryKind::CandidateClaim,
+                candidate_state: Some(GeneratedContentMemoryState::Approved),
+                summary_text: "Owner approved homepage positioning is ready for memory review."
+                    .to_string(),
+                body: json!({
+                    "claim": "Owner approved homepage positioning is ready for memory review.",
+                    "source": "governed_demo_seed",
+                    "truthBoundary": "readiness_only"
+                }),
+                confidence: 0.81,
+                evidence_refs: vec![
+                    format!("artifact:{}", artifact.id),
+                    format!("artifact_version:{version_id}"),
+                    "workflow_compilation:workflow_compilation_demo_memory_readiness".to_string(),
+                ],
+                limitations: vec![
+                    "demo_seed_creates_candidate_readiness_only".to_string(),
+                    "owner_review_required_before_memory_promotion".to_string(),
+                    "no_provider_call_publish_graph_vector_or_pack_state_change".to_string(),
+                ],
+                visibility: "public".to_string(),
+                approval_evidence_refs: vec!["approval:owner_demo_memory_readiness".to_string()],
+                publication_evidence_refs: vec![],
+                feedback_evidence_refs: vec![],
+                outcome_evidence_refs: vec![],
+                rejection_evidence_refs: vec![],
+            }],
+        },
+    )?;
+    let candidate = candidates
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("demo memory readiness seed did not return a candidate"))?;
+    let review_packet = generated_content_memory_review_packet_for_artifact(
+        connection,
+        &artifact.id,
+        GeneratedContentMemoryReviewAudience::Staff,
+    )?;
+    let readiness = review_packet
+        .promotion_readiness_packets
+        .iter()
+        .find(|packet| packet.candidate_id == candidate.id)
+        .ok_or_else(|| anyhow::anyhow!("demo memory readiness packet was not returned"))?;
+
+    Ok(DemoGeneratedContentMemoryReadinessSeed {
+        artifact_id: artifact.id,
+        artifact_version_id: version_id,
+        candidate_id: candidate.id,
+        promotion_ready: readiness.promotion_ready,
+        route_hint: format!(
+            "/studio/publications?role=studio&artifactIds={}",
+            DEMO_MEMORY_READINESS_ARTIFACT_ID
+        ),
+        read_only: readiness.read_only,
+        memory_promotion_performed: readiness.memory_promotion_performed,
+        confirmed_graph_promotion: readiness.confirmed_graph_promotion,
+        vector_mutation_performed: readiness.vector_mutation_performed,
+        pack_state_mutation_performed: readiness.pack_state_mutation_performed,
+        live_provider_called: readiness.live_provider_called,
+        review_packet,
+    })
+}
+
+fn upsert_demo_memory_readiness_artifact(connection: &Connection) -> Result<ArtifactView> {
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "INSERT INTO artifacts (
+            id, artifact_kind, title, status, visibility_ceiling, summary,
+            source_kind, source_id, evidence_refs_json, provenance_json, content_hash,
+            storage_uri, health_status, created_by_job_id, created_at, updated_at
+         ) VALUES (?1, 'story.homepage_version', 'Demo homepage story readiness', 'approved', 'staff',
+            'Governed demo story artifact for approved memory readiness review.',
+            'demo_seed', 'nyc_memory_readiness',
+            ?2, ?3, ?4, 'ordo://demo/homepage-story-memory-readiness-v1',
+            'demo_readiness_only', NULL, ?5, ?5)
+         ON CONFLICT(id) DO UPDATE SET
+            updated_at = excluded.updated_at",
+        params![
+            DEMO_MEMORY_READINESS_ARTIFACT_ID,
+            json!([
+                "workflow_compilation:workflow_compilation_demo_memory_readiness",
+                "approval:owner_demo_memory_readiness",
+            ])
+            .to_string(),
+            json!({
+                "schemaVersion": "ordo.demo.memory_readiness_seed.v1",
+                "source": "governed_demo_seed",
+                "readinessOnly": true,
+                "memoryPromotionPerformed": false,
+                "confirmedGraphPromotion": false,
+                "vectorMutationPerformed": false,
+                "packStateMutationPerformed": false,
+                "liveProviderCalled": false,
+            })
+            .to_string(),
+            DEMO_MEMORY_READINESS_CONTENT_HASH,
+            now,
+        ],
+    )?;
+    load_artifact(connection, DEMO_MEMORY_READINESS_ARTIFACT_ID)
+}
+
+fn upsert_demo_memory_readiness_artifact_version(
+    connection: &Connection,
+    artifact_id: &str,
+) -> Result<String> {
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "INSERT INTO artifact_versions (
+            id, artifact_id, version, content_hash, storage_uri, metadata_json, created_at
+         ) VALUES (?1, ?2, 1, ?3, 'ordo://demo/homepage-story-memory-readiness-v1',
+            ?4, ?5)
+         ON CONFLICT(id) DO NOTHING",
+        params![
+            DEMO_MEMORY_READINESS_VERSION_ID,
+            artifact_id,
+            format!("{DEMO_MEMORY_READINESS_CONTENT_HASH}:version"),
+            json!({
+                "schemaVersion": "ordo.demo.memory_readiness_seed.version.v1",
+                "readinessOnly": true,
+            })
+            .to_string(),
+            now,
+        ],
+    )?;
+    Ok(DEMO_MEMORY_READINESS_VERSION_ID.to_string())
 }
 
 pub fn load_generated_content_memory_candidate(
@@ -1785,6 +1948,108 @@ mod tests {
                 )
                 .unwrap()
         );
+        assert_eq!(
+            graph_node_count_before,
+            connection
+                .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            graph_edge_count_before,
+            connection
+                .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            pack_count_before,
+            connection
+                .query_row("SELECT COUNT(*) FROM product_packs", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap()
+        );
+        assert_eq!(
+            vector_table_count_before,
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND lower(name) LIKE '%vector%'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn demo_memory_readiness_seed_is_idempotent_and_read_only() {
+        let connection = Connection::open_in_memory().unwrap();
+        init_schema(&connection).unwrap();
+
+        let candidate_count_before: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let graph_node_count_before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))
+            .unwrap();
+        let graph_edge_count_before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| row.get(0))
+            .unwrap();
+        let pack_count_before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM product_packs", [], |row| row.get(0))
+            .unwrap();
+        let vector_table_count_before: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND lower(name) LIKE '%vector%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let first = seed_demo_generated_content_memory_readiness(&connection).unwrap();
+        let second = seed_demo_generated_content_memory_readiness(&connection).unwrap();
+
+        assert_eq!(first.artifact_id, DEMO_MEMORY_READINESS_ARTIFACT_ID);
+        assert_eq!(first.artifact_id, second.artifact_id);
+        assert_eq!(first.candidate_id, second.candidate_id);
+        assert_eq!(
+            first.route_hint,
+            "/studio/publications?role=studio&artifactIds=artifact_demo_homepage_story_memory_readiness"
+        );
+        assert!(first.promotion_ready);
+        assert!(first.read_only);
+        assert!(!first.memory_promotion_performed);
+        assert!(!first.confirmed_graph_promotion);
+        assert!(!first.vector_mutation_performed);
+        assert!(!first.pack_state_mutation_performed);
+        assert!(!first.live_provider_called);
+        assert_eq!(first.review_packet.candidate_count, 1);
+        assert_eq!(first.review_packet.promotion_readiness_packets.len(), 1);
+        assert_eq!(
+            first.review_packet.promotion_readiness_packets[0].allowed_next_action,
+            "prepare_owner_memory_promotion_review"
+        );
+        assert!(first
+            .review_packet
+            .evidence_refs
+            .iter()
+            .any(|reference| reference == "approval:owner_demo_memory_readiness"));
+
+        let candidate_count_after: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM generated_content_memory_candidates",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(candidate_count_after, candidate_count_before + 1);
         assert_eq!(
             graph_node_count_before,
             connection

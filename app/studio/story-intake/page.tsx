@@ -67,6 +67,7 @@ export default async function StudioStoryIntakePage({ searchParams }: { searchPa
       {!degraded ? (
         <>
           <ReadinessPanel view={view} />
+          <WorkflowCompilationPanel view={view} />
           <EvidencePanel view={view} />
           <ClaimsPanel view={view} />
           <DeferredStatesPanel view={view} />
@@ -75,6 +76,82 @@ export default async function StudioStoryIntakePage({ searchParams }: { searchPa
         </>
       ) : null}
     </ProductShell>
+  );
+}
+
+function WorkflowCompilationPanel({ view }: { view: StudioStoryIntakeView }) {
+  const workflow = view.workflowCompilation;
+  if (!workflow) {
+    return (
+      <section className="plain-panel">
+        <h3 className="panel-title">Workflow Compilation</h3>
+        <p className="brief-body">Workflow compilation evidence is not available until protected intake evidence is submitted.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="plain-panel table-shell">
+      <div className="meta-row">
+        <span>{workflow.templateLabel}</span>
+        <span className={statusClass(workflow.status === "compiled" ? "ok" : "warn")}>{workflow.status}</span>
+      </div>
+      <h3 className="panel-title">Workflow Compilation</h3>
+      <div className="data-row">
+        <span className="label">Compilation</span>
+        <span className="value">{workflow.compilationRef}</span>
+      </div>
+      <div className="data-row">
+        <span className="label">Evidence</span>
+        <span className="value">{workflow.safeEvidenceRefCount} safe local ref(s)</span>
+      </div>
+      <div className="data-row">
+        <span className="label">Variables</span>
+        <span className="value">{workflow.variableCount} resolved variable(s)</span>
+      </div>
+      <div className="data-row">
+        <span className="label">Fanout</span>
+        <span className="value">{workflow.fanoutSummary}</span>
+      </div>
+      {workflow.missingInputs.length > 0 ? (
+        <ul className="brief-list">
+          {workflow.missingInputs.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : null}
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Method</th>
+            <th>Artifact</th>
+          </tr>
+        </thead>
+        <tbody>
+          {workflow.taskBindings.length === 0 ? (
+            <tr>
+              <td colSpan={3} className="table-empty">
+                No task bindings are exposed while compilation is blocked.
+              </td>
+            </tr>
+          ) : (
+            workflow.taskBindings.slice(0, 8).map((task) => (
+              <tr key={task.key}>
+                <td>{task.key}</td>
+                <td>{task.method}</td>
+                <td>{task.outputArtifactKind}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+      <ul className="brief-list">
+        {[...workflow.approvalGates, ...workflow.providerRequirements, ...workflow.limitations].map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

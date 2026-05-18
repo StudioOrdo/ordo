@@ -1,9 +1,9 @@
 use anyhow::Result;
+use axum::Json;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
@@ -11,154 +11,161 @@ use std::path::Path;
 use tokio::sync::broadcast;
 
 use crate::answer_drafts::{
-    list_answer_drafts, prepare_answer_draft, read_answer_draft, AnswerDraftListResponse,
-    AnswerDraftRequest, AnswerDraftResponse,
+    AnswerDraftListResponse, AnswerDraftRequest, AnswerDraftResponse, list_answer_drafts,
+    prepare_answer_draft, read_answer_draft,
 };
 use crate::artifact_patches::{
-    apply_artifact_patch_review_proposal, list_artifact_patch_review_proposals,
-    load_artifact_patch_review_proposal, ApplyArtifactPatchProposalInput,
-    ArtifactPatchApplyResponse, ArtifactPatchReviewListResponse, ArtifactPatchReviewResponse,
+    ApplyArtifactPatchProposalInput, ArtifactPatchApplyResponse, ArtifactPatchReviewListResponse,
+    ArtifactPatchReviewResponse, apply_artifact_patch_review_proposal,
+    list_artifact_patch_review_proposals, load_artifact_patch_review_proposal,
 };
 use crate::availability::{
-    create_handoff_inbox_item, evaluate_handoff_eligibility, list_handoff_inbox_with_query,
-    list_handoff_receipts, read_availability_state, read_handoff_inbox_item,
-    read_strategy_session_status, request_strategy_session_handoff, resolve_handoff_inbox_item,
-    update_availability_schedule, update_handoff_inbox_item, update_operator_presence,
     AvailabilityScheduleView, AvailabilityScheduleWriteRequest, AvailabilityStateResponse,
     HandoffEligibilityRequest, HandoffEligibilityView, HandoffInboxCreateRequest,
     HandoffInboxItemView, HandoffInboxListQuery, HandoffInboxListResponse,
     HandoffInboxResolveRequest, HandoffInboxUpdateRequest, HandoffReceiptListResponse,
     OperatorPresenceView, OperatorPresenceWriteRequest, StrategySessionHandoffRequest,
-    StrategySessionHandoffResponse, StrategySessionStatusView,
+    StrategySessionHandoffResponse, StrategySessionStatusView, create_handoff_inbox_item,
+    evaluate_handoff_eligibility, list_handoff_inbox_with_query, list_handoff_receipts,
+    read_availability_state, read_handoff_inbox_item, read_strategy_session_status,
+    request_strategy_session_handoff, resolve_handoff_inbox_item, update_availability_schedule,
+    update_handoff_inbox_item, update_operator_presence,
 };
 use crate::backups::{
-    create_backup, list_backup_restore_jobs, run_restore_preflight, BackupRestoreResponse,
-    RestorePreflightRequest,
+    BackupRestoreResponse, RestorePreflightRequest, create_backup, list_backup_restore_jobs,
+    run_restore_preflight,
 };
-use crate::briefs::{generate_system_brief, latest_system_brief, LatestBriefResponse};
+use crate::briefs::{LatestBriefResponse, generate_system_brief, latest_system_brief};
 use crate::business::{
-    create_business_fact, list_business_facts, update_business_fact, BusinessFactListResponse,
-    BusinessFactQuery, BusinessFactView, BusinessFactWriteRequest,
+    BusinessFactListResponse, BusinessFactQuery, BusinessFactView, BusinessFactWriteRequest,
+    create_business_fact, list_business_facts, update_business_fact,
 };
-use crate::capabilities::{list_capabilities, CapabilityCatalogResponse};
-use crate::chat_bootstrap::{bootstrap_local_chat, ChatBootstrapRequest, ChatBootstrapResponse};
+use crate::capabilities::{CapabilityCatalogResponse, list_capabilities};
+use crate::chat_bootstrap::{ChatBootstrapRequest, ChatBootstrapResponse, bootstrap_local_chat};
 use crate::connections::{
-    create_connection, create_connection_grant, list_connection_events, list_connection_grants,
-    list_connections, revoke_connection_grant, update_connection, ConnectionEventListResponse,
-    ConnectionGrantCreateRequest, ConnectionGrantListResponse, ConnectionGrantRevokeRequest,
-    ConnectionGrantView, ConnectionListResponse, ConnectionView, ConnectionWriteRequest,
+    ConnectionEventListResponse, ConnectionGrantCreateRequest, ConnectionGrantListResponse,
+    ConnectionGrantRevokeRequest, ConnectionGrantView, ConnectionListResponse, ConnectionView,
+    ConnectionWriteRequest, create_connection, create_connection_grant, list_connection_events,
+    list_connection_grants, list_connections, revoke_connection_grant, update_connection,
 };
 use crate::content_analytics::{
-    record_public_story_content_analytics, PublicStoryContentAnalyticsRequest,
-    PublicStoryContentAnalyticsResponse,
+    PublicStoryContentAnalyticsRequest, PublicStoryContentAnalyticsResponse,
+    record_public_story_content_analytics,
 };
 use crate::conversation_gateway::handle_conversation_socket;
 use crate::corpus::{
-    create_corpus_item, create_corpus_source, list_corpus_items, list_corpus_sources,
+    CorpusItemListResponse, CorpusItemView, CorpusItemWriteRequest, CorpusRetrievalQuery,
+    CorpusRetrievalResponse, CorpusSourceListResponse, CorpusSourceView, CorpusSourceWriteRequest,
+    CorpusViewer, create_corpus_item, create_corpus_source, list_corpus_items, list_corpus_sources,
     read_corpus_item, read_corpus_source, retrieve_corpus, update_corpus_item,
-    update_corpus_source, CorpusItemListResponse, CorpusItemView, CorpusItemWriteRequest,
-    CorpusRetrievalQuery, CorpusRetrievalResponse, CorpusSourceListResponse, CorpusSourceView,
-    CorpusSourceWriteRequest, CorpusViewer,
+    update_corpus_source,
 };
 use crate::diagnostics::{
-    diagnostic_log, list_diagnostic_logs, record_diagnostic_log, DiagnosticLogQuery,
-    DiagnosticLogsResponse, NewDiagnosticLogEntry,
+    DiagnosticLogQuery, DiagnosticLogsResponse, NewDiagnosticLogEntry, diagnostic_log,
+    list_diagnostic_logs, record_diagnostic_log,
 };
 use crate::entry_points::{
+    EntryPointListResponse, EntryPointWriteRequest, PublicEntryPointView, PublicVisitorSessionView,
+    TrackedEntryPointView, VisitorSessionCreateRequest, VisitorSessionListResponse,
     create_entry_point, create_visitor_session, list_entry_points, list_visitor_sessions,
-    resolve_entry_point, update_entry_point, EntryPointListResponse, EntryPointWriteRequest,
-    PublicEntryPointView, PublicVisitorSessionView, TrackedEntryPointView,
-    VisitorSessionCreateRequest, VisitorSessionListResponse,
+    resolve_entry_point, update_entry_point,
 };
 use crate::errors::{DaemonErrorCode, ErrorResponse};
 use crate::events::{
-    append_system_event, replay_events, system_event, EventReplayResponse, RealtimeEvent,
+    EventReplayResponse, RealtimeEvent, append_system_event, replay_events, system_event,
 };
 use crate::feedback::{
+    FeedbackRequestCreateRequest, FeedbackRequestListResponse, FeedbackRequestQuery,
+    FeedbackRequestRespondRequest, FeedbackRequestReviewRequest, FeedbackRequestView,
     create_feedback_request, list_feedback_requests, respond_to_feedback_request,
-    review_feedback_request, FeedbackRequestCreateRequest, FeedbackRequestListResponse,
-    FeedbackRequestQuery, FeedbackRequestRespondRequest, FeedbackRequestReviewRequest,
-    FeedbackRequestView,
+    review_feedback_request,
 };
 use crate::generated_content_memory::{
-    generated_content_memory_review_packet_for_artifact, record_generated_content_memory_decision,
     GeneratedContentMemoryCandidateView, GeneratedContentMemoryDecisionInput,
     GeneratedContentMemoryReviewAudience, GeneratedContentMemoryReviewPacket,
+    generated_content_memory_review_packet_for_artifact, record_generated_content_memory_decision,
 };
-use crate::growth_report::{growth_pilot_report, GrowthPilotReportResponse};
-use crate::health::{build_health_report, build_readiness_report, HealthReport, ReadinessReport};
+use crate::growth_report::{GrowthPilotReportResponse, growth_pilot_report};
+use crate::health::{HealthReport, ReadinessReport, build_health_report, build_readiness_report};
 use crate::install::{
-    complete_local_install, list_provider_configs, read_install_state, update_provider_config,
     CompleteInstallRequest, InstallStateResponse, ProviderConfigView, ProviderListResponse,
-    ProviderUpdateRequest,
+    ProviderUpdateRequest, complete_local_install, list_provider_configs, read_install_state,
+    update_provider_config,
 };
 use crate::local_sessions::{
-    create_or_restore_local_session, LocalSessionCreateRequest, LocalSessionResponse,
+    LocalSessionCreateRequest, LocalSessionResponse, create_or_restore_local_session,
 };
-use crate::mcp::{handle_mcp_json, McpResponse};
+use crate::mcp::{McpResponse, handle_mcp_json};
 use crate::mcp_packs::{
-    disable_mcp_pack, install_mcp_pack, list_mcp_packs, read_mcp_pack, McpPackInstallRequest,
-    McpPackListResponse, McpPackResponse,
+    McpPackInstallRequest, McpPackListResponse, McpPackResponse, disable_mcp_pack,
+    install_mcp_pack, list_mcp_packs, read_mcp_pack,
 };
 use crate::offers::{
-    accept_public_offer, create_offer, inspect_offer_builder, list_hosted_trial_capacity,
-    list_offer_acceptances, list_offers, list_public_available_offers, list_trials,
-    request_hosted_trial_reset, save_offer_builder_offer, transition_trial, update_offer,
     HostedTrialCapacityResponse, HostedTrialResetPlanView, HostedTrialResetRequest,
     OfferAcceptanceCreateRequest, OfferAcceptanceListResponse, OfferAcceptanceResponse,
     OfferBuilderResponse, OfferBuilderSaveRequest, OfferBuilderSaveResponse, OfferListResponse,
     OfferView, OfferWriteRequest, PublicOfferListResponse, TrialListResponse,
-    TrialTransitionRequest, TrialView,
+    TrialTransitionRequest, TrialView, accept_public_offer, create_offer, inspect_offer_builder,
+    list_hosted_trial_capacity, list_offer_acceptances, list_offers, list_public_available_offers,
+    list_trials, request_hosted_trial_reset, save_offer_builder_offer, transition_trial,
+    update_offer,
 };
 use crate::policy::{
-    authorize_protected_daemon_action, record_policy_decision, ActorContext, PolicyAction,
-    PolicyDecision, PolicyDecisionCorrelation, PolicyOutcome, ProtectedAccessEvidence,
-    ResourceKind, ResourceRef,
+    ActorContext, PolicyAction, PolicyDecision, PolicyDecisionCorrelation, PolicyOutcome,
+    ProtectedAccessEvidence, ResourceKind, ResourceRef, authorize_protected_daemon_action,
+    record_policy_decision,
 };
 use crate::policy_audit::{
-    list_policy_decisions, PolicyDecisionAuditQuery, PolicyDecisionAuditResponse,
+    PolicyDecisionAuditQuery, PolicyDecisionAuditResponse, list_policy_decisions,
 };
 use crate::product_packs::{
-    disable_product_pack, install_product_pack, list_product_packs, read_product_pack,
-    ProductPackInstallRequest, ProductPackListResponse, ProductPackResponse,
+    ProductPackInstallRequest, ProductPackListResponse, ProductPackResponse, disable_product_pack,
+    install_product_pack, list_product_packs, read_product_pack,
 };
 use crate::public_surfaces::{
-    homepage_story_deck, public_about, public_asks, public_feed, public_offers, public_surfaces,
     AboutReadModel, AsksReadModel, FeedReadModel, HomepageStoryDeckResponse, OffersReadModel,
-    PublicSurfacesResponse,
+    PublicSurfacesResponse, homepage_story_deck, public_about, public_asks, public_feed,
+    public_offers, public_surfaces,
 };
 use crate::reports::{
-    approve_support_packet, draft_support_packet, export_issue_report, list_issue_reports,
-    list_support_packet_receipts, list_support_packets, prepare_issue_report, read_issue_report,
-    update_issue_report_status, IssueReportDetailResponse, IssueReportExportRequest,
-    IssueReportExportResponse, IssueReportPrepareRequest, IssueReportStatusUpdateRequest,
-    IssueReportsResponse, SupportPacketApprovalRequest, SupportPacketDraftRequest,
-    SupportPacketListResponse, SupportPacketReceiptListResponse, SupportPacketView,
+    IssueReportDetailResponse, IssueReportExportRequest, IssueReportExportResponse,
+    IssueReportPrepareRequest, IssueReportStatusUpdateRequest, IssueReportsResponse,
+    SupportPacketApprovalRequest, SupportPacketDraftRequest, SupportPacketListResponse,
+    SupportPacketReceiptListResponse, SupportPacketView, approve_support_packet,
+    draft_support_packet, export_issue_report, list_issue_reports, list_support_packet_receipts,
+    list_support_packets, prepare_issue_report, read_issue_report, update_issue_report_status,
 };
 use crate::rewards::{
-    list_rewards, qualify_feedback_reward, qualify_referral_reward, transition_reward_event,
     RewardEventTransitionRequest, RewardQualificationRequest, RewardQualificationResponse,
-    RewardQuery, RewardSummaryResponse,
+    RewardQuery, RewardSummaryResponse, list_rewards, qualify_feedback_reward,
+    qualify_referral_reward, transition_reward_event,
 };
-use crate::scheduler::{read_scheduler_operations, SchedulerOperationsResponse};
-use crate::secrets::{constant_time_secret_eq, OrdoSecretString};
+use crate::scheduler::{SchedulerOperationsResponse, read_scheduler_operations};
+use crate::secrets::{OrdoSecretString, constant_time_secret_eq};
 use crate::story_intake_artifacts::{
-    record_story_founder_intake_packet, StoryFounderIntakeInput, StoryFounderIntakePacket,
+    StoryFounderIntakeInput, StoryFounderIntakePacket, StoryWorkflowApprovalGateEvidence,
+    StoryWorkflowCompilationEvidence, StoryWorkflowFanoutEvidence,
+    StoryWorkflowProviderRequirementEvidence, StoryWorkflowResolvedVariable,
+    StoryWorkflowTaskBindingEvidence, record_story_founder_intake_packet,
 };
 use crate::story_production_review::{
-    story_production_review_packet, StoryProductionReviewAudience, StoryProductionReviewPacket,
-    StoryProductionReviewPacketRequest,
+    StoryProductionReviewAudience, StoryProductionReviewPacket, StoryProductionReviewPacketRequest,
+    story_production_review_packet,
 };
 use crate::story_publish_learning::{
-    story_publish_learning_brief, StoryPublishLearningAudience, StoryPublishLearningBrief,
-    StoryPublishLearningBriefRequest,
+    StoryPublishLearningAudience, StoryPublishLearningBrief, StoryPublishLearningBriefRequest,
+    story_publish_learning_brief,
 };
 use crate::studio_promos::{
-    create_promo_video_package, review_promo_video_package, PromoVideoPackageRequest,
-    PromoVideoPackageResponse, PromoVideoPackageReviewRequest, PromoVideoPackageReviewResponse,
+    PromoVideoPackageRequest, PromoVideoPackageResponse, PromoVideoPackageReviewRequest,
+    PromoVideoPackageReviewResponse, create_promo_video_package, review_promo_video_package,
 };
 use crate::surface_work_items::{
-    list_surface_work_items, SurfaceWorkItemListResponse, SurfaceWorkItemQuery,
+    SurfaceWorkItemListResponse, SurfaceWorkItemQuery, list_surface_work_items,
+};
+use crate::workflow_templates::{
+    STORY_HOMEPAGE_REFRESH_TEMPLATE_ID, StoryHomepageRefreshCompileOutcome,
+    StoryHomepageRefreshCompileRequest, compile_story_homepage_refresh_workflow,
 };
 
 const DAEMON_ACCESS_TOKEN_HEADER: &str = "x-ordo-daemon-token";
@@ -1831,14 +1838,243 @@ pub(crate) async fn studio_story_founder_intake_handler(
         ResourceRef::new(ResourceKind::DaemonRoute, "/studio/story-founder-intake"),
         Some("studio.story.founder_intake.write"),
     )?;
-    let connection = rusqlite::Connection::open(state.db_path.as_ref())
+    let mut connection = rusqlite::Connection::open(state.db_path.as_ref())
         .map_err(|error| internal_error(error.into()))?;
-    let packet =
+    let mut packet =
         record_story_founder_intake_packet(&connection, request).map_err(invalid_request_error)?;
+    let idempotency_key = story_intake_workflow_idempotency_key(&packet);
+    let workflow_outcome = compile_story_homepage_refresh_workflow(
+        &mut connection,
+        StoryHomepageRefreshCompileRequest {
+            founder_intake_artifact_id: packet.artifact.id.clone(),
+            publish_mode: "manual".to_string(),
+            idempotency_key: idempotency_key.clone(),
+        },
+    )
+    .map_err(invalid_request_error)?;
+    packet.workflow_compilation = Some(story_intake_workflow_compilation_evidence(
+        idempotency_key,
+        workflow_outcome,
+    ));
     if let Some(event) = packet.event.clone() {
         let _ = state.event_sender.send(event);
     }
     Ok(Json(packet))
+}
+
+fn story_intake_workflow_idempotency_key(packet: &StoryFounderIntakePacket) -> String {
+    format!(
+        "story-founder-intake:{}:{}:v1",
+        packet.intake_id, STORY_HOMEPAGE_REFRESH_TEMPLATE_ID
+    )
+}
+
+fn story_intake_workflow_compilation_evidence(
+    idempotency_key: String,
+    outcome: StoryHomepageRefreshCompileOutcome,
+) -> StoryWorkflowCompilationEvidence {
+    if let Some(compilation) = outcome.compilation {
+        let plan = &compilation.safe_compiled_plan;
+        let compilation_ref = format!("workflow_compilation:{}", compilation.id);
+        let mut evidence_refs =
+            safe_workflow_refs(plan["variables"]["storyEvidenceRefs"]["value"].as_array())
+                .into_iter()
+                .chain([compilation_ref.clone()])
+                .collect::<Vec<_>>();
+        evidence_refs.sort();
+        evidence_refs.dedup();
+        return StoryWorkflowCompilationEvidence {
+            status: "compiled".to_string(),
+            template_id: compilation.template_id,
+            template_version: compilation.template_version,
+            idempotency_key,
+            compilation_ref: Some(compilation_ref),
+            input_hash: Some(compilation.input_hash),
+            evidence_refs,
+            missing_inputs: Vec::new(),
+            limitations: vec![
+                "Workflow compilation evidence is a stored plan snapshot, not task execution."
+                    .to_string(),
+                "Provider calls, publication, analytics truth, graph promotion, and memory promotion remain gated."
+                    .to_string(),
+            ],
+            safe_next_actions: vec![
+                "Review compiled Story workflow state in Studio Preview.".to_string(),
+                "Request owner approval before publish or provider execution.".to_string(),
+            ],
+            resolved_variables: workflow_resolved_variables(plan),
+            task_bindings: workflow_task_bindings(plan),
+            fanout_groups: workflow_fanout_groups(plan),
+            approval_gates: workflow_approval_gates(plan),
+            provider_requirements: workflow_provider_requirements(plan),
+            live_provider_required: false,
+            task_execution_performed: false,
+            external_publishing_claimed: false,
+            memory_promotion_performed: false,
+            confirmed_graph_promotion: false,
+        };
+    }
+
+    let blocker = outcome.blocker;
+    let evidence_refs = blocker
+        .as_ref()
+        .map(|blocker| blocker.evidence_refs.clone())
+        .unwrap_or_default();
+    let missing_inputs = blocker
+        .as_ref()
+        .map(|blocker| blocker.missing.clone())
+        .unwrap_or_else(|| vec!["workflow compilation prerequisites".to_string()]);
+    let limitations = blocker
+        .as_ref()
+        .map(|blocker| blocker.limitations.clone())
+        .unwrap_or_else(|| {
+            vec![
+                "No workflow compilation was stored while required inputs were missing."
+                    .to_string(),
+            ]
+        });
+
+    StoryWorkflowCompilationEvidence {
+        status: "blocked".to_string(),
+        template_id: STORY_HOMEPAGE_REFRESH_TEMPLATE_ID.to_string(),
+        template_version: 1,
+        idempotency_key,
+        compilation_ref: None,
+        input_hash: None,
+        evidence_refs,
+        missing_inputs,
+        limitations,
+        safe_next_actions: vec![
+            "Resolve missing public-safe workflow inputs.".to_string(),
+            "Keep Story workflow compilation blocked until evidence is complete.".to_string(),
+        ],
+        resolved_variables: Vec::new(),
+        task_bindings: Vec::new(),
+        fanout_groups: Vec::new(),
+        approval_gates: Vec::new(),
+        provider_requirements: Vec::new(),
+        live_provider_required: false,
+        task_execution_performed: false,
+        external_publishing_claimed: false,
+        memory_promotion_performed: false,
+        confirmed_graph_promotion: false,
+    }
+}
+
+fn safe_workflow_refs(values: Option<&Vec<serde_json::Value>>) -> Vec<String> {
+    values
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str())
+        .filter(|value| {
+            value.starts_with("artifact:")
+                || value.starts_with("business_fact:")
+                || value.starts_with("offer:")
+                || value.starts_with("tracked_entry_point:")
+                || value.starts_with("workflow_compilation:")
+        })
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn workflow_resolved_variables(plan: &serde_json::Value) -> Vec<StoryWorkflowResolvedVariable> {
+    plan["variables"]
+        .as_object()
+        .into_iter()
+        .flat_map(|variables| variables.iter())
+        .map(|(key, value)| StoryWorkflowResolvedVariable {
+            key: key.clone(),
+            source_kind: value["sourceKind"].as_str().unwrap_or("input").to_string(),
+            visibility: value["visibility"].as_str().unwrap_or("staff").to_string(),
+            evidence_ref_count: value["evidenceRefs"]
+                .as_array()
+                .map(|refs| refs.len())
+                .unwrap_or(0),
+            value_exposed: value.get("value").is_some(),
+        })
+        .collect()
+}
+
+fn workflow_task_bindings(plan: &serde_json::Value) -> Vec<StoryWorkflowTaskBindingEvidence> {
+    plan["tasks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|task| StoryWorkflowTaskBindingEvidence {
+            key: task["key"].as_str().unwrap_or("task").to_string(),
+            method: task["method"]
+                .as_str()
+                .unwrap_or("unknown.method")
+                .to_string(),
+            depends_on: task["dependsOn"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|value| value.as_str().map(ToString::to_string))
+                .collect(),
+            visibility: task["visibility"].as_str().unwrap_or("staff").to_string(),
+            fanout: task["fanout"].as_str().map(ToString::to_string),
+            provider_requirement: task["providerRequirement"]
+                .as_str()
+                .map(ToString::to_string),
+            output_artifact_kind: task["outputArtifactKind"].as_str().map(ToString::to_string),
+        })
+        .collect()
+}
+
+fn workflow_fanout_groups(plan: &serde_json::Value) -> Vec<StoryWorkflowFanoutEvidence> {
+    plan["fanoutGroups"]
+        .as_object()
+        .into_iter()
+        .flat_map(|fanouts| fanouts.iter())
+        .map(|(key, value)| StoryWorkflowFanoutEvidence {
+            key: key.clone(),
+            item_count: value["items"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or(0),
+            max_items: value["maxItems"].as_i64().unwrap_or(0),
+        })
+        .collect()
+}
+
+fn workflow_approval_gates(plan: &serde_json::Value) -> Vec<StoryWorkflowApprovalGateEvidence> {
+    plan["approvalGates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|gate| StoryWorkflowApprovalGateEvidence {
+            key: gate["key"].as_str().unwrap_or("approval").to_string(),
+            action: gate["action"].as_str().unwrap_or("approval").to_string(),
+            required: gate["required"].as_bool().unwrap_or(true),
+        })
+        .collect()
+}
+
+fn workflow_provider_requirements(
+    plan: &serde_json::Value,
+) -> Vec<StoryWorkflowProviderRequirementEvidence> {
+    plan["providerRequirements"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|provider| StoryWorkflowProviderRequirementEvidence {
+            key: provider["key"].as_str().unwrap_or("provider").to_string(),
+            capability: provider["capability"]
+                .as_str()
+                .unwrap_or("unknown.capability")
+                .to_string(),
+            mode: provider["mode"]
+                .as_str()
+                .unwrap_or("deterministic_mock")
+                .to_string(),
+            egress: provider["egress"].as_str().unwrap_or("none").to_string(),
+            visibility: provider["visibility"]
+                .as_str()
+                .unwrap_or("staff")
+                .to_string(),
+        })
+        .collect()
 }
 
 pub(crate) async fn studio_story_publish_learning_handler(
@@ -3089,16 +3325,17 @@ pub(crate) async fn send_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::artifacts::{record_artifact, ArtifactInput};
+    use crate::artifacts::{ArtifactInput, record_artifact};
     use crate::capabilities::built_in_capabilities;
     use crate::generated_content_memory::{
-        ingest_generated_content_memory_candidates, GeneratedContentMemoryIngestionInput,
-        GeneratedContentMemoryItemInput, GeneratedContentMemoryKind, GeneratedContentMemoryState,
+        GeneratedContentMemoryIngestionInput, GeneratedContentMemoryItemInput,
+        GeneratedContentMemoryKind, GeneratedContentMemoryState,
+        ingest_generated_content_memory_candidates,
     };
-    use crate::route_contracts::{HttpMethod, RouteProtection, DAEMON_ROUTE_CONTRACTS};
+    use crate::route_contracts::{DAEMON_ROUTE_CONTRACTS, HttpMethod, RouteProtection};
     use crate::schema::init_database;
     use crate::story_intake_artifacts::{
-        StoryFounderIntakeInput, StoryIntakeClaimInput, STORY_FOUNDER_INTAKE_ARTIFACT_KIND,
+        STORY_FOUNDER_INTAKE_ARTIFACT_KIND, StoryFounderIntakeInput, StoryIntakeClaimInput,
     };
     use crate::story_publish_approvals::STORY_HOMEPAGE_PUBLISH_APPROVAL_PACKAGE_ARTIFACT_KIND;
     use std::collections::BTreeSet;
@@ -4342,9 +4579,11 @@ mod tests {
             .find(|capability| capability.id == "studio.story.founder_intake.write")
             .expect("story founder intake capability");
         assert_eq!(capability.family, "studio");
-        assert!(capability
-            .artifact_kinds
-            .contains(&"story.founder_intake_packet".to_string()));
+        assert!(
+            capability
+                .artifact_kinds
+                .contains(&"story.founder_intake_packet".to_string())
+        );
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
@@ -4521,10 +4760,11 @@ mod tests {
         assert_eq!(packet.live_provider_called, false);
         assert_eq!(packet.external_publishing_claimed, false);
         assert_eq!(packet.deck_id, Some("homepage.story.v1".to_string()));
-        assert!(packet
-            .components
-            .iter()
-            .any(|component| component.artifact_ref == Some(format!("artifact:{}", artifact.id))));
+        assert!(
+            packet.components.iter().any(
+                |component| component.artifact_ref == Some(format!("artifact:{}", artifact.id))
+            )
+        );
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         assert_eq!(table_count(&connection, "artifacts"), artifact_count_before);
@@ -4539,6 +4779,7 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
         init_database(&db_path).unwrap();
+        seed_story_workflow_public_homepage(&db_path);
         let state = test_state(db_path.clone());
 
         let response = studio_story_founder_intake_handler(
@@ -4565,10 +4806,74 @@ mod tests {
         assert!(!packet.confirmed_graph_promotion);
         assert!(!packet.readiness.automatic_memory_promotion);
         assert!(!packet.readiness.confirmed_graph_promotion);
+        let workflow = packet
+            .workflow_compilation
+            .as_ref()
+            .expect("Story intake includes workflow compilation evidence");
+        assert_eq!(workflow.status, "compiled");
+        assert_eq!(
+            workflow.template_id,
+            STORY_HOMEPAGE_REFRESH_TEMPLATE_ID.to_string()
+        );
+        assert!(
+            workflow
+                .compilation_ref
+                .as_deref()
+                .unwrap()
+                .starts_with("workflow_compilation:")
+        );
+        assert!(
+            workflow
+                .input_hash
+                .as_deref()
+                .unwrap()
+                .starts_with("sha256:")
+        );
+        assert!(
+            workflow
+                .task_bindings
+                .iter()
+                .any(|task| task.method == "homepage.createNarrativeDeck")
+        );
+        assert!(
+            workflow
+                .task_bindings
+                .iter()
+                .any(|task| task.method == "publish.requestApproval")
+        );
+        assert!(
+            workflow
+                .approval_gates
+                .iter()
+                .any(|gate| gate.action == "publish" && gate.required)
+        );
+        assert!(
+            workflow
+                .provider_requirements
+                .iter()
+                .all(|provider| provider.mode == "deterministic_mock" && provider.egress == "none")
+        );
+        assert!(!workflow.live_provider_required);
+        assert!(!workflow.task_execution_performed);
+        assert!(!workflow.external_publishing_claimed);
+        assert!(!workflow.memory_promotion_performed);
+        assert!(!workflow.confirmed_graph_promotion);
         assert!(packet.event.is_some());
         let packet_json = serde_json::to_string(&packet).unwrap();
         assert!(!packet_json.contains("Internal founder note"));
         assert!(!packet_json.contains("privateNotes"));
+        for forbidden in [
+            "provider internal",
+            "prompt internal",
+            "compiled plan private input",
+            "task private payload",
+            "graph certainty",
+        ] {
+            assert!(
+                !packet_json.contains(forbidden),
+                "Story intake packet leaked {forbidden}: {packet_json}"
+            );
+        }
 
         let retry = studio_story_founder_intake_handler(
             ConnectInfo(socket_addr("127.0.0.1:4000")),
@@ -4581,6 +4886,18 @@ mod tests {
         let retry_packet = retry.0;
         assert!(!retry_packet.mutation_performed);
         assert!(retry_packet.event.is_none());
+        assert_eq!(
+            retry_packet
+                .workflow_compilation
+                .as_ref()
+                .unwrap()
+                .compilation_ref,
+            packet
+                .workflow_compilation
+                .as_ref()
+                .unwrap()
+                .compilation_ref
+        );
 
         let connection = rusqlite::Connection::open(&db_path).unwrap();
         let artifact_count: i64 = connection
@@ -4591,11 +4908,64 @@ mod tests {
             )
             .unwrap();
         assert_eq!(artifact_count, 1);
+        let compilation_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_template_compilations
+                 WHERE idempotency_key = ?1",
+                [story_intake_workflow_idempotency_key(&packet)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(compilation_count, 1);
     }
 
     #[tokio::test]
-    async fn studio_story_intake_story_founder_intake_handler_rejects_conflicting_retry_fail_closed(
-    ) {
+    async fn studio_story_intake_workflow_compilation_blocks_missing_input_without_fake_row() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let state = test_state(db_path.clone());
+
+        let response = studio_story_founder_intake_handler(
+            ConnectInfo(socket_addr("127.0.0.1:4000")),
+            HeaderMap::new(),
+            State(state),
+            Json(valid_story_founder_intake_input()),
+        )
+        .await
+        .expect("loopback protected route records Story founder intake packet");
+        let packet = response.0;
+        let workflow = packet.workflow_compilation.unwrap();
+
+        assert_eq!(workflow.status, "blocked");
+        assert!(workflow.compilation_ref.is_none());
+        assert!(workflow.input_hash.is_none());
+        assert!(
+            workflow
+                .missing_inputs
+                .contains(&"published public homepage profile positioning".to_string())
+        );
+        assert!(!workflow.live_provider_required);
+        assert!(!workflow.task_execution_performed);
+        assert!(!workflow.external_publishing_claimed);
+        assert!(!workflow.memory_promotion_performed);
+        assert!(!workflow.confirmed_graph_promotion);
+
+        let connection = rusqlite::Connection::open(&db_path).unwrap();
+        let compilation_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_template_compilations
+                 WHERE idempotency_key = ?1",
+                [workflow.idempotency_key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(compilation_count, 0);
+    }
+
+    #[tokio::test]
+    async fn studio_story_intake_story_founder_intake_handler_rejects_conflicting_retry_fail_closed()
+     {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let db_path = temp_dir.path().join("local.db");
         init_database(&db_path).unwrap();
@@ -4622,7 +4992,7 @@ mod tests {
         .expect_err("same intake id with different payload fails closed");
 
         assert_eq!(error.0, StatusCode::BAD_REQUEST);
-        assert!(error.1 .0.error.contains("idempotency key conflicts"));
+        assert!(error.1.0.error.contains("idempotency key conflicts"));
 
         let connection = rusqlite::Connection::open(&db_path).unwrap();
         let artifact_count: i64 = connection
@@ -4699,13 +5069,17 @@ mod tests {
         assert_eq!(brief.memory_promotion_performed, false);
         assert_eq!(brief.live_provider_called, false);
         assert_eq!(brief.external_publishing_claimed, false);
-        assert!(brief
-            .publish_evidence
-            .iter()
-            .any(|source| source.source_id == artifact.id));
-        assert!(brief
-            .limitations
-            .contains(&"story_publish_learning_brief_is_read_only".to_string()));
+        assert!(
+            brief
+                .publish_evidence
+                .iter()
+                .any(|source| source.source_id == artifact.id)
+        );
+        assert!(
+            brief
+                .limitations
+                .contains(&"story_publish_learning_brief_is_read_only".to_string())
+        );
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         assert_eq!(table_count(&connection, "artifacts"), artifact_count_before);
@@ -4802,7 +5176,10 @@ mod tests {
                 ResourceRef::new(ResourceKind::DaemonRoute, route),
                 Some(capability),
             );
-            assert!(allowed.is_ok(), "{route} should allow protected loopback access");
+            assert!(
+                allowed.is_ok(),
+                "{route} should allow protected loopback access"
+            );
         }
 
         let connection = rusqlite::Connection::open(&db_path).unwrap();
@@ -4863,9 +5240,11 @@ mod tests {
         );
         assert!(!packet.items[0].summary_text.contains("Ordo learns"));
         assert_eq!(packet.items[0].body, json!({}));
-        assert!(packet
-            .limitations
-            .contains(&"member_safe_packet_redacts_candidate_bodies".to_string()));
+        assert!(
+            packet
+                .limitations
+                .contains(&"member_safe_packet_redacts_candidate_bodies".to_string())
+        );
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         assert_eq!(
@@ -4927,11 +5306,13 @@ mod tests {
         assert!(response.event.payload.get("body").is_none());
         assert!(response.event.payload.get("summaryText").is_none());
         assert!(response.event.payload.get("providerPayload").is_none());
-        assert!(response
-            .event
-            .payload
-            .get("confirmedGraphPromotion")
-            .is_none());
+        assert!(
+            response
+                .event
+                .payload
+                .get("confirmedGraphPromotion")
+                .is_none()
+        );
 
         let connection = rusqlite::Connection::open(packet_db_path(&temp_dir)).unwrap();
         let event_count: i64 = connection
@@ -5040,6 +5421,68 @@ mod tests {
             source_id: Some("story-founder-intake-handler".to_string()),
             created_by_job_id: None,
         }
+    }
+
+    fn seed_story_workflow_public_homepage(db_path: &std::path::Path) {
+        let connection = rusqlite::Connection::open(db_path).unwrap();
+        insert_public_story_fact(
+            &connection,
+            "homepage.profile.positioning",
+            json!("Ordo is a local-first operating appliance for relationship-led businesses."),
+        );
+        insert_public_story_fact(&connection, "homepage.slides.hero.order", json!(10));
+        insert_public_story_fact(&connection, "homepage.slides.hero.sectionId", json!("hero"));
+        insert_public_story_fact(
+            &connection,
+            "homepage.slides.hero.title",
+            json!("Studio Ordo"),
+        );
+        insert_public_story_fact(
+            &connection,
+            "homepage.slides.hero.body",
+            json!("A public story grounded in local evidence."),
+        );
+        insert_public_story_fact(&connection, "homepage.slides.proof.order", json!(20));
+        insert_public_story_fact(
+            &connection,
+            "homepage.slides.proof.sectionId",
+            json!("proof"),
+        );
+        insert_public_story_fact(
+            &connection,
+            "homepage.slides.proof.title",
+            json!("Proof before polish"),
+        );
+        insert_public_story_fact(
+            &connection,
+            "homepage.slides.proof.body",
+            json!("The story changes when evidence changes."),
+        );
+    }
+
+    fn insert_public_story_fact(
+        connection: &rusqlite::Connection,
+        fact_key: &str,
+        value: serde_json::Value,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO business_facts (
+                    id, subject_type, subject_id, fact_key, value_json, source_kind,
+                    source_label, source_uri, provenance_json, visibility, publication_state,
+                    created_by_actor_id, created_at, updated_at, published_at, archived_at
+                 ) VALUES (
+                    ?1, 'business', 'business_local', ?2, ?3, 'operator',
+                    'story intake workflow test', NULL, '{\"test\":true}', 'public', 'published',
+                    NULL, 'now', 'now', 'now', NULL
+                 )",
+                rusqlite::params![
+                    format!("business_fact_{}", fact_key.replace('.', "_")),
+                    fact_key,
+                    value.to_string()
+                ],
+            )
+            .unwrap();
     }
 
     fn packet_db_path(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {

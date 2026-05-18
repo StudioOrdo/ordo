@@ -19,15 +19,18 @@ test.describe("Studio Story intake view model", () => {
     const view = buildStudioStoryIntakeView(storyIntakePacketFixture("ready"));
 
     expect(view.status).toBe("ready");
+    expect(view.workflowCompilation?.status).toBe("compiled");
+    expect(view.workflowCompilation?.taskCount).toBe(3);
+    expect(view.workflowCompilation?.approvalGates).toContain("Publish required");
     expect(view.readinessLabel).toBe("Ready for narrative deck");
     expect(view.narrativeDeckReady).toBe(true);
     expect(view.safeEvidenceRefCount).toBe(2);
     expect(view.summaryLines).toEqual([
-      "Founder intake is ready for narrative deck assembly.",
-      "2 safe evidence ref(s) support the public derivative.",
+      "Founder intake has stored workflow compilation evidence.",
+      "3 task binding(s) and 3 workflow evidence ref(s) are ready for Studio Preview.",
       "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
     ]);
-    expect(view.nextActions).toContain("Create narrative deck");
+    expect(view.nextActions).toContain("Review workflow compilation evidence");
     expect(view.limitations).toContain("Owner review required before public derivative use");
     expect(JSON.stringify(view)).not.toContain("Internal founder note");
     expect(JSON.stringify(view)).not.toContain("provider internal");
@@ -73,14 +76,15 @@ test.describe("Studio Story intake view model", () => {
     const view = buildStudioStoryIntakeView(storyIntakePacketFixture("blocked"));
 
     expect(view.status).toBe("blocked");
+    expect(view.workflowCompilation?.status).toBe("missing_input");
     expect(view.narrativeDeckReady).toBe(false);
     expect(view.missingPrerequisites).toEqual(["Evidence backed public story pack claims"]);
     expect(view.summaryLines).toEqual([
-      "Founder intake is blocked before narrative deck assembly.",
-      "1 missing prerequisite(s) remain explicit.",
+      "Founder intake cannot compile a workflow until missing inputs are resolved.",
+      "1 workflow input blocker(s) remain explicit.",
       "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
     ]);
-    expect(view.nextActions).toContain("Add evidence backed public story pack claims");
+    expect(view.nextActions).toContain("Resolve evidence backed public story pack claims");
   });
 });
 
@@ -97,9 +101,14 @@ test("Studio Story intake renders daemon-backed readiness evidence", async ({ pa
 
     await expect(page.locator("main").getByRole("heading", { name: "Story Intake" })).toBeVisible();
     await expect(page.locator("main")).toContainText("Founder Intake Readiness");
-    await expect(page.locator("main")).toContainText("Ready for narrative deck");
+    await expect(page.locator("main")).toContainText("Workflow Compilation");
+    await expect(page.locator("main")).toContainText("compiled");
+    await expect(page.locator("main")).toContainText("studio.story.scrollytelling_homepage v1");
+    await expect(page.locator("main")).toContainText("workflow_compilation:story_intake_ui");
+    await expect(page.locator("main")).toContainText("homepage.createNarrativeDeck");
+    await expect(page.locator("main")).toContainText("publish.requestApproval");
     await expect(page.locator("main")).toContainText("2 safe local ref(s)");
-    await expect(page.locator("main")).toContainText("Create narrative deck");
+    await expect(page.locator("main")).toContainText("Review workflow compilation evidence");
     await expect(page.locator("main")).toContainText("Owner review required before public derivative use");
     await expect(page.locator("main")).not.toContainText("Internal founder note");
     await expect(page.locator("main")).not.toContainText("provider internal");
@@ -110,6 +119,8 @@ test("Studio Story intake renders daemon-backed readiness evidence", async ({ pa
     await expect(page.locator("main")).not.toContainText("graph certainty");
     expect(daemon.state.requests).toEqual(["POST /studio/story-founder-intake"]);
     expect(JSON.stringify(daemon.state.bodies[0])).toContain("story-intake-ui");
+    expect(JSON.stringify(daemon.state.bodies[0])).toContain("proofEvidenceRefs");
+    expect(JSON.stringify(daemon.state.bodies[0])).not.toContain("evidenceRefs");
   } finally {
     await daemon.close();
   }
@@ -272,6 +283,95 @@ function storyIntakePacketFixture(mode: "ready" | "blocked"): StoryFounderIntake
       automaticMemoryPromotion: false,
       confirmedGraphPromotion: false,
     },
+    workflowCompilation: blocked
+      ? {
+          status: "blocked",
+          templateId: "studio.story.scrollytelling_homepage",
+          templateVersion: 1,
+          idempotencyKey: "story-founder-intake:story-intake-ui:studio.story.scrollytelling_homepage:v1",
+          compilationRef: null,
+          inputHash: null,
+          evidenceRefs: ["artifact:founder_note"],
+          missingInputs: ["evidence_backed_public_story_pack_claims"],
+          limitations: ["no_workflow_compilation_was_stored_while_required_inputs_were_missing"],
+          safeNextActions: ["resolve_missing_public_safe_workflow_inputs"],
+          resolvedVariables: [],
+          taskBindings: [],
+          fanoutGroups: [],
+          approvalGates: [],
+          providerRequirements: [],
+          liveProviderRequired: false,
+          taskExecutionPerformed: false,
+          externalPublishingClaimed: false,
+          memoryPromotionPerformed: false,
+          confirmedGraphPromotion: false,
+        }
+      : {
+          status: "compiled",
+          templateId: "studio.story.scrollytelling_homepage",
+          templateVersion: 1,
+          idempotencyKey: "story-founder-intake:story-intake-ui:studio.story.scrollytelling_homepage:v1",
+          compilationRef: "workflow_compilation:story_intake_ui",
+          inputHash: "sha256:story-workflow-input",
+          evidenceRefs: ["artifact:founder_note", "business_fact:positioning", "workflow_compilation:story_intake_ui"],
+          missingInputs: [],
+          limitations: ["workflow_compilation_evidence_is_not_task_execution"],
+          safeNextActions: ["review_workflow_compilation_evidence"],
+          resolvedVariables: [
+            {
+              key: "founderProfile",
+              sourceKind: "input",
+              visibility: "private",
+              evidenceRefCount: 0,
+              valueExposed: false,
+            },
+          ],
+          taskBindings: [
+            {
+              key: "deck.create",
+              method: "homepage.createNarrativeDeck",
+              dependsOn: [],
+              visibility: "staff",
+              fanout: null,
+              providerRequirement: "llm.mock",
+              outputArtifactKind: "narrative_deck",
+            },
+            {
+              key: "homepage.compile_draft",
+              method: "homepage.compileScrollytellingDraft",
+              dependsOn: ["deck.create"],
+              visibility: "staff",
+              fanout: null,
+              providerRequirement: null,
+              outputArtifactKind: "story.homepage_version",
+            },
+            {
+              key: "publish.approval",
+              method: "publish.requestApproval",
+              dependsOn: ["homepage.compile_draft"],
+              visibility: "staff",
+              fanout: null,
+              providerRequirement: null,
+              outputArtifactKind: "story.homepage_publish_approval_package",
+            },
+          ],
+          fanoutGroups: [{ key: "section", itemCount: 2, maxItems: 12 }],
+          approvalGates: [{ key: "manual_publish_approval", action: "publish", required: true }],
+          providerRequirements: [
+            {
+              key: "llm.mock",
+              capability: "homepage.createNarrativeDeck",
+              mode: "deterministic_mock",
+              egress: "none",
+              visibility: "staff",
+            },
+          ],
+          liveProviderRequired: false,
+          taskExecutionPerformed: false,
+          externalPublishingClaimed: false,
+          memoryPromotionPerformed: false,
+          confirmedGraphPromotion: false,
+        },
     mutationPerformed: true,
     approvalState: "needs_review",
     visibilityCeiling: "owner",

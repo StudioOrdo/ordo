@@ -5,7 +5,9 @@ import {
   buildStudioStoryPreviewView,
   type StudioStoryPreviewSlideView,
   type StudioStoryPreviewView,
+  type StudioStoryWorkflowStateView,
 } from "@/lib/studio-story-preview";
+import type { StudioStoryIntakeRequest } from "@/lib/studio-story-intake";
 import {
   mobileStepFromSearchParams,
   railModeFromSearchParams,
@@ -29,8 +31,10 @@ export default async function StudioStoryPreviewPage({ searchParams }: { searchP
   const params = searchParams ? await searchParams : {};
   const railMode = await railModeFromSearchParams(searchParams);
   const mobileStep = await mobileStepFromSearchParams(searchParams);
+  const storyIntakeRequest = storyIntakeRequestFromParams(params);
   const snapshot = await getStudioStoryPreviewSnapshot(viewer, {
     deckId: firstParam(params.deckId),
+    storyIntakeRequest,
   });
   const view = buildStudioStoryPreviewView(snapshot);
   const degraded = Boolean(snapshot.degradedReason);
@@ -66,6 +70,7 @@ export default async function StudioStoryPreviewPage({ searchParams }: { searchP
       ) : null}
 
       <PreviewStatePanel view={view} />
+      <WorkflowStatePanel view={view} />
       <SlidePreviewPanel slides={view.slides} />
       <PublicationReadinessPanel view={view} />
       <DeferredStatesPanel view={view} />
@@ -73,6 +78,101 @@ export default async function StudioStoryPreviewPage({ searchParams }: { searchP
       <NextActionsPanel view={view} />
     </ProductShell>
   );
+}
+
+function WorkflowStatePanel({ view }: { view: StudioStoryPreviewView }) {
+  return (
+    <section className="plain-panel table-shell">
+      <div className="meta-row">
+        <span>{view.workflowCompilation?.templateLabel ?? "studio.story.scrollytelling_homepage"}</span>
+        <span className={statusClass(workflowToneClass(view.workflowState))}>{view.workflowState.label}</span>
+      </div>
+      <h3 className="panel-title">Workflow State</h3>
+      <p className="brief-body">{view.workflowState.detail}</p>
+      {view.workflowCompilation ? (
+        <>
+          <div className="data-row">
+            <span className="label">Compilation</span>
+            <span className="value">{view.workflowCompilation.compilationRef}</span>
+          </div>
+          <div className="data-row">
+            <span className="label">Evidence</span>
+            <span className="value">{view.workflowCompilation.safeEvidenceRefCount} safe local ref(s)</span>
+          </div>
+          <div className="data-row">
+            <span className="label">Task bindings</span>
+            <span className="value">{view.workflowCompilation.taskCount}</span>
+          </div>
+          <div className="data-row">
+            <span className="label">Approval gates</span>
+            <span className="value">
+              {view.workflowCompilation.approvalGates.length > 0
+                ? view.workflowCompilation.approvalGates.join(", ")
+                : "none"}
+            </span>
+          </div>
+          {view.workflowCompilation.missingInputs.length > 0 ? (
+            <ul className="brief-list">
+              {view.workflowCompilation.missingInputs.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Method</th>
+                <th>Artifact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.workflowCompilation.taskBindings.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="table-empty">
+                    No task bindings are exposed while compilation is blocked.
+                  </td>
+                </tr>
+              ) : (
+                view.workflowCompilation.taskBindings.slice(0, 8).map((task) => (
+                  <tr key={task.key}>
+                    <td>{task.key}</td>
+                    <td>{task.method}</td>
+                    <td>{task.outputArtifactKind}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </>
+      ) : (
+        <p className="brief-body">Protected Story Intake workflow compilation evidence is not available for this Preview request.</p>
+      )}
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>State</th>
+            <th>Condition</th>
+          </tr>
+        </thead>
+        <tbody>
+          {view.workflowStates.map((state) => (
+            <tr key={state.key}>
+              <td>
+                <span className={statusClass(workflowToneClass(state))}>{state.label}</span>
+              </td>
+              <td>{state.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function workflowToneClass(state: StudioStoryWorkflowStateView): "ok" | "warn" | "error" | "info" {
+  if (state.tone === "muted") return "info";
+  return state.tone;
 }
 
 function PreviewStatePanel({ view }: { view: StudioStoryPreviewView }) {
@@ -229,4 +329,28 @@ function NextActionsPanel({ view }: { view: StudioStoryPreviewView }) {
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function storyIntakeRequestFromParams(params: Record<string, string | string[] | undefined>): StudioStoryIntakeRequest | null {
+  const intakeId = firstParam(params.intakeId)?.trim();
+  const founderStory = firstParam(params.founderStory)?.trim();
+  const businessStance = firstParam(params.businessStance)?.trim();
+  if (!intakeId || !founderStory || !businessStance) {
+    return null;
+  }
+  return {
+    intakeId,
+    founderStory,
+    businessStance,
+    audience: firstParam(params.audience)?.trim() || null,
+    evidenceRefs: evidenceRefsFromParam(firstParam(params.evidenceRefs)),
+  };
+}
+
+function evidenceRefsFromParam(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
 }

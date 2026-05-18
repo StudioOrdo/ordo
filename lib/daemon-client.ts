@@ -899,7 +899,7 @@ export async function getStudioStoryIntakeSnapshot(
 
 export async function getStudioStoryPreviewSnapshot(
   viewer: StudioWorkViewer,
-  options: { deckId?: string } = {},
+  options: { deckId?: string; storyIntakeRequest?: StudioStoryIntakeRequest | null } = {},
 ): Promise<StudioStoryPreviewSnapshot> {
   const baseUrl = daemonUrl();
   const createdAt = new Date().toISOString();
@@ -909,7 +909,8 @@ export async function getStudioStoryPreviewSnapshot(
     deckId,
   });
 
-  const [deckResult, reviewResult, learningResult] = await Promise.all([
+  const intakeRequest = options.storyIntakeRequest ?? null;
+  const [deckResult, reviewResult, learningResult, intakeResult] = await Promise.all([
     readEndpoint<HomepageStoryDeckResponse>(baseUrl, "/public/homepage-story"),
     readEndpoint<StudioProductionReviewPacket>(
       baseUrl,
@@ -919,8 +920,19 @@ export async function getStudioStoryPreviewSnapshot(
       baseUrl,
       `/studio/story-publish-learning?${params.toString()}`,
     ),
+    intakeRequest
+      ? postEndpoint<StoryFounderIntakePacket>(baseUrl, "/studio/story-founder-intake", {
+          intakeId: intakeRequest.intakeId,
+          founderStory: intakeRequest.founderStory,
+          businessStance: intakeRequest.businessStance,
+          audience: intakeRequest.audience,
+          proofEvidenceRefs: intakeRequest.evidenceRefs,
+          sourceKind: "studio_story_preview",
+          sourceId: intakeRequest.intakeId,
+        })
+      : Promise.resolve({ data: null, error: null }),
   ]);
-  const degradedReasons = [deckResult.error, reviewResult.error, learningResult.error].filter(Boolean);
+  const degradedReasons = [deckResult.error, reviewResult.error, learningResult.error, intakeResult.error].filter(Boolean);
 
   return {
     daemonUrl: baseUrl,
@@ -930,6 +942,7 @@ export async function getStudioStoryPreviewSnapshot(
     deck: deckResult.data,
     review: reviewResult.data,
     learning: learningResult.data,
+    intakePacket: intakeResult.data,
     degradedReason: degradedReasons.length > 0 ? degradedReasons.join(" ") : null,
   };
 }

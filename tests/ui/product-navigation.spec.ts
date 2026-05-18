@@ -74,6 +74,8 @@ test.describe("product app-space navigation", () => {
     expect(appSpaceById("staff").items.map((item) => item.id)).toEqual(["handoffs", "conversations", "requests", "reviews", "members"]);
     expect(appSpaceById("studio").items.map((item) => item.id)).toEqual([
       "knowledge",
+      "story-intake",
+      "story-preview",
       "factory-jobs",
       "artifacts",
       "publications",

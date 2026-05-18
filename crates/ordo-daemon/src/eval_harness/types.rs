@@ -2,9 +2,9 @@ use super::*;
 use anyhow::{ensure, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
-use serde_json::{json, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -475,4 +475,3 @@ impl EvalArtifactWriter {
         })
     }
 }
-

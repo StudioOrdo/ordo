@@ -83,11 +83,7 @@ impl ProtectedRouteRateLimiter {
         self.check_at(key, Utc::now().timestamp())
     }
 
-    pub(crate) fn check_at(
-        &self,
-        key: &str,
-        now_seconds: i64,
-    ) -> ProtectedRouteRateLimitDecision {
+    pub(crate) fn check_at(&self, key: &str, now_seconds: i64) -> ProtectedRouteRateLimitDecision {
         let mut state = self
             .state
             .lock()

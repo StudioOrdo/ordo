@@ -40,4 +40,3 @@ pub struct CapabilityCatalogResponse {
     /// Ordered list of available system capabilities.
     pub capabilities: Vec<CapabilityDefinition>,
 }
-

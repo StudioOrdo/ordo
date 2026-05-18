@@ -1,9 +1,9 @@
+use crate::schema::db::ConnectionExt;
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
-use crate::schema::db::ConnectionExt;
 
 const DEFAULT_POLICY_DECISION_LIMIT: usize = 50;
 const MAX_POLICY_DECISION_LIMIT: usize = 250;
@@ -75,7 +75,8 @@ pub fn query_policy_decisions(
         .limit
         .unwrap_or(DEFAULT_POLICY_DECISION_LIMIT)
         .min(MAX_POLICY_DECISION_LIMIT);
-    connection.query_many("SELECT id, decided_at, actor_kind, actor_id, actor_origin, action,
+    connection.query_many(
+        "SELECT id, decided_at, actor_kind, actor_id, actor_origin, action,
                 resource_kind, resource_id, capability_id, outcome, reason, request_id,
                 job_id, task_key, artifact_id, metadata_json
          FROM policy_decisions
@@ -84,14 +85,16 @@ pub fn query_policy_decisions(
            AND (?3 IS NULL OR capability_id = ?3)
            AND (?4 IS NULL OR resource_kind = ?4)
          ORDER BY decided_at DESC, id DESC
-         LIMIT ?5", params![
+         LIMIT ?5",
+        params![
             query.outcome.as_deref(),
             query.actor_kind.as_deref(),
             query.capability_id.as_deref(),
             query.resource_kind.as_deref(),
             limit as i64,
         ],
-        policy_decision_from_row,)
+        policy_decision_from_row,
+    )
 }
 
 fn policy_decision_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PolicyDecisionAuditEntry> {

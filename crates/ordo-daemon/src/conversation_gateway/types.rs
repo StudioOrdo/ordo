@@ -1,6 +1,6 @@
-use std::collections::{BTreeSet, BTreeMap, VecDeque};
-use chrono::{DateTime, Utc};
 use crate::conversation_protocol::ConversationGatewayEnvelope;
+use chrono::{DateTime, Utc};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// Represents the state and subscriptions of an active WebSocket session
 /// connected to the conversation gateway.

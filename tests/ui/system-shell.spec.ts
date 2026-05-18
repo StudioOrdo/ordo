@@ -269,13 +269,13 @@ test("System shell shows daemon-degraded fallback state", async ({ page }, testI
 test("Root renders the public Ordo/story surface deck instead of the System Brief", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: /A business appliance/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Studio Ordo", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Home");
   await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Ordo");
   await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Login");
   await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Register");
-  await expect(page.getByLabel("Studio Ordo surface deck")).toContainText("Try OrdoStudio for 30 days");
-  await expect(page.getByRole("navigation", { name: "Surface progress" })).toBeVisible();
+  await expect(page.getByLabel("Studio Ordo scrollytelling homepage")).toContainText("The public story runtime is ready");
+  await expect(page.getByRole("navigation", { name: "Story progress" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open full-screen Ordo" })).toBeVisible();
   await page.goto("/?home=chat&role=admin");
   await expect(page.getByRole("heading", { name: /What should your business do next/ })).toBeVisible();

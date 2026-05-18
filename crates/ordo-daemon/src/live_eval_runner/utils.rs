@@ -34,7 +34,10 @@ pub(crate) fn env_trimmed(values: &BTreeMap<String, String>, key: &str) -> Optio
         .map(ToOwned::to_owned)
 }
 
-pub(crate) fn parse_optional_u32(values: &BTreeMap<String, String>, key: &str) -> Result<Option<u32>, String> {
+pub(crate) fn parse_optional_u32(
+    values: &BTreeMap<String, String>,
+    key: &str,
+) -> Result<Option<u32>, String> {
     let Some(raw) = env_trimmed(values, key) else {
         return Ok(None);
     };
@@ -43,7 +46,10 @@ pub(crate) fn parse_optional_u32(values: &BTreeMap<String, String>, key: &str) -
         .map_err(|_| format!("{key} must be a positive integer"))
 }
 
-pub(crate) fn parse_optional_u64(values: &BTreeMap<String, String>, key: &str) -> Result<Option<u64>, String> {
+pub(crate) fn parse_optional_u64(
+    values: &BTreeMap<String, String>,
+    key: &str,
+) -> Result<Option<u64>, String> {
     let Some(raw) = env_trimmed(values, key) else {
         return Ok(None);
     };
@@ -163,4 +169,3 @@ pub(crate) fn looks_like_secret(value: &str) -> bool {
         || lower.starts_with("bearer_")
         || lower.starts_with("bearer-")
 }
-

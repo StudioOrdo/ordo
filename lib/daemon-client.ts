@@ -927,7 +927,7 @@ export async function getStudioStoryPreviewSnapshot(
           businessStance: intakeRequest.businessStance,
           audience: intakeRequest.audience,
           proofEvidenceRefs: intakeRequest.evidenceRefs,
-          sourceKind: "studio_story_preview",
+          sourceKind: "studio_story_intake_workbench",
           sourceId: intakeRequest.intakeId,
         })
       : Promise.resolve({ data: null, error: null }),

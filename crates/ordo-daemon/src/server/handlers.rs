@@ -3190,7 +3190,7 @@ fn protected_daemon_route_allowed(
 }
 
 fn actor_id(decision: &PolicyDecision) -> Option<&str> {
-    Some(decision.actor.kind.as_str())
+    decision.actor.id.as_deref()
 }
 
 fn artifact_patch_actor_id(decision: &PolicyDecision) -> &'static str {
@@ -3879,6 +3879,48 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audit_count, 2);
+    }
+
+    #[test]
+    fn loopback_protected_route_actor_id_does_not_use_actor_kind_as_foreign_key() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("local.db");
+        init_database(&db_path).unwrap();
+        let policy = DaemonAccessPolicy::new(None);
+        let headers = HeaderMap::new();
+
+        let loopback = authorize_protected_daemon_route(
+            &policy,
+            &db_path,
+            &headers,
+            socket_addr("127.0.0.1:4000"),
+            PolicyAction::Create,
+            ResourceRef::new(ResourceKind::DaemonRoute, "/business/facts"),
+            Some("business.facts.write"),
+        )
+        .expect("loopback protected route is allowed");
+
+        assert_eq!(
+            actor_id(&loopback),
+            Some(crate::policy::LOCAL_OWNER_ACTOR_ID)
+        );
+        create_business_fact(
+            &db_path,
+            BusinessFactWriteRequest {
+                subject_type: None,
+                subject_id: None,
+                fact_key: "homepage.profile.positioning".to_string(),
+                value: json!("Local owner writes must satisfy actor foreign keys."),
+                source_kind: Some("test".to_string()),
+                source_label: None,
+                source_uri: None,
+                provenance: None,
+                visibility: Some(crate::business::BusinessFactVisibility::Public),
+                publication_state: Some(crate::business::PublicationState::Published),
+            },
+            actor_id(&loopback),
+        )
+        .expect("loopback write uses a durable actor id, not an actor kind");
     }
 
     #[test]

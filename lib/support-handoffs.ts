@@ -70,19 +70,19 @@ export function buildSupportHandoffQueueView(items: HandoffInboxItemView[]): Sup
     summaryLines:
       queueItems.length > 0
         ? [
-            `${openCount} open handoff(s) need support attention.`,
-            `${claimedCount} handoff(s) are already claimed by a support-capable member.`,
-            "This queue is local and does not call providers, publish, promote memory, or write graph truth.",
+            `${openCount} request(s) are waiting for support.`,
+            `${claimedCount} request(s) are already claimed by a support-capable member.`,
+            "This view is local. It does not call AI services, publish, save memory, or change trusted connections.",
           ]
         : [
-            "No daemon-backed handoffs are waiting right now.",
-            "Ordo will show first-user relationship and support handoffs here when local evidence exists.",
-            "No placeholder customer data is shown as real queue work.",
+            "No one is waiting for support right now.",
+            "Ordo will show first-user relationship and support requests here when local evidence exists.",
+            "No placeholder customer data is shown as real support work.",
           ],
     limitations: [
       "Only staff-scoped support queue details are shown here.",
       "Public/member views must not expose staff routing or private support mechanics.",
-      "Claim execution remains governed by the protected handoff route and support.accept_handoff policy.",
+      "Claiming remains limited to members who are allowed to help with support.",
     ],
   };
 }

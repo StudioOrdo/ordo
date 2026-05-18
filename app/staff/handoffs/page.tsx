@@ -16,8 +16,8 @@ export default async function StaffHandoffsPage({ searchParams }: { searchParams
     <ProductShell role={role} appSpaceId="staff" currentItemId="handoffs" railMode={railMode} mobileStep={mobileStep}>
       <PageTitle
         eyebrow="Support"
-        title="Handoffs"
-        description="Claim and work support requests that have local handoff evidence."
+        title="People waiting for help"
+        description="Claim a support request when you are ready to help. Visitors cannot see staff notes."
       />
 
       {!canReadSupportQueue ? (
@@ -38,10 +38,10 @@ function SupportHandoffQueue({ snapshot }: { snapshot: SupportHandoffQueueSnapsh
     <>
       <section className="brief-panel">
         <div className="meta-row">
-          <span>Local support queue</span>
+          <span>Support requests</span>
           <span className={statusClass(degraded ? "error" : snapshot.status)}>{degraded ? "needs attention" : snapshot.status}</span>
         </div>
-        <h3 className="panel-title">Handoff Queue</h3>
+        <h3 className="panel-title">People waiting for help</h3>
         <ul className="brief-list">
           {summaryLines(snapshot, degraded).map((line) => (
             <li key={line}>{line}</li>
@@ -81,7 +81,7 @@ function SupportHandoffQueue({ snapshot }: { snapshot: SupportHandoffQueueSnapsh
       </section>
 
       <section className="plain-panel table-shell">
-        <h3 className="panel-title">Support Requests</h3>
+        <h3 className="panel-title">Requests to claim</h3>
         {snapshot.items.length === 0 ? (
           <p className="brief-body">No daemon-backed handoffs are waiting right now.</p>
         ) : (
@@ -129,7 +129,7 @@ function SupportHandoffRow({ item }: { item: SupportHandoffQueueItemView }) {
       </td>
       <td>
         <span>{item.nextAction}</span>
-        <span className="table-subtle">Claim handoff with support.accept_handoff.</span>
+        <span className="table-subtle">Only support-capable members can claim this.</span>
       </td>
       <td>
         <span>{item.safeEvidenceRefs.length} safe ref(s)</span>

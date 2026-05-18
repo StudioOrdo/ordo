@@ -46,7 +46,7 @@ test.describe("Support handoff queue view model", () => {
     expect(JSON.stringify(view)).not.toContain("private note");
     expect(JSON.stringify(view)).not.toContain("policyInternal");
     expect(JSON.stringify(view)).not.toContain("provider_internal");
-    expect(view.summaryLines).toContain("1 open handoff(s) need support attention.");
+    expect(view.summaryLines).toContain("1 request(s) are waiting for support.");
   });
 });
 
@@ -61,12 +61,12 @@ test("Staff Handoffs renders daemon-backed support queue safely", async ({ page 
   try {
     await page.goto("/staff/handoffs?role=staff");
 
-    await expect(page.locator("main").getByRole("heading", { name: "Handoffs", exact: true })).toBeVisible();
-    await expect(page.locator("main")).toContainText("Handoff Queue");
-    await expect(page.locator("main")).toContainText("1 open handoff(s) need support attention.");
+    await expect(page.locator("main h2").getByText("People waiting for help", { exact: true })).toBeVisible();
+    await expect(page.locator("main")).toContainText("Requests to claim");
+    await expect(page.locator("main")).toContainText("1 request(s) are waiting for support.");
     await expect(page.locator("main")).toContainText("First-user relationship handoff requested");
     await expect(page.locator("main")).toContainText("Visitor Session visitor_session_nyc");
-    await expect(page.locator("main")).toContainText("Claim handoff with support.accept_handoff.");
+    await expect(page.locator("main")).toContainText("Only support-capable members can claim this.");
     await expect(page.locator("main")).toContainText("tracked_entry_point:nyc-founder-table");
     await expect(page.locator("main")).toContainText("Some internal refs are hidden.");
     await expect(page.locator("main")).not.toContainText("rawPrompt");

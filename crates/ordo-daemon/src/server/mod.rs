@@ -186,6 +186,10 @@ pub async fn serve(
         )
         .route("/public/e/:slug", get(public_entry_point_handler))
         .route(
+            "/public/e/:slug/relationship-handoff",
+            post(public_relationship_handoff_handler),
+        )
+        .route(
             "/public/visitor-sessions",
             post(public_session_create_handler),
         )

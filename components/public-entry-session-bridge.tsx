@@ -12,6 +12,14 @@ interface PublicEntrySessionBridgeProps {
 }
 
 type SessionState = "starting" | "ready" | "unavailable";
+type HandoffState = "idle" | "requesting" | "ready" | "unavailable";
+
+interface RelationshipHandoffStatus {
+  state?: string;
+  summary?: string;
+  nextStep?: string;
+  limitations?: string[];
+}
 
 export function PublicEntrySessionBridge({
   entryPointSlug,
@@ -23,6 +31,8 @@ export function PublicEntrySessionBridge({
   const storageKey = useMemo(() => `ordo.visitorSession.${entryPointSlug}`, [entryPointSlug]);
   const [sessionId, setSessionId] = useState<string>();
   const [state, setState] = useState<SessionState>("starting");
+  const [handoffState, setHandoffState] = useState<HandoffState>("idle");
+  const [handoffStatus, setHandoffStatus] = useState<RelationshipHandoffStatus>();
   const chatContextHref = useMemo(
     () => hrefWithEntryContext(chatHref, entryPointSlug, sessionId),
     [chatHref, entryPointSlug, sessionId],
@@ -83,12 +93,31 @@ export function PublicEntrySessionBridge({
             }),
           );
           setSessionId(session.id);
+          setHandoffState("requesting");
+          return requestRelationshipHandoff(entryPointSlug, session.id, locationLabel, locationKind)
+            .then((status) => {
+              if (!cancelled) {
+                setHandoffStatus(status);
+                setHandoffState("ready");
+              }
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setHandoffState("unavailable");
+              }
+            });
         }
         setState("ready");
+      })
+      .then(() => {
+        if (!cancelled) {
+          setState("ready");
+        }
       })
       .catch(() => {
         if (!cancelled) {
           setState("unavailable");
+          setHandoffState("unavailable");
         }
       });
 
@@ -105,6 +134,10 @@ export function PublicEntrySessionBridge({
         {state === "unavailable" ? <span>Session unavailable</span> : null}
         <span>No hidden location tracking</span>
         <span>No reward for scan alone</span>
+        {handoffState === "requesting" ? <span>Relationship handoff starting</span> : null}
+        {handoffState === "ready" ? <span>{handoffStatus?.summary ?? "Relationship handoff queued"}</span> : null}
+        {handoffState === "unavailable" ? <span>Relationship handoff unavailable</span> : null}
+        {handoffStatus?.nextStep ? <span>{handoffStatus.nextStep}</span> : null}
       </div>
       <div className="hero-actions">
         <Link href={chatContextHref} className="primary-action">
@@ -116,6 +149,29 @@ export function PublicEntrySessionBridge({
       </div>
     </div>
   );
+}
+
+async function requestRelationshipHandoff(
+  entryPointSlug: string,
+  visitorSessionId: string,
+  locationLabel?: string,
+  locationKind?: string,
+): Promise<RelationshipHandoffStatus> {
+  const response = await fetch(`/api/public/e/${encodeURIComponent(entryPointSlug)}/relationship-handoff`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      visitorSessionId,
+      locationLabel,
+      locationKind,
+      evidenceRefs: [`tracked_entry_point:${entryPointSlug}`, `visitor_session:${visitorSessionId}`],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error("relationship_handoff_unavailable");
+  }
+  const payload = (await response.json()) as { status?: RelationshipHandoffStatus };
+  return payload.status ?? {};
 }
 
 function hrefWithEntryContext(href: string, entryPointSlug: string, visitorSessionId?: string): string {

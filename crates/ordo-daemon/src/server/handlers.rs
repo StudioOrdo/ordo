@@ -24,10 +24,11 @@ use crate::availability::{
     HandoffEligibilityRequest, HandoffEligibilityView, HandoffInboxCreateRequest,
     HandoffInboxItemView, HandoffInboxListQuery, HandoffInboxListResponse,
     HandoffInboxResolveRequest, HandoffInboxUpdateRequest, HandoffReceiptListResponse,
-    OperatorPresenceView, OperatorPresenceWriteRequest, StrategySessionHandoffRequest,
-    StrategySessionHandoffResponse, StrategySessionStatusView, create_handoff_inbox_item,
-    evaluate_handoff_eligibility, list_handoff_inbox_with_query, list_handoff_receipts,
-    read_availability_state, read_handoff_inbox_item, read_strategy_session_status,
+    OperatorPresenceView, OperatorPresenceWriteRequest, PublicRelationshipHandoffRequest,
+    PublicRelationshipHandoffResponse, StrategySessionHandoffRequest, StrategySessionHandoffResponse,
+    StrategySessionStatusView, create_handoff_inbox_item, evaluate_handoff_eligibility,
+    list_handoff_inbox_with_query, list_handoff_receipts, read_availability_state,
+    read_handoff_inbox_item, read_strategy_session_status, request_public_relationship_handoff,
     request_strategy_session_handoff, resolve_handoff_inbox_item, update_availability_schedule,
     update_handoff_inbox_item, update_operator_presence,
 };
@@ -585,6 +586,17 @@ pub(crate) async fn public_session_create_handler(
         create_visitor_session(&state.db_path, request).map_err(invalid_request_error)?;
     let _ = state.event_sender.send(event);
     Ok(Json(session.into_public_view()))
+}
+
+pub(crate) async fn public_relationship_handoff_handler(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    Json(request): Json<PublicRelationshipHandoffRequest>,
+) -> Result<Json<PublicRelationshipHandoffResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (response, event) = request_public_relationship_handoff(&state.db_path, &slug, request)
+        .map_err(invalid_request_error)?;
+    let _ = state.event_sender.send(event);
+    Ok(Json(response))
 }
 
 pub(crate) async fn offers_handler(

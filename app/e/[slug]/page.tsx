@@ -29,7 +29,7 @@ export default async function EntryLandingPage({ params, searchParams }: { param
     <OrdoFrame
       role={role}
       homeHref={roleHref("/", role)}
-      topRail={<PublicTopRail role={role} activeAppSpaceId="site" locationLabel={entry ? "Tracked entry" : "Entry unavailable"} />}
+      topRail={<PublicTopRail role={role} activeAppSpaceId="site" locationLabel={entry ? "Entry link" : "Entry needs help"} />}
     >
       <main className="public-surface-track" aria-label="Tracked Studio Ordo entry">
         <section className="public-surface-slide public-surface-about" aria-label="Tracked entry landing">
@@ -60,11 +60,10 @@ function EntryResolved({
   return (
     <div className="story-stage">
       <div className="story-card">
-        <span className="eyebrow">Studio Ordo entry</span>
+        <span className="eyebrow">Entry link</span>
         <h1>{entry.label}</h1>
         <p>
-          This link is a tracked Studio Ordo entry. Ordo will remember this public-safe context if you continue to the story,
-          offer, or conversation.
+          This link gives Ordo safe public context before the conversation starts. It does not reveal staff notes or private routing.
         </p>
         <PublicEntrySessionBridge
           entryPointSlug={entry.slug}
@@ -85,9 +84,9 @@ function EntryUnavailable({ role }: { role: ProductRole }) {
   return (
     <div className="story-stage">
       <div className="story-card">
-        <span className="eyebrow">Entry unavailable</span>
-        <h1>This Studio Ordo entry is not available.</h1>
-        <p>The entry may be disabled, archived, or pointed at material that is not public.</p>
+        <span className="eyebrow">Link needs attention</span>
+        <h1>This entry link is not ready right now.</h1>
+        <p>It may be turned off, expired, or waiting for public content. You can still open the public story or start a conversation.</p>
         <div className="hero-actions">
           <Link href={roleHref("/", role)} className="primary-action">
             Open the story
@@ -98,7 +97,7 @@ function EntryUnavailable({ role }: { role: ProductRole }) {
         </div>
       </div>
       <div className="story-media" aria-hidden="true">
-        <span>404</span>
+        <span>Not ready</span>
       </div>
     </div>
   );

@@ -23,10 +23,10 @@ test.describe("Studio Story preview view model", () => {
     expect(view.slideCount).toBe(2);
     expect(view.safeEvidenceRefCount).toBe(5);
     expect(view.summaryLines).toEqual([
-      "2 protected preview slide(s) are assembled from daemon-backed homepage story evidence.",
+      "2 preview slide(s) are assembled from local story evidence.",
       "Workflow state is blocked.",
-      "3 Story publication evidence component(s) are available for owner/staff review.",
-      "Preview reads do not publish, mutate analytics truth, promote memory, promote graph truth, call providers, or execute tasks.",
+      "3 Story publication evidence item(s) are available for owner/staff review.",
+      "Opening Preview does not publish, promote memory, write graph truth, call providers, or run tasks.",
     ]);
     expect(view.nextActions).toContain("Request manual publish approval");
     expect(view.deferredStates.map((state) => state.key)).toEqual(
@@ -45,12 +45,12 @@ test.describe("Studio Story preview view model", () => {
     expect(view.status).toBe("missing");
     expect(view.slideCount).toBe(0);
     expect(view.summaryLines).toEqual([
-      "No protected preview slides are available from daemon-backed homepage story evidence.",
+      "No preview slides are available from the local story evidence yet.",
       "Workflow state is blocked.",
-      "Missing or degraded publication evidence remains explicit.",
-      "Preview reads do not publish, mutate analytics truth, promote memory, promote graph truth, call providers, or execute tasks.",
+      "Missing or unavailable publication evidence is shown instead of hidden.",
+      "Opening Preview does not publish, promote memory, write graph truth, call providers, or run tasks.",
     ]);
-    expect(view.nextActions).toContain("Resolve daemon-backed homepage story deck");
+    expect(view.nextActions).toContain("Add live homepage story content");
   });
 
   test("keeps partial daemon degradation explicit without hiding available slides", () => {
@@ -64,12 +64,12 @@ test.describe("Studio Story preview view model", () => {
     expect(view.slideCount).toBe(2);
     expect(view.publication).toBeNull();
     expect(view.summaryLines).toEqual([
-      "2 protected preview slide(s) are assembled from daemon-backed homepage story evidence.",
+      "2 preview slide(s) are assembled from local story evidence.",
       "Workflow state is degraded.",
       "Some Story publication evidence is degraded or unavailable.",
-      "Preview reads do not publish, mutate analytics truth, promote memory, promote graph truth, call providers, or execute tasks.",
+      "Opening Preview does not publish, promote memory, write graph truth, call providers, or run tasks.",
     ]);
-    expect(view.nextActions).toContain("Resolve Story publication readiness evidence");
+    expect(view.nextActions).toContain("Add publication review evidence");
   });
 
   test("maps Story Intake workflow compilation into governed Preview states", () => {
@@ -141,16 +141,16 @@ test("Studio Story Preview renders protected deck and publication readiness", as
     await page.goto(storyPreviewUrl("studio", testInfo));
 
     await expect(page.locator("main").getByRole("heading", { name: "Story Preview", exact: true })).toBeVisible();
-    await expect(page.locator("main")).toContainText("Homepage Story Preview");
-    await expect(page.locator("main")).toContainText("Workflow State");
+    await expect(page.locator("main")).toContainText("Story Preview Check");
+    await expect(page.locator("main")).toContainText("Production Plan Status");
     await expect(page.locator("main")).toContainText("awaiting approval");
     await expect(page.locator("main")).toContainText("workflow_compilation:story_preview_ui");
     await expect(page.locator("main")).toContainText("homepage.createNarrativeDeck");
     await expect(page.locator("main")).toContainText("Studio Ordo");
     await expect(page.locator("main")).toContainText("Trust stays local.");
-    await expect(page.locator("main")).toContainText("Story Publication Readiness");
+    await expect(page.locator("main")).toContainText("Approval And Publishing Status");
     await expect(page.locator("main")).toContainText("Request manual publish approval");
-    await expect(page.locator("main")).toContainText("Preview reads do not publish");
+    await expect(page.locator("main")).toContainText("Opening Preview does not publish");
     await expect(page.locator("main")).not.toContainText("provider_internal");
     await expect(page.locator("main")).not.toContainText("prompt_internal");
     await expect(page.locator("main")).not.toContainText("private_artifact_text");
@@ -171,7 +171,7 @@ test("Studio Story Preview refuses member role before daemon reads", async ({ pa
   try {
     await page.goto(productContentUrl("/studio/story-preview?role=member", testInfo));
 
-    await expect(page.locator("body")).not.toContainText("Homepage Story Preview");
+    await expect(page.locator("body")).not.toContainText("Story Preview Check");
     expect(daemon.state.requests).toEqual([]);
   } finally {
     await daemon.close();
@@ -182,8 +182,8 @@ test("Studio Story Preview keeps degraded evidence explicit", async ({ page }, t
   await page.goto(productContentUrl("/studio/story-preview?role=studio", testInfo));
 
   await expect(page.locator("main").getByRole("heading", { name: "Story Preview", exact: true })).toBeVisible();
-  await expect(page.locator("main")).toContainText("degraded");
-  await expect(page.locator("main")).toContainText("Studio Story preview evidence is degraded because daemon Story routes are unavailable.");
+  await expect(page.locator("main")).toContainText("needs attention");
+  await expect(page.locator("main")).toContainText("Ordo cannot read all local Story Preview evidence right now.");
   await expect(page.locator("main")).toContainText("/public/homepage-story");
   await expect(page.locator("main")).toContainText("/studio/story-production-review");
   await expect(page.locator("main")).toContainText("/studio/story-publish-learning");

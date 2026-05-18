@@ -78,7 +78,7 @@ test("Studio Publications renders memory review candidates and records approve d
   try {
     await page.goto(productContentUrl("/studio/publications?role=studio&artifactIds=story_deck", testInfo));
 
-    await expect(page.locator("main")).toContainText("Generated-Content Memory Review");
+    await expect(page.locator("main")).toContainText("Memory Review Packet");
     await expect(page.locator("main")).toContainText("Homepage story positioning candidate");
     await expect(page.locator("main")).toContainText("Memory candidate:story:1");
     await expect(page.locator("main")).toContainText("Approve");
@@ -157,8 +157,8 @@ test("Studio Publications keeps empty generated-content memory review state expl
   try {
     await page.goto(productContentUrl("/studio/publications?role=studio&artifactIds=story_deck", testInfo));
 
-    await expect(page.locator("main")).toContainText("Generated-Content Memory Review");
-    await expect(page.locator("main")).toContainText("No generated-content memory candidates are available for owner/staff review.");
+    await expect(page.locator("main")).toContainText("Memory Review Packet");
+    await expect(page.locator("main")).toContainText("No generated content is ready for owner/staff memory review.");
   } finally {
     await daemon.close();
   }
@@ -169,7 +169,7 @@ test("Studio Publications reports degraded memory review route without inventing
   try {
     await page.goto(productContentUrl("/studio/publications?role=studio&artifactIds=story_deck", testInfo));
 
-    await expect(page.locator("main")).toContainText("degraded");
+    await expect(page.locator("main")).toContainText("needs attention");
     await expect(page.locator("main")).toContainText("/studio/generated-content-memory/story_deck/review");
     await expect(page.locator("main")).toContainText("Memory promotion not performed");
   } finally {

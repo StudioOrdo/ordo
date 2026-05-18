@@ -87,7 +87,7 @@ export interface StudioStoryPreviewView {
 }
 
 const noMutationLine =
-  "Preview reads do not publish, mutate analytics truth, promote memory, promote graph truth, call providers, or execute tasks.";
+  "Opening Preview does not publish, promote memory, write graph truth, call providers, or run tasks.";
 
 export function buildStudioStoryPreviewView(input: StudioStoryPreviewInput): StudioStoryPreviewView {
   const publication = input.review && input.learning ? buildStudioPublicationsView(input.review, input.learning) : null;
@@ -116,15 +116,15 @@ export function buildStudioStoryPreviewView(input: StudioStoryPreviewInput): Stu
     ...(input.deck?.refresh.limitations ?? []),
     ...(workflowCompilation?.limitations ?? []),
     ...(publication?.limitations ?? []),
-    ...(input.degradedReason ? [input.degradedReason] : []),
+    ...(input.degradedReason ? ["Local Story Preview evidence is unavailable right now."] : []),
   ]);
   const nextActions = stableSafeList([
     ...(workflowCompilation?.nextActions ?? []),
     ...(publication?.nextActions ?? []),
-    ...(!workflowCompilation ? ["Submit protected Story Intake evidence for workflow state"] : []),
+    ...(!workflowCompilation ? ["Submit safe Story Intake evidence for workflow state"] : []),
     ...(workflowCompilation?.status === "missing_input" ? workflowCompilation.missingInputs.map((item) => `Resolve ${item}`) : []),
-    ...(slides.length === 0 ? ["Resolve daemon-backed homepage story deck"] : []),
-    ...(!publication ? ["Resolve Story publication readiness evidence"] : []),
+    ...(slides.length === 0 ? ["Add live homepage story content"] : []),
+    ...(!publication ? ["Add publication review evidence"] : []),
   ]);
 
   return {
@@ -190,40 +190,40 @@ function workflowStateRows(
   const ready = compiled && !awaitingApproval && slideCount > 0 && hasPublication;
 
   return [
-    workflowState("degraded", degraded, degraded ? "Daemon evidence is incomplete; Preview keeps this explicit." : undefined),
+    workflowState("degraded", degraded, degraded ? "Ordo cannot read all local Preview evidence right now; nothing is treated as done." : undefined),
     workflowState(
       "missing_input",
       !degraded && missingInput,
       missingInput
-        ? `${workflow.missingInputs.length} required workflow input blocker(s) remain.`
-        : "No missing workflow inputs are active.",
+        ? `${workflow.missingInputs.length} required item(s) still need attention.`
+        : "No missing inputs are active.",
     ),
     workflowState(
       "blocked",
       blocked,
       blocked
-        ? "Workflow state is blocked until protected Story Intake compilation evidence is available."
+        ? "Preview is blocked until Story Intake has a saved production plan."
         : "No closed blocker is active.",
     ),
     workflowState(
       "compiled",
       !degraded && compiled && !awaitingApproval && !ready,
       compiled
-        ? `${workflow.taskCount} task binding(s) are compiled as evidence only.`
-        : "No workflow compilation evidence is available.",
+        ? `${workflow.taskCount} planned step(s) are saved for review only.`
+        : "No production plan evidence is available.",
     ),
     workflowState(
       "awaiting_approval",
       !degraded && awaitingApproval,
       awaitingApproval
-        ? `${workflow.approvalGates.length} approval gate(s) remain before publishing or external egress.`
+        ? `${workflow.approvalGates.length} approval gate(s) remain before publishing or provider work.`
         : "No approval gate is active.",
     ),
     workflowState(
       "ready",
       !degraded && ready,
       ready
-        ? "Preview evidence is ready for owner/staff review; this does not claim task execution or publication."
+        ? "Preview is ready for owner/staff review; this does not mean anything was published or run."
         : "Preview is not ready until compilation, slides, and publication evidence are present.",
     ),
   ];
@@ -243,12 +243,12 @@ function workflowState(
     degraded: "degraded",
   };
   const defaultDetails: Record<StudioStoryWorkflowStateKey, string> = {
-    compiled: "Workflow compilation evidence is durable and read-only.",
-    blocked: "Workflow state is blocked until source evidence is available.",
-    missing_input: "Required workflow inputs are missing.",
-    awaiting_approval: "Human approval gates remain explicit.",
+    compiled: "A production plan is saved and read-only.",
+    blocked: "Preview is blocked until source evidence is available.",
+    missing_input: "Required information is missing.",
+    awaiting_approval: "A person still needs to approve the next step.",
     ready: "Preview is ready for owner/staff review.",
-    degraded: "Daemon evidence is degraded.",
+    degraded: "Local evidence needs attention.",
   };
   const tone: StudioStoryWorkflowStateTone =
     key === "ready" || key === "compiled"
@@ -276,24 +276,24 @@ function summaryLines(
 ): string[] {
   if (missing) {
     return [
-      "No protected preview slides are available from daemon-backed homepage story evidence.",
+      "No preview slides are available from the local story evidence yet.",
       `Workflow state is ${workflowState.label}.`,
-      "Missing or degraded publication evidence remains explicit.",
+      "Missing or unavailable publication evidence is shown instead of hidden.",
       noMutationLine,
     ];
   }
   if (degraded) {
     return [
-      `${slideCount} protected preview slide(s) are assembled from daemon-backed homepage story evidence.`,
+      `${slideCount} preview slide(s) are assembled from local story evidence.`,
       `Workflow state is ${workflowState.label}.`,
       "Some Story publication evidence is degraded or unavailable.",
       noMutationLine,
     ];
   }
   return [
-    `${slideCount} protected preview slide(s) are assembled from daemon-backed homepage story evidence.`,
+      `${slideCount} preview slide(s) are assembled from local story evidence.`,
     `Workflow state is ${workflowState.label}.`,
-    `${publicationEvidenceCount} Story publication evidence component(s) are available for owner/staff review.`,
+    `${publicationEvidenceCount} Story publication evidence item(s) are available for owner/staff review.`,
     noMutationLine,
   ];
 }

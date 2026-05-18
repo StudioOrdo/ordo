@@ -28,7 +28,7 @@ export default async function StudioStoryIntakePage({ searchParams }: { searchPa
 
   const params = searchParams ? await searchParams : {};
   const railMode = await railModeFromSearchParams(searchParams);
-  const mobileStep = await mobileStepFromSearchParams(searchParams);
+  const mobileStep = await mobileStepFromSearchParams(searchParams, "content");
   const request = storyIntakeRequestFromParams(params);
   const snapshot = await getStudioStoryIntakeSnapshot(viewer, request);
   const degraded = Boolean(snapshot.degradedReason);
@@ -40,15 +40,15 @@ export default async function StudioStoryIntakePage({ searchParams }: { searchPa
       <PageTitle
         eyebrow="Studio"
         title="Story Intake"
-        description="Owner/staff founder intake readiness and narrative deck prerequisites from protected local evidence."
+        description="Check whether the founder story has enough safe information for Ordo to prepare the next story step."
       />
 
       <section className="brief-panel">
         <div className="meta-row">
           <span>Intake {snapshot.request?.intakeId ?? "pending"}</span>
-          <span className={statusClass(degraded ? "error" : view.status)}>{degraded ? "degraded" : view.status}</span>
+          <span className={statusClass(degraded ? "error" : view.status)}>{degraded ? "needs attention" : view.status}</span>
         </div>
-        <h3 className="panel-title">Founder Intake Readiness</h3>
+        <h3 className="panel-title">Story Intake Check</h3>
         <ul className="brief-list">
           {summaryLines(view, degraded).map((line) => (
             <li key={line}>{line}</li>
@@ -58,9 +58,12 @@ export default async function StudioStoryIntakePage({ searchParams }: { searchPa
 
       {snapshot.degradedReason ? (
         <section className="plain-panel">
-          <h3 className="panel-title">State</h3>
-          <p className="brief-body">Studio Story intake evidence is degraded because the protected daemon route is unavailable.</p>
-          <p className="table-subtle">{snapshot.degradedReason}</p>
+          <h3 className="panel-title">Needs Attention</h3>
+          <p className="brief-body">Ordo cannot read the local Story Intake record right now. Nothing was published, sent to a provider, or promoted to memory.</p>
+          <details>
+            <summary>Technical detail</summary>
+            <p className="table-subtle">{snapshot.degradedReason}</p>
+          </details>
         </section>
       ) : null}
 
@@ -84,8 +87,8 @@ function WorkflowCompilationPanel({ view }: { view: StudioStoryIntakeView }) {
   if (!workflow) {
     return (
       <section className="plain-panel">
-        <h3 className="panel-title">Workflow Compilation</h3>
-        <p className="brief-body">Workflow compilation evidence is not available until protected intake evidence is submitted.</p>
+        <h3 className="panel-title">Production Plan</h3>
+        <p className="brief-body">Ordo needs submitted Story Intake evidence before it can prepare the production plan.</p>
       </section>
     );
   }
@@ -96,21 +99,21 @@ function WorkflowCompilationPanel({ view }: { view: StudioStoryIntakeView }) {
         <span>{workflow.templateLabel}</span>
         <span className={statusClass(workflow.status === "compiled" ? "ok" : "warn")}>{workflow.status}</span>
       </div>
-      <h3 className="panel-title">Workflow Compilation</h3>
+      <h3 className="panel-title">Production Plan</h3>
       <div className="data-row">
-        <span className="label">Compilation</span>
+        <span className="label">Plan record</span>
         <span className="value">{workflow.compilationRef}</span>
       </div>
       <div className="data-row">
-        <span className="label">Evidence</span>
+        <span className="label">Safe evidence</span>
         <span className="value">{workflow.safeEvidenceRefCount} safe local ref(s)</span>
       </div>
       <div className="data-row">
-        <span className="label">Variables</span>
-        <span className="value">{workflow.variableCount} resolved variable(s)</span>
+        <span className="label">Inputs checked</span>
+        <span className="value">{workflow.variableCount} safe input(s)</span>
       </div>
       <div className="data-row">
-        <span className="label">Fanout</span>
+        <span className="label">Planned grouping</span>
         <span className="value">{workflow.fanoutSummary}</span>
       </div>
       {workflow.missingInputs.length > 0 ? (
@@ -123,7 +126,7 @@ function WorkflowCompilationPanel({ view }: { view: StudioStoryIntakeView }) {
       <table className="data-table">
         <thead>
           <tr>
-            <th>Task</th>
+            <th>Planned step</th>
             <th>Method</th>
             <th>Artifact</th>
           </tr>
@@ -132,7 +135,7 @@ function WorkflowCompilationPanel({ view }: { view: StudioStoryIntakeView }) {
           {workflow.taskBindings.length === 0 ? (
             <tr>
               <td colSpan={3} className="table-empty">
-                No task bindings are exposed while compilation is blocked.
+                No planned steps are shown while the plan is blocked.
               </td>
             </tr>
           ) : (
@@ -158,9 +161,9 @@ function WorkflowCompilationPanel({ view }: { view: StudioStoryIntakeView }) {
 function ReadinessPanel({ view }: { view: StudioStoryIntakeView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Readiness</h3>
+      <h3 className="panel-title">What Ordo Knows</h3>
       <div className="data-row">
-        <span className="label">Narrative deck</span>
+        <span className="label">Story plan</span>
         <span className="value">
           <span className={statusClass(view.status === "ready" ? "ok" : view.status === "blocked" ? "warn" : "empty")}>
             {view.readinessLabel}
@@ -172,7 +175,7 @@ function ReadinessPanel({ view }: { view: StudioStoryIntakeView }) {
         <span className="value">{view.approvalState}</span>
       </div>
       <div className="data-row">
-        <span className="label">Visibility ceiling</span>
+        <span className="label">Who can see it</span>
         <span className="value">{view.visibilityCeiling}</span>
       </div>
       <div className="data-row">
@@ -194,17 +197,17 @@ function ReadinessPanel({ view }: { view: StudioStoryIntakeView }) {
 function EvidencePanel({ view }: { view: StudioStoryIntakeView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Evidence</h3>
+      <h3 className="panel-title">Why Ordo Knows This</h3>
       <div className="data-row">
-        <span className="label">Safe local refs</span>
+        <span className="label">Safe local references</span>
         <span className="value">{view.safeEvidenceRefCount} safe local ref(s)</span>
       </div>
       <div className="data-row">
-        <span className="label">Artifact</span>
+        <span className="label">Record</span>
         <span className="value">{view.artifactRef}</span>
       </div>
       <div className="data-row">
-        <span className="label">Artifact kind</span>
+        <span className="label">Record type</span>
         <span className="value">{view.artifactKind}</span>
       </div>
     </section>
@@ -214,7 +217,7 @@ function EvidencePanel({ view }: { view: StudioStoryIntakeView }) {
 function ClaimsPanel({ view }: { view: StudioStoryIntakeView }) {
   return (
     <section className="plain-panel table-shell">
-      <h3 className="panel-title">Public Derivative Claims</h3>
+      <h3 className="panel-title">Public Claims To Review</h3>
       <table className="data-table">
         <thead>
           <tr>
@@ -251,7 +254,7 @@ function ClaimsPanel({ view }: { view: StudioStoryIntakeView }) {
 function DeferredStatesPanel({ view }: { view: StudioStoryIntakeView }) {
   return (
     <section className="plain-panel table-shell">
-      <h3 className="panel-title">Deferred State</h3>
+      <h3 className="panel-title">Not Done Yet</h3>
       <table className="data-table">
         <thead>
           <tr>
@@ -275,7 +278,7 @@ function DeferredStatesPanel({ view }: { view: StudioStoryIntakeView }) {
 function LimitationsPanel({ view }: { view: StudioStoryIntakeView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Limitations</h3>
+      <h3 className="panel-title">Known Limits</h3>
       <ul className="brief-list">
         {view.limitations.map((item) => (
           <li key={item}>{item}</li>
@@ -288,7 +291,7 @@ function LimitationsPanel({ view }: { view: StudioStoryIntakeView }) {
 function NextActionsPanel({ view }: { view: StudioStoryIntakeView }) {
   return (
     <section className="plain-panel">
-      <h3 className="panel-title">Next Actions</h3>
+      <h3 className="panel-title">What To Do Next</h3>
       <ul className="brief-list">
         {view.nextActions.map((item) => (
           <li key={item}>{item}</li>
@@ -301,9 +304,9 @@ function NextActionsPanel({ view }: { view: StudioStoryIntakeView }) {
 function summaryLines(view: StudioStoryIntakeView, degraded: boolean): string[] {
   if (degraded) {
     return [
-      "Studio Story intake evidence is degraded because the protected daemon route is unavailable.",
-      "Readiness is unknown until protected intake evidence is available.",
-      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+      "Ordo cannot read the local Story Intake record right now.",
+      "Readiness is unknown until safe intake evidence is available.",
+      "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
     ];
   }
   return view.summaryLines;

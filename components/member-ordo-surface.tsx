@@ -32,7 +32,7 @@ export async function MemberOrdoSurface({ roomId, searchParams }: MemberOrdoSurf
   const [role, railMode, mobileStep, selectedIndex] = await Promise.all([
     roleFromSearchParams(searchParams),
     railModeFromSearchParams(searchParams),
-    mobileStepFromSearchParams(searchParams),
+    mobileStepFromSearchParams(searchParams, roomId === "requests" ? "content" : "rooms"),
     selectedItemIndexFromSearchParams(searchParams),
   ]);
   const room = memberRoomById(roomId);

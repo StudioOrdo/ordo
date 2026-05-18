@@ -105,7 +105,7 @@ export function homepageStoryDeckToSlides(deckResponse: HomepageStoryDeckRespons
 }
 
 export function fallbackHomepageStoryDeck(reason: "daemon_unavailable" | "missing_deck"): HomepageStoryDeckResponse {
-  const missing = reason === "daemon_unavailable" ? "daemon-backed public homepage story deck" : "published public homepage slide facts";
+  const missing = reason === "daemon_unavailable" ? "live public story content" : "published public story facts";
   return {
     profile: {
       positioning: "Studio Ordo is a local-first operating appliance for relationship-led business work.",
@@ -128,8 +128,8 @@ export function fallbackHomepageStoryDeck(reason: "daemon_unavailable" | "missin
           sectionId: "readiness",
           order: 1,
           title: "Studio Ordo",
-          body: "The public story runtime is ready, but the daemon-backed narrative deck is not available yet.",
-          copySlots: [{ slot: "sourceLine", value: "Readiness state, not generated copy" }],
+          body: "The public story page is working, but the live story content is not ready yet.",
+          copySlots: [{ slot: "sourceLine", value: "Not published yet" }],
           ctaRefs: [
             {
               label: "Talk with Ordo",
@@ -140,10 +140,10 @@ export function fallbackHomepageStoryDeck(reason: "daemon_unavailable" | "missin
           evidenceRefs: ["readiness:homepage.story"],
           limitations: [
             `Missing ${missing}.`,
-            "No live image generation, video generation, publishing, analytics, or AI capability is claimed.",
+            "No publishing, analytics, provider call, or AI work is claimed for this placeholder.",
           ],
           motionProfile: "reduced",
-          reducedMotionFallback: "Studio Ordo story readiness is missing daemon-backed deck data.",
+          reducedMotionFallback: "Studio Ordo is waiting for live story content.",
           imageBriefMethod: null,
         },
         {
@@ -151,8 +151,8 @@ export function fallbackHomepageStoryDeck(reason: "daemon_unavailable" | "missin
           sectionId: "trust-boundary",
           order: 2,
           title: "Evidence before claims.",
-          body: "Ordo shows readiness gaps instead of inventing proof, metrics, publishing status, or provider behavior.",
-          copySlots: [{ slot: "sourceLine", value: "Fallback public-surface contract" }],
+          body: "Ordo tells you when something is not ready instead of pretending work is finished.",
+          copySlots: [{ slot: "sourceLine", value: "Safety note" }],
           ctaRefs: [
             {
               label: "View the QR path",
@@ -161,7 +161,7 @@ export function fallbackHomepageStoryDeck(reason: "daemon_unavailable" | "missin
             },
           ],
           evidenceRefs: ["readiness:homepage.story"],
-          limitations: ["Fallback content is deterministic and does not promote generated memory to truth."],
+          limitations: ["This placeholder does not become memory, graph truth, or a published claim."],
           motionProfile: "reduced",
           reducedMotionFallback: "Evidence before claims.",
           imageBriefMethod: null,
@@ -181,7 +181,7 @@ export function fallbackHomepageStoryDeck(reason: "daemon_unavailable" | "missin
       scheduledRefreshSupported: false,
       imageBriefMethod: "homepage.prepare_image_briefs",
       liveProviderRequired: false,
-      limitations: ["Refresh and scheduling require daemon-backed public story state."],
+      limitations: ["Refresh and scheduling require live public story content."],
     },
   };
 }

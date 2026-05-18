@@ -77,7 +77,7 @@ const daemonDeck = {
 };
 
 test.describe("scrollytelling homepage runtime", () => {
-  test("renders daemon-backed slides with progress, keyboard navigation, and public-safe evidence", async ({ page }) => {
+  test("renders live story slides with progress, keyboard navigation, and public-safe evidence", async ({ page }) => {
     const analyticsPayloads: Array<Record<string, unknown>> = [];
     await page.route("**/api/public/homepage-story", async (route) => {
       await route.fulfill({ json: daemonDeck });
@@ -156,8 +156,8 @@ test.describe("scrollytelling homepage runtime", () => {
     await page.goto("/");
 
     await expect(page.getByRole("heading", { name: "Studio Ordo" })).toBeVisible();
-    await expect(page.getByText("daemon-backed public homepage story deck").first()).toBeVisible();
-    await expect(page.getByText("No live image generation").first()).toBeVisible();
+    await expect(page.getByText("live public story content").first()).toBeVisible();
+    await expect(page.getByText("No publishing, analytics, provider call, or AI work").first()).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Story progress" })).toContainText("01 / 02");
     expect(analyticsPayloads).toEqual([]);
   });

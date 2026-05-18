@@ -221,7 +221,7 @@ export const mockOrdoEvents: readonly MockOrdoEvent[] = [
     summary: "A meetup QR visitor is ready to start the 30-day trial and asked for Keith while he is online.",
     status: "unread",
     priority: "high",
-    action: "Take over",
+    action: "Claim handoff",
     evidenceRefs: ["conversation:maya-patel", "entry:meetup-qr", "offer:30-day-trial"],
     sourceLabel: "Staff handoff",
     occurredAt: "2026-05-10T10:40:00-04:00",

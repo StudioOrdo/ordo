@@ -564,7 +564,7 @@ function buildDeferredStates(
 function summaryLines(componentCount: number, metricCount: number, publishEvidenceCount: number, missingOrDeferredCount: number): string[] {
   if (componentCount === 0 && metricCount === 0) {
     return [
-      "No daemon-backed Story production review components are available yet.",
+      "No Story production review items are available yet.",
       "No Story publish learning metrics are available yet.",
       "Missing or deferred publication evidence remains explicit.",
     ];

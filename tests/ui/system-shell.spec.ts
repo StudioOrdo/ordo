@@ -274,7 +274,7 @@ test("Root renders the public Ordo/story surface deck instead of the System Brie
   await expect(page.getByRole("navigation", { name: "Public navigation" })).toContainText("Ordo");
   await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Login");
   await expect(page.getByRole("navigation", { name: "Visitor account actions" })).toContainText("Register");
-  await expect(page.getByLabel("Studio Ordo scrollytelling homepage")).toContainText("The public story runtime is ready");
+  await expect(page.getByLabel("Studio Ordo scrollytelling homepage")).toContainText("The public story page is working");
   await expect(page.getByRole("navigation", { name: "Story progress" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open full-screen Ordo" })).toBeVisible();
   await page.goto("/?home=chat&role=admin");
@@ -487,7 +487,7 @@ test("Staff navigation defaults to handoff work before relationship memory", asy
   await expect(page.locator('.primary-link[data-shell-id="staff"]')).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
   await expect(page.locator("main")).toContainText("Maya asked to talk to Keith live");
-  await expect(page.locator("main")).toContainText("Take over");
+  await expect(page.locator("main")).toContainText("Claim handoff");
 });
 
 test("Premium conversation UI supports edit, undo, retry, unread, reactions, and presence", async ({ page }, testInfo) => {

@@ -246,7 +246,7 @@ export function buildStudioStoryIntakeView(packet: StoryFounderIntakePacket): St
   return {
     status,
     intakeId: safeIdentifier(packet.intakeId),
-    readinessLabel: narrativeDeckReady ? "Ready for narrative deck" : "Blocked before narrative deck",
+    readinessLabel: narrativeDeckReady ? "Ready for story planning" : "Needs more information",
     narrativeDeckReady,
     publicSummary: safeText(packet.publicDerivative.summary, "No public-safe intake summary is available."),
     audience: safeText(packet.publicDerivative.audience, "Audience not supplied"),
@@ -278,15 +278,15 @@ export function emptyStudioStoryIntakeView(): StudioStoryIntakeView {
     artifactRef: "artifact:none",
     artifactKind: "story.founder_intake",
     safeEvidenceRefCount: 0,
-    missingPrerequisites: ["Protected founder intake evidence"],
-    limitations: ["Readiness is unknown until protected intake evidence is available."],
+    missingPrerequisites: ["Safe Story Intake evidence"],
+    limitations: ["Readiness is unknown until safe Story Intake evidence is available."],
     claims: [],
     workflowCompilation: null,
-    nextActions: ["Submit protected founder intake evidence"],
+    nextActions: ["Submit safe Story Intake evidence"],
     summaryLines: [
-      "No Story founder intake has been submitted from this workbench yet.",
-      "Readiness is unknown until protected intake evidence is available.",
-      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+      "No Story Intake has been submitted from this workbench yet.",
+      "Ordo will not prepare the story plan until safe intake evidence exists.",
+      "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
     ],
     deferredStates: baselineDeferredStates(),
   };
@@ -345,16 +345,16 @@ function nextActionsFor(
 ): string[] {
   if (workflowCompilation?.status === "compiled") {
     return [
-      "Review workflow compilation evidence",
-      "Open Studio Preview workflow state",
-      "Keep provider execution and publication approval gated",
+      "Review the story production plan",
+      "Open Story Preview to check the current state",
+      "Keep provider work and publishing gated until a person approves",
     ];
   }
   if (workflowCompilation?.status === "missing_input") {
     return [...workflowCompilation.missingInputs.map((item) => `Resolve ${item.toLowerCase()}`), "Keep compilation blocked until inputs are safe"];
   }
   if (status === "ready") {
-    return ["Request workflow compilation evidence", "Review public derivative", "Prepare Story Pack production review"];
+    return ["Prepare the story production plan", "Review the public-safe summary", "Prepare Story Pack production review"];
   }
   const missingActions = missingPrerequisites.map((item) => `Add ${item.toLowerCase()}`);
   return [...missingActions, "Keep readiness blocked until evidence is safe"];
@@ -368,29 +368,29 @@ function summaryLines(
 ): string[] {
   if (workflowCompilation?.status === "compiled") {
     return [
-      "Founder intake has stored workflow compilation evidence.",
-      `${workflowCompilation.taskCount} task binding(s) and ${workflowCompilation.safeEvidenceRefCount} workflow evidence ref(s) are ready for Studio Preview.`,
-      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+      "Story Intake has a saved production plan for Studio Preview.",
+      `${workflowCompilation.taskCount} planned step(s) and ${workflowCompilation.safeEvidenceRefCount} safe evidence ref(s) are ready to review.`,
+      "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
     ];
   }
   if (workflowCompilation?.status === "missing_input") {
     return [
-      "Founder intake cannot compile a workflow until missing inputs are resolved.",
-      `${workflowCompilation.missingInputs.length} workflow input blocker(s) remain explicit.`,
-      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+      "Story Intake cannot prepare the production plan until missing information is resolved.",
+      `${workflowCompilation.missingInputs.length} required item(s) still need attention.`,
+      "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
     ];
   }
   if (status === "ready") {
     return [
-      "Founder intake is ready for narrative deck assembly.",
+      "Story Intake is ready for story planning.",
       `${safeEvidenceRefCount} safe evidence ref(s) support the public derivative.`,
-      "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+      "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
     ];
   }
   return [
-    "Founder intake is blocked before narrative deck assembly.",
-    `${missingCount} missing prerequisite(s) remain explicit.`,
-    "Provider execution, publishing, memory promotion, graph promotion, rewards, and task execution are not claimed.",
+    "Story Intake needs more information before story planning can start.",
+    `${missingCount} required item(s) still need attention.`,
+    "Nothing has been published, promoted to memory, written to graph truth, sent to providers, or run as a task.",
   ];
 }
 

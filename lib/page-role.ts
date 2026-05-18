@@ -14,9 +14,12 @@ export async function railModeFromSearchParams(searchParams?: SearchParams): Pro
   return resolveRailMode(params.rail);
 }
 
-export async function mobileStepFromSearchParams(searchParams?: SearchParams): Promise<ProductMobileStep> {
+export async function mobileStepFromSearchParams(
+  searchParams?: SearchParams,
+  fallback: ProductMobileStep = "rooms",
+): Promise<ProductMobileStep> {
   const params = searchParams ? await searchParams : {};
-  return resolveMobileStep(params.mobile);
+  return resolveMobileStep(params.mobile, fallback);
 }
 
 export async function selectedItemIndexFromSearchParams(searchParams?: SearchParams): Promise<number> {
@@ -29,9 +32,9 @@ function resolveRailMode(rawMode: string | string[] | undefined): ProductRailMod
   return mode === "collapsed" ? "collapsed" : "expanded";
 }
 
-function resolveMobileStep(rawStep: string | string[] | undefined): ProductMobileStep {
+function resolveMobileStep(rawStep: string | string[] | undefined, fallback: ProductMobileStep): ProductMobileStep {
   const step = Array.isArray(rawStep) ? rawStep[0] : rawStep;
-  return step === "evidence" || step === "content" ? step : "rooms";
+  return step === "rooms" || step === "evidence" || step === "content" ? step : fallback;
 }
 
 function resolveSelectedItemIndex(rawItem: string | string[] | undefined): number {
